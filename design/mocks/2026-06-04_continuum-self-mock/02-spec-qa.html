@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>continuum — Spec & QA</title>
+<style>
+  :root{
+    --ink:#15161C; --ink-2:#3A3B44; --muted:#74757F; --faint:#9A9BA4;
+    --line:#ECECE9; --line-2:#E3E3DF; --bg:#FBFBF9; --panel:#FFFFFF; --panel-2:#F6F6F3;
+    --accent:#5A57F2; --accent-soft:#EEEEFE;
+    --mikan:#FF8900; --mikan-soft:#FFF3E2;
+    --ok:#1FA971; --p0:#E0533B; --p0-soft:#FDEEEB; --p1:#E0A100; --p1-soft:#FBF3DC;
+    --spectrum:linear-gradient(90deg,#8A6CFF 0%,#5A8BFF 48%,#34C7BE 100%);
+    --shadow-sm:0 1px 2px rgba(20,21,28,.05),0 1px 1px rgba(20,21,28,.04);
+    --shadow-md:0 6px 20px rgba(20,21,28,.08),0 2px 6px rgba(20,21,28,.05);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{font-family:-apple-system,"SF Pro Text","Inter","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;letter-spacing:.005em}
+  .mono{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace}
+  .app{width:1440px;height:900px;display:flex;flex-direction:column}
+
+  /* topbar (same chrome) */
+  .topbar{height:54px;flex:none;display:flex;align-items:center;gap:18px;padding:0 18px;
+    background:rgba(255,255,255,.85);backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:9px;width:242px;flex:none}
+  .logo{width:22px;height:22px;border-radius:7px;background:var(--spectrum);box-shadow:0 2px 6px rgba(90,87,242,.35);position:relative}
+  .logo::after{content:"";position:absolute;inset:5px;border-radius:3px;background:#fff;opacity:.92}
+  .brand b{font-size:15px;font-weight:650;letter-spacing:-.01em}
+  .brand .v{font-size:10px;color:var(--faint);border:1px solid var(--line-2);border-radius:5px;padding:1px 5px}
+  .pipe{flex:1;display:flex;align-items:center;justify-content:center}
+  .pipe-inner{display:flex;align-items:center;background:var(--panel-2);border:1px solid var(--line);border-radius:30px;padding:5px 8px;gap:2px}
+  .stage{display:flex;align-items:center;gap:7px;padding:5px 13px;border-radius:22px;font-size:12.5px;font-weight:540;color:var(--muted);white-space:nowrap}
+  .stage .dot{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;font-size:9px;color:#fff;flex:none}
+  .stage.done{color:var(--ink-2)} .stage.done .dot{background:var(--ok)}
+  .stage.now{background:#fff;color:var(--ink);box-shadow:0 0 0 1.5px var(--accent),var(--shadow-sm);font-weight:650}
+  .stage.now .dot{background:var(--accent)}
+  .arrow{width:16px;height:2px;flex:none;opacity:.6;position:relative}
+  .arrow::after{content:"";position:absolute;inset:0;border-radius:2px;background:var(--spectrum)}
+  .topbar-right{display:flex;align-items:center;gap:14px}
+  .repo-pill{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:20px;padding:5px 11px 5px 9px}
+  .repo-pill .gd{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(31,169,113,.14)}
+  .avs{display:flex}.av{width:27px;height:27px;border-radius:50%;border:2px solid #fff;margin-left:-8px;display:grid;place-items:center;font-size:11px;font-weight:650;color:#fff}
+  .btn-share{font-size:12.5px;font-weight:600;color:#fff;background:var(--ink);border-radius:8px;padding:7px 14px;box-shadow:var(--shadow-sm)}
+
+  .body{flex:1;display:flex;min-height:0}
+
+  /* sidebar (same) */
+  .side{width:242px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 12px;gap:4px}
+  .ws{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);margin-bottom:8px}
+  .ws .ic{width:26px;height:26px;border-radius:7px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:700}
+  .ws .t{font-size:13px;font-weight:620}.ws .s{font-size:11px;color:var(--faint);margin-top:1px}.ws .chev{margin-left:auto;color:var(--faint)}
+  .sec-l{font-size:10.5px;font-weight:680;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);padding:10px 9px 5px}
+  .repo{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px}
+  .repo .sq{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;flex:none}
+  .repo .nm{font-size:13px;font-weight:560;color:var(--ink-2)}.repo .ct{margin-left:auto;font-size:10.5px;color:var(--faint)}.repo .gd{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .nav{margin-top:6px;display:flex;flex-direction:column;gap:1px}
+  .nav a{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:8px;font-size:13px;font-weight:540;color:var(--ink-2);text-decoration:none}
+  .nav a .gi{width:16px;text-align:center;color:var(--faint);font-size:14px}
+  .nav a.on{background:var(--accent-soft);color:var(--accent);font-weight:650}.nav a.on .gi{color:var(--accent)}
+  .nav a .cnt{margin-left:auto;font-size:11px;color:var(--faint);background:var(--panel-2);border-radius:10px;padding:1px 7px}
+  .nav a.on .cnt{background:#fff;color:var(--accent)}
+  .mini{margin-top:auto;font-size:11px;color:var(--faint);padding:9px;border-top:1px solid var(--line);line-height:1.5}
+  .mini b{color:var(--muted)}
+
+  /* SPEC DOC center */
+  .doc-wrap{flex:1;overflow:hidden;display:flex;justify-content:center;background:var(--bg)}
+  .doc{width:660px;padding:30px 8px 0;height:100%;overflow:hidden}
+  .crumb{font-size:12px;color:var(--faint);display:flex;align-items:center;gap:7px;margin-bottom:18px}
+  .crumb .tag{font-size:10.5px;font-weight:650;color:var(--mikan);background:var(--mikan-soft);border-radius:6px;padding:2px 7px}
+  .doc h1{font-size:29px;font-weight:780;letter-spacing:-.02em;line-height:1.25}
+  .doc .sub{font-size:12.5px;color:var(--muted);margin-top:9px;display:flex;gap:14px;align-items:center}
+  .doc .sub .who{display:flex;align-items:center;gap:6px}
+  .doc .sub .who .d{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:9px;color:#fff;font-weight:700}
+
+  .callout{display:flex;gap:11px;background:var(--accent-soft);border:1px solid #E0E0FB;border-radius:11px;padding:13px 14px;margin:20px 0 6px}
+  .callout .ai{width:22px;height:22px;border-radius:6px;background:var(--spectrum);flex:none;position:relative;margin-top:1px}
+  .callout .ai::after{content:"";position:absolute;inset:5px;border-radius:2px;background:#fff;opacity:.9}
+  .callout .tx{font-size:12.5px;line-height:1.6;color:#3E3B6E}
+  .callout .tx b{color:#312E63}
+
+  .blk{position:relative;padding:5px 0 5px 26px;font-size:14.5px;line-height:1.72;color:var(--ink-2)}
+  .blk .hd{position:absolute;left:0;top:7px;color:#D5D5D0;font-size:13px;letter-spacing:-2px}
+  .h2{font-size:17px;font-weight:720;color:var(--ink);padding-top:18px}
+  .li{display:flex;gap:10px}.li .bt{color:var(--faint);flex:none}
+  .li b,.blk b{color:var(--ink);font-weight:650}
+  .chkrow{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.6;color:var(--ink-2)}
+  .chk{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line-2);flex:none;margin-top:2px;display:grid;place-items:center;font-size:11px;color:#fff}
+  .chk.on{background:var(--ok);border-color:var(--ok)}
+  .pill-ref{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:2px 8px;font-size:12px;font-weight:600;color:var(--ink-2);vertical-align:middle}
+  .pill-ref .sq{width:13px;height:13px;border-radius:4px;background:var(--mikan)}
+  .slash{margin:10px 0 0 26px;font-size:13px;color:var(--faint);display:flex;align-items:center;gap:8px}
+  .slash .k{font-size:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:2px 7px;color:var(--muted)}
+
+  /* QA RIGHT */
+  .right{width:368px;flex:none;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .rp-head{padding:15px 16px 12px;border-bottom:1px solid var(--line)}
+  .rp-head .t{font-size:14px;font-weight:680;display:flex;align-items:center;gap:8px}
+  .rp-head .t .ai{width:20px;height:20px;border-radius:6px;background:var(--spectrum);position:relative}
+  .rp-head .t .ai::after{content:"";position:absolute;inset:5px;border-radius:2px;background:#fff;opacity:.9}
+  .rp-head .s{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5}
+  .rp-head .s b{color:var(--ink-2)}
+  .qa-scroll{flex:1;overflow:hidden;padding:13px 14px;display:flex;flex-direction:column;gap:10px}
+  .qa{border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:#fff}
+  .qa .top{display:flex;align-items:center;gap:8px}
+  .qa .pr{font-size:9.5px;font-weight:750;border-radius:5px;padding:2px 6px;letter-spacing:.03em}
+  .qa .pr.p0{color:var(--p0);background:var(--p0-soft)} .qa .pr.p1{color:#9A7000;background:var(--p1-soft)}
+  .qa .pr.a11y{color:var(--accent);background:var(--accent-soft)}
+  .qa .ti{font-size:13px;font-weight:640;line-height:1.4}
+  .qa .id{margin-left:auto;font-size:10px;color:var(--faint)}
+  .qa .step{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.6}
+  .qa .step .lb{color:var(--ink-2);font-weight:650}
+  .qa .exp{font-size:11.5px;color:var(--ink-2);margin-top:6px;background:var(--panel-2);border-radius:7px;padding:7px 9px;line-height:1.5}
+  .qa .exp .ok{color:var(--ok);font-weight:700}
+  .qa-foot{flex:none;border-top:1px solid var(--line);padding:12px 14px;display:flex;gap:8px}
+  .qa-foot .b{flex:1;text-align:center;font-size:12px;font-weight:650;padding:9px 0;border-radius:9px;border:1px solid var(--line);color:var(--ink-2)}
+  .qa-foot .b.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="brand"><div class="logo"></div><b>continuum</b><span class="v">beta</span></div>
+    <div class="pipe"><div class="pipe-inner">
+      <div class="stage done"><span class="dot">✓</span>Intent</div><div class="arrow"></div>
+      <div class="stage now"><span class="dot">◆</span>Spec</div><div class="arrow"></div>
+      <div class="stage done"><span class="dot">✓</span>Design / Mock</div><div class="arrow"></div>
+      <div class="stage now"><span class="dot">◆</span>QA</div>
+    </div></div>
+    <div class="topbar-right">
+      <div class="repo-pill"><span class="gd"></span><span class="mono">mikan</span> 同期済</div>
+      <div class="avs"><div class="av" style="background:#FF8900">奏</div><div class="av" style="background:#5A57F2">D</div><div class="av" style="background:#34C7BE">Q</div></div>
+      <div class="btn-share">共有</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- SIDEBAR -->
+    <div class="side">
+      <div class="ws"><div class="ic">奏</div><div><div class="t">三上奏太</div><div class="s">Personal Workspace</div></div><div class="chev">⌄</div></div>
+      <div class="sec-l">接続済みリポジトリ</div>
+      <div class="repo"><div class="sq" style="background:#FF8900">M</div><div class="nm">mikan / fs-student-web</div><span class="gd"></span><span class="ct mono">142</span></div>
+      <div class="repo"><div class="sq" style="background:#111">S</div><div class="nm">Sotas / design-system</div><span class="gd"></span><span class="ct mono">88</span></div>
+      <div class="nav">
+        <a href="#"><span class="gi">◇</span>Design Issues<span class="cnt">6</span></a>
+        <a href="#"><span class="gi">▦</span>Canvas</a>
+        <a href="#" class="on"><span class="gi">▤</span>Specs</a>
+        <a href="#"><span class="gi">✓</span>QA Cases<span class="cnt">9</span></a>
+        <a href="#"><span class="gi">◐</span>Comments<span class="cnt">3</span></a>
+      </div>
+      <div class="mini"><b>ISSUE-214</b> · mikan<br>Spec とモックは同期。<br>編集すると QA が自動で再生成されます。</div>
+    </div>
+
+    <!-- SPEC DOC -->
+    <div class="doc-wrap">
+      <div class="doc">
+        <div class="crumb"><span class="tag">● mikan</span><span class="mono">ISSUE-214</span> ›<span>Specs</span>› 単語復習（SRS）</div>
+        <h1>単語の間隔反復（SRS）復習画面</h1>
+        <div class="sub">
+          <span class="who"><span class="d" style="background:#FF8900">奏</span>三上奏太</span>
+          <span>·</span><span>最終更新 たった今</span><span>·</span><span style="color:var(--ok)">● Mock と同期</span>
+        </div>
+
+        <div class="callout">
+          <div class="ai"></div>
+          <div class="tx"><b>AI が下書きしました。</b> mikan の既存実装（学習ログ・WordCard・SRSスケジューラ）を読み取り、現行プロダクトの語彙と整合する形で仕様化しています。編集はあなたが、構成は AI が。</div>
+        </div>
+
+        <div class="blk h2"><span class="hd">⋮⋮</span>背景 / なぜ</div>
+        <div class="blk"><span class="hd">⋮⋮</span>現状、復習は「単語帳の再表示」のみで、想起の自己評価がなく定着が測れない。<b>間隔反復（SRS）</b>で「もう一度／あいまい／覚えた」を記録し、出題間隔を最適化する。</div>
+
+        <div class="blk h2"><span class="hd">⋮⋮</span>受け入れ基準</div>
+        <div class="blk"><div class="chkrow"><span class="chk on">✓</span><div>復習セッションで、各単語に対し <b>3段階（もう一度／あいまい／覚えた）</b>の自己評価ができる</div></div></div>
+        <div class="blk"><div class="chkrow"><span class="chk on">✓</span><div>評価結果に応じて次回出題間隔が更新され、進捗バーが回答数を反映する</div></div></div>
+        <div class="blk"><div class="chkrow"><span class="chk">　</span><div>「答えを表示」前後で状態が切り替わる（<span class="pill-ref"><span class="sq"></span>variant: 答え表示後</span> と一致）</div></div></div>
+        <div class="blk"><div class="chkrow"><span class="chk">　</span><div>既存トークン（primary <b>#FF8900</b>）・<b>WordCard</b> の体裁から逸脱しない</div></div></div>
+
+        <div class="blk h2"><span class="hd">⋮⋮</span>画面と流用部品</div>
+        <div class="blk"><span class="hd">⋮⋮</span>主画面は <span class="pill-ref"><span class="sq"></span>復習画面 — Recall</span> を参照。流用: <b>WordCard</b> · <b>PrimaryButton</b> · <b>ProgressBar</b>（すべて mikan 既存）。新規は自己評価の3ボタンのみ。</div>
+
+        <div class="slash"><span class="k">/</span> ブロックを追加 ・ <span class="k">/AI</span> で続きを書かせる</div>
+      </div>
+    </div>
+
+    <!-- QA RIGHT -->
+    <div class="right">
+      <div class="rp-head">
+        <div class="t"><span class="ai"></span>QA ケース</div>
+        <div class="s">Spec の受け入れ基準と <b>Mock</b> から <b>9件</b>を自動生成。Spec を編集すると差分だけ再生成します。</div>
+      </div>
+      <div class="qa-scroll">
+        <div class="qa">
+          <div class="top"><span class="pr p0">P0</span><span class="ti">「覚えた」で次の単語に進む</span><span class="id mono">QA-1</span></div>
+          <div class="step"><span class="lb">手順:</span> 復習中に「覚えた」をタップ → 次の単語が表示される</div>
+          <div class="exp"><span class="ok">期待:</span> 進捗が 8/19 → 9/19 に増え、出題間隔が延長される</div>
+        </div>
+        <div class="qa">
+          <div class="top"><span class="pr p0">P0</span><span class="ti">「もう一度」で短間隔に戻る</span><span class="id mono">QA-2</span></div>
+          <div class="step"><span class="lb">手順:</span> 「もう一度」をタップ → 同セッション後半で再出題</div>
+          <div class="exp"><span class="ok">期待:</span> SRS スケジューラが最短間隔へ更新される</div>
+        </div>
+        <div class="qa">
+          <div class="top"><span class="pr p1">P1</span><span class="ti">「答えを表示」で意味・例文が出る</span><span class="id mono">QA-3</span></div>
+          <div class="step"><span class="lb">手順:</span> 出題状態で「答えを表示」をタップ</div>
+          <div class="exp"><span class="ok">期待:</span> variant「答え表示後」と一致した状態に遷移</div>
+        </div>
+        <div class="qa">
+          <div class="top"><span class="pr p1">P1</span><span class="ti">音声再生ボタンで発音が鳴る</span><span class="id mono">QA-4</span></div>
+          <div class="step"><span class="lb">手順:</span> WordCard の ♪ をタップ</div>
+          <div class="exp"><span class="ok">期待:</span> 既存の音声再生ロジックが呼ばれ発音再生</div>
+        </div>
+        <div class="qa">
+          <div class="top"><span class="pr a11y">A11Y</span><span class="ti">自己評価ボタンのコントラスト</span><span class="id mono">QA-5</span></div>
+          <div class="step"><span class="lb">手順:</span> 3ボタンの文字色 / 背景のコントラスト比を測定</div>
+          <div class="exp"><span class="ok">期待:</span> WCAG AA（4.5:1）以上を満たす</div>
+        </div>
+      </div>
+      <div class="qa-foot">
+        <div class="b">Playwright に書き出す</div>
+        <div class="b pri">Linear に送る</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

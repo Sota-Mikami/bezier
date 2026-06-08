@@ -1,0 +1,56 @@
+{
+  "indexName": "chomchom",
+  "repoPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom",
+  "previewDir": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/continuum-preview",
+  "pagePath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/continuum-preview/page.tsx",
+  "layoutPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/continuum-preview/layout.tsx",
+  "renderRate": 83,
+  "realCount": 5,
+  "fallbackCount": 1,
+  "total": 6,
+  "continueOrFix": "✅ continue",
+  "nodes": [
+    {
+      "index": 0,
+      "kind": "generated",
+      "component": "screen-root",
+      "status": "REAL",
+      "fallbackReason": null
+    },
+    {
+      "index": 1,
+      "kind": "generated",
+      "component": "header",
+      "status": "REAL",
+      "fallbackReason": null
+    },
+    {
+      "index": 2,
+      "kind": "existing_component",
+      "component": "ReviewSession",
+      "status": "FALLBACK",
+      "fallbackReason": "service-dependent (Session)"
+    },
+    {
+      "index": 3,
+      "kind": "existing_component",
+      "component": "VocabFlashcard",
+      "status": "REAL",
+      "fallbackReason": null
+    },
+    {
+      "index": 4,
+      "kind": "existing_component",
+      "component": "AchievementCelebration",
+      "status": "REAL",
+      "fallbackReason": null
+    },
+    {
+      "index": 5,
+      "kind": "existing_component",
+      "component": "TabBar",
+      "status": "REAL",
+      "fallbackReason": null
+    }
+  ]
+}

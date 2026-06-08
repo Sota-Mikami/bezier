@@ -1,0 +1,81 @@
+{
+  "label": "語彙SRS復習",
+  "route": "/review/srs",
+  "reused": [
+    "ReviewSession",
+    "TabBar",
+    "AchievementCelebration",
+    "VocabFlashcard"
+  ],
+  "nodes": [
+    {
+      "node_kind": "generated",
+      "props": {
+        "role": "screen-root",
+        "name": "SrsReviewScreen",
+        "layout": "flex flex-col min-h-screen bg-[--color-background-main]",
+        "note": "SRS復習画面のルート。上部にdue状況ヘッダー、中央に復習エンジン、下部にTabBar。"
+      },
+      "children_note": "ReviewHeader, ReviewSession(main), TabBar, AchievementCelebration(overlay)"
+    },
+    {
+      "node_kind": "generated",
+      "props": {
+        "role": "header",
+        "name": "ReviewDueHeader",
+        "layout": "sticky top-0 px-5 py-4 flex items-center justify-between",
+        "content": {
+          "title": "今日の復習",
+          "subtitle": "間隔反復で記憶を定着",
+          "dueBadge": "{dueCount} 枚",
+          "progressBar": "{reviewed}/{total}"
+        },
+        "tokens": [
+          "--color-text-main",
+          "--color-mikan-orange",
+          "--text-title-sm",
+          "--radius-pill"
+        ],
+        "note": "復習対象（due）件数と進捗を示す最小限の新規ヘッダー。"
+      }
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "ReviewSession",
+      "props": {
+        "items": "{dueItems}",
+        "note": "SRSの中核。due状態の語彙アイテム配列を受け取り、Again/Hard/Good/Easy 判定で次回出題間隔を更新しながら出題する。"
+      },
+      "children_note": "内部で VocabFlashcard 等の出題UIを駆動"
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "VocabFlashcard",
+      "props": {
+        "freeplay": true,
+        "vocab": "{currentCard.vocab}",
+        "meta": "{currentCard.meta}",
+        "lesson_id": "{currentCard.lesson_id}",
+        "note": "ReviewSessionが各復習カードの表裏めくり出題に使う既存フラッシュカードUI（流用の中心）。"
+      }
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "AchievementCelebration",
+      "props": {
+        "achievements": "{sessionAchievements}",
+        "onClose": "navigate('/review')",
+        "note": "全due消化時に表示。復習セッション完了の達成演出オーバーレイ。"
+      }
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "TabBar",
+      "props": {
+        "active": "review",
+        "dueCount": "{dueCount}",
+        "note": "下部ナビ。復習タブをアクティブにし、残りdue件数バッジを表示。"
+      }
+    }
+  ]
+}

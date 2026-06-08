@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://continuum.local/scene-graph/v1",
+  "title": "continuum scene-graph v1",
+  "description": "ローカルエンジン ↔ クラウド SoR のコントラクト最小版。生成した画面の構造を記述する。",
+  "type": "object",
+  "required": ["schema_version", "label", "nodes", "reused"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1",
+      "description": "schema バージョン。クラウド SoR での互換性管理に使用。"
+    },
+    "label": {
+      "type": "string",
+      "description": "画面の人間可読なラベル（例: '語彙SRS復習'）"
+    },
+    "route": {
+      "type": "string",
+      "description": "画面のルートパス（例: '/review/srs'）"
+    },
+    "source_repo": {
+      "type": "string",
+      "description": "抽出元 repo のパス（再現性・クラウドSoRへの紐付けに使用）"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "生成日時（ISO 8601）"
+    },
+    "intent": {
+      "type": "string",
+      "description": "生成に使用したインテント文字列"
+    },
+    "nodes": {
+      "type": "array",
+      "description": "scene-graph を構成するノードのリスト（ツリー構造は children_note で表現）",
+      "items": {
+        "type": "object",
+        "required": ["node_kind"],
+        "properties": {
+          "node_kind": {
+            "type": "string",
+            "enum": ["existing_component", "generated", "primitive"],
+            "description": "ノードの種別。existing_component=既存パーツ流用 / generated=新規生成 / primitive=HTML相当の原始要素"
+          },
+          "component": {
+            "type": "string",
+            "description": "node_kind=existing_component のとき、流用する既存パーツ名（component_index に存在するもの）"
+          },
+          "props": {
+            "type": "object",
+            "description": "コンポーネントに渡す props（自由形式）"
+          },
+          "children_note": {
+            "type": "string",
+            "description": "子ノードの構成を自然言語で記述（構造ヒント）"
+          }
+        }
+      }
+    },
+    "reused": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "流用した既存パーツ名のリスト（component_index の name と一致するもの）。クラウド SoR での流用率計測に使用。"
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1",
+      "label": "語彙SRS復習",
+      "route": "/review/srs",
+      "source_repo": "/path/to/chom-chom",
+      "intent": "既存部品で、語彙のSRS（間隔反復）復習画面を作って",
+      "nodes": [
+        {
+          "node_kind": "existing_component",
+          "component": "ReviewSession",
+          "props": { "items": "{dueItems}" }
+        },
+        {
+          "node_kind": "existing_component",
+          "component": "TabBar",
+          "props": { "active": "review", "dueCount": "{dueCount}" }
+        }
+      ],
+      "reused": ["ReviewSession", "TabBar", "AchievementCelebration", "VocabFlashcard"]
+    }
+  ]
+}

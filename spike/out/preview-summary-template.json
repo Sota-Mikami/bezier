@@ -1,0 +1,63 @@
+{
+  "indexName": "template",
+  "repoPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template",
+  "previewDir": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/continuum-preview",
+  "pagePath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/continuum-preview/page.tsx",
+  "layoutPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/continuum-preview/layout.tsx",
+  "renderRate": 71,
+  "realCount": 5,
+  "fallbackCount": 2,
+  "total": 7,
+  "continueOrFix": "✅ continue",
+  "nodes": [
+    {
+      "index": 0,
+      "kind": "existing_component",
+      "component": "ProtoNav",
+      "status": "REAL",
+      "fallbackReason": null
+    },
+    {
+      "index": 1,
+      "kind": "existing_component",
+      "component": "AuthGate",
+      "status": "FALLBACK",
+      "fallbackReason": "blocking-provider (auth/password gate)"
+    },
+    {
+      "index": 2,
+      "kind": "generated",
+      "component": "page-body",
+      "status": "REAL",
+      "fallbackReason": null
+    },
+    {
+      "index": 3,
+      "kind": "generated",
+      "component": "section-card",
+      "status": "REAL",
+      "fallbackReason": null
+    },
+    {
+      "index": 4,
+      "kind": "generated",
+      "component": "section-card",
+      "status": "REAL",
+      "fallbackReason": null
+    },
+    {
+      "index": 5,
+      "kind": "existing_component",
+      "component": "ScreenPanel",
+      "status": "FALLBACK",
+      "fallbackReason": "complex ref props: Props"
+    },
+    {
+      "index": 6,
+      "kind": "primitive",
+      "component": "footer-actions",
+      "status": "REAL",
+      "fallbackReason": null
+    }
+  ]
+}

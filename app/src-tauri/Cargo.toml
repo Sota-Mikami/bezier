@@ -1,0 +1,50 @@
+[package]
+name = "continuum"
+version = "0.1.0"
+description = "continuum — local-folder workspace editor"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# The desktop entrypoint links against this lib; name must be a valid ident.
+name = "continuum_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+# Pin: toml 1.1.x requires Cargo/Rust 1.85 (edition2024); Homebrew rust is 1.83.
+# 1.0.7 (MSRV 1.76) satisfies tauri's `toml >=0.9,<=1` and unifies the 1.x group.
+toml = "=1.0.7"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# See build-dependencies note: keep the normal-dep copy of toml on 1.0.7 too.
+toml = "=1.0.7"
+# Pin: idna_adapter 1.2.1+ pulls the ICU 2.0 stack (edition2024 / Rust 1.85+).
+# 1.2.0 uses icu 1.x (MSRV 1.67) and satisfies the `^1` requirement from idna/url.
+idna_adapter = "=1.2.0"
+# Pin: toml ecosystem crates whose 1.1.x bumped MSRV to 1.85 (edition2024).
+# These 1.0.x releases (MSRV 1.76) satisfy toml 1.0.7's requirements.
+serde_spanned = "=1.0.4"
+toml_datetime = "=1.0.1"
+toml_writer = "=1.0.7"
+toml_parser = "=1.0.10"
+# Pin: uuid 1.21+ requires getrandom 0.4 (edition2024 / Rust 1.85). 1.20.0 uses
+# getrandom 0.3 (MSRV 1.63) and satisfies tauri's `uuid = "1"` requirement.
+uuid = "=1.20.0"
+# Pin: hashbrown 0.17 + indexmap 2.14 require edition2024 / Rust 1.85.
+# indexmap 2.13.1 (hashbrown ^0.16.1, MSRV 1.82) is the last pre-edition2024 line.
+indexmap = "=2.13.1"
+hashbrown = "=0.16.1"
+# Pin: these crates' latest patches raised MSRV above 1.83. Pinned to the last
+# release that builds on Homebrew rust 1.83.
+unicode-segmentation = "=1.12.0"
+# Pin: the `time` crate stack bumped MSRV past 1.83 in recent patches.
+# These are the last releases that build on Rust 1.83.
+time = "=0.3.45"
+time-core = "=0.1.7"
+time-macros = "=0.2.25"
+deranged = "=0.5.5"

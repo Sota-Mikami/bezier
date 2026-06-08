@@ -1,0 +1,624 @@
+{
+  "repo": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template",
+  "scannedFiles": 18,
+  "parseErrors": 0,
+  "counts": {
+    "components": 18,
+    "screens": 8,
+    "parts": 10,
+    "edges": 71,
+    "colors": 0,
+    "cssVars": 90
+  },
+  "components": [
+    {
+      "name": "RootLayout",
+      "file": "src/app/layout.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "ref",
+        "name": "Readonly"
+      }
+    },
+    {
+      "name": "Home",
+      "file": "src/app/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "ProtoNav",
+      "file": "src/app/proto-nav.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "CafeDetailPage",
+      "file": "src/app/cafe/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "AdminPage",
+      "file": "src/app/admin/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "AuthGate",
+      "file": "src/app/comments/auth-gate.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "CommentContextProvider",
+      "file": "src/app/comments/comment-context.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "CommentOverlay",
+      "file": "src/app/comments/comment-overlay.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "CommentPin",
+      "file": "src/app/comments/comment-pin.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "CommentPinProps"
+      }
+    },
+    {
+      "name": "CommentPopover",
+      "file": "src/app/comments/comment-popover.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "CommentPopoverProps"
+      }
+    },
+    {
+      "name": "CommentLayer",
+      "file": "src/app/comments/comment-provider.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "NewCommentPopover",
+      "file": "src/app/comments/new-comment-popover.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "NewCommentPopoverProps"
+      }
+    },
+    {
+      "name": "LogPage",
+      "file": "src/app/log/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "MapPage",
+      "file": "src/app/map/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "ScreenNode",
+      "file": "src/app/map/screen-node.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "NodeProps"
+      }
+    },
+    {
+      "name": "ScreenPanel",
+      "file": "src/app/map/screen-panel.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "QAPage",
+      "file": "src/app/qa/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "SpecPage",
+      "file": "src/app/spec/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    }
+  ],
+  "edges": [
+    {
+      "from": "RootLayout",
+      "to": "CommentContextProvider",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "ProtoNav",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "CommentLayer",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "Home",
+      "to": "Link",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "Home",
+      "to": "MapPin",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "Home",
+      "to": "Search",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "Home",
+      "to": "Grid3x3",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "Home",
+      "to": "List",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "Home",
+      "to": "Suspense",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "Link",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "ArrowLeft",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "LayoutGrid",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "ScreenPanel",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "MessageCircle",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "ChevronDown",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "Settings",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "LogOut",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "Suspense",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "CafeDetailPage",
+      "to": "Star",
+      "file": "src/app/cafe/page.tsx"
+    },
+    {
+      "from": "CafeDetailPage",
+      "to": "Flame",
+      "file": "src/app/cafe/page.tsx"
+    },
+    {
+      "from": "CafeDetailPage",
+      "to": "Link",
+      "file": "src/app/cafe/page.tsx"
+    },
+    {
+      "from": "CafeDetailPage",
+      "to": "ArrowLeft",
+      "file": "src/app/cafe/page.tsx"
+    },
+    {
+      "from": "CafeDetailPage",
+      "to": "MapPin",
+      "file": "src/app/cafe/page.tsx"
+    },
+    {
+      "from": "CafeDetailPage",
+      "to": "Clock",
+      "file": "src/app/cafe/page.tsx"
+    },
+    {
+      "from": "CafeDetailPage",
+      "to": "Suspense",
+      "file": "src/app/cafe/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "Link",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "Loader2",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "Plus",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "Check",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "X",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "Pencil",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "ShieldCheck",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "User",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AdminPage",
+      "to": "Trash2",
+      "file": "src/app/admin/page.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "X",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "ShieldX",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "LogOut",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "CheckCircle",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "Mail",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "Loader2",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "CommentOverlay",
+      "to": "CommentPopover",
+      "file": "src/app/comments/comment-overlay.tsx"
+    },
+    {
+      "from": "CommentOverlay",
+      "to": "NewCommentPopover",
+      "file": "src/app/comments/comment-overlay.tsx"
+    },
+    {
+      "from": "CommentOverlay",
+      "to": "CommentPin",
+      "file": "src/app/comments/comment-overlay.tsx"
+    },
+    {
+      "from": "CommentPopover",
+      "to": "Thread",
+      "file": "src/app/comments/comment-popover.tsx"
+    },
+    {
+      "from": "CommentLayer",
+      "to": "LiveblocksProvider",
+      "file": "src/app/comments/comment-provider.tsx"
+    },
+    {
+      "from": "CommentLayer",
+      "to": "RoomProvider",
+      "file": "src/app/comments/comment-provider.tsx"
+    },
+    {
+      "from": "CommentLayer",
+      "to": "CommentOverlay",
+      "file": "src/app/comments/comment-provider.tsx"
+    },
+    {
+      "from": "CommentLayer",
+      "to": "AuthGate",
+      "file": "src/app/comments/comment-provider.tsx"
+    },
+    {
+      "from": "NewCommentPopover",
+      "to": "Composer",
+      "file": "src/app/comments/new-comment-popover.tsx"
+    },
+    {
+      "from": "LogPage",
+      "to": "Link",
+      "file": "src/app/log/page.tsx"
+    },
+    {
+      "from": "LogPage",
+      "to": "ArrowLeft",
+      "file": "src/app/log/page.tsx"
+    },
+    {
+      "from": "LogPage",
+      "to": "RefreshCw",
+      "file": "src/app/log/page.tsx"
+    },
+    {
+      "from": "LogPage",
+      "to": "Circle",
+      "file": "src/app/log/page.tsx"
+    },
+    {
+      "from": "LogPage",
+      "to": "CheckCircle2",
+      "file": "src/app/log/page.tsx"
+    },
+    {
+      "from": "LogPage",
+      "to": "MessageCircle",
+      "file": "src/app/log/page.tsx"
+    },
+    {
+      "from": "LogPage",
+      "to": "ExternalLink",
+      "file": "src/app/log/page.tsx"
+    },
+    {
+      "from": "MapPage",
+      "to": "ReactFlow",
+      "file": "src/app/map/page.tsx"
+    },
+    {
+      "from": "MapPage",
+      "to": "Background",
+      "file": "src/app/map/page.tsx"
+    },
+    {
+      "from": "MapPage",
+      "to": "Panel",
+      "file": "src/app/map/page.tsx"
+    },
+    {
+      "from": "MapPage",
+      "to": "ZoomIn",
+      "file": "src/app/map/page.tsx"
+    },
+    {
+      "from": "MapPage",
+      "to": "ZoomOut",
+      "file": "src/app/map/page.tsx"
+    },
+    {
+      "from": "MapPage",
+      "to": "AlignHorizontalSpaceAround",
+      "file": "src/app/map/page.tsx"
+    },
+    {
+      "from": "MapPage",
+      "to": "ScreenPanel",
+      "file": "src/app/map/page.tsx"
+    },
+    {
+      "from": "MapPage",
+      "to": "ReactFlowProvider",
+      "file": "src/app/map/page.tsx"
+    },
+    {
+      "from": "ScreenNode",
+      "to": "Handle",
+      "file": "src/app/map/screen-node.tsx"
+    },
+    {
+      "from": "ScreenPanel",
+      "to": "RectangleVertical",
+      "file": "src/app/map/screen-panel.tsx"
+    },
+    {
+      "from": "ScreenPanel",
+      "to": "Columns2",
+      "file": "src/app/map/screen-panel.tsx"
+    },
+    {
+      "from": "ScreenPanel",
+      "to": "Columns3",
+      "file": "src/app/map/screen-panel.tsx"
+    },
+    {
+      "from": "ScreenPanel",
+      "to": "LayoutGrid",
+      "file": "src/app/map/screen-panel.tsx"
+    },
+    {
+      "from": "ScreenPanel",
+      "to": "Grid3x3",
+      "file": "src/app/map/screen-panel.tsx"
+    },
+    {
+      "from": "ScreenPanel",
+      "to": "X",
+      "file": "src/app/map/screen-panel.tsx"
+    }
+  ],
+  "tokens": {
+    "colors": [],
+    "cssVars": [
+      "--color-orange-100",
+      "--color-orange-200",
+      "--color-orange-300",
+      "--color-orange-400",
+      "--color-orange-500",
+      "--color-orange-600",
+      "--color-orange-700",
+      "--color-orange-800",
+      "--color-orange-900",
+      "--color-orange-1000",
+      "--color-gray-100",
+      "--color-gray-200",
+      "--color-gray-300",
+      "--color-gray-400",
+      "--color-gray-500",
+      "--color-gray-600",
+      "--color-gray-700",
+      "--color-gray-800",
+      "--color-gray-900",
+      "--color-gray-1000",
+      "--color-bg",
+      "--color-bg-surface",
+      "--color-bg-disabled",
+      "--color-bg-overlay",
+      "--color-primary",
+      "--color-primary-hover",
+      "--color-primary-press",
+      "--color-primary-subtle",
+      "--color-primary-tint",
+      "--color-positive",
+      "--color-positive-hover",
+      "--color-positive-subtle",
+      "--color-negative",
+      "--color-negative-hover",
+      "--color-negative-subtle",
+      "--color-info",
+      "--color-info-hover",
+      "--color-info-subtle",
+      "--color-text",
+      "--color-text-sub",
+      "--color-text-hint",
+      "--color-text-disabled",
+      "--color-text-primary",
+      "--color-text-positive",
+      "--color-text-negative",
+      "--color-text-info",
+      "--color-on-fill",
+      "--color-border",
+      "--color-border-primary",
+      "--color-border-focus",
+      "--color-level-excellent",
+      "--color-level-excellent-bg",
+      "--color-level-great",
+      "--color-level-great-bg",
+      "--color-level-good",
+      "--color-level-good-bg",
+      "--color-level-bad",
+      "--color-level-bad-bg",
+      "--color-level-not-yet",
+      "--color-wf-bg",
+      "--color-wf-surface",
+      "--color-wf-border",
+      "--color-wf-text",
+      "--color-wf-text-sub",
+      "--color-wf-accent",
+      "--spacing-1",
+      "--spacing-2",
+      "--spacing-3",
+      "--spacing-4",
+      "--spacing-5",
+      "--spacing-6",
+      "--spacing-7",
+      "--spacing-8",
+      "--spacing-9",
+      "--spacing-10",
+      "--radius-none",
+      "--radius-sm",
+      "--radius-md",
+      "--radius-lg",
+      "--radius-xl",
+      "--radius-full",
+      "--font-sans",
+      "--shadow-bottom-100",
+      "--shadow-bottom-200",
+      "--shadow-bottom-300",
+      "--shadow-top-100",
+      "--lb-accent",
+      "--lb-accent-foreground",
+      "--lb-spacing",
+      "--lb-radius"
+    ],
+    "source": [
+      "src/app/globals.css"
+    ]
+  }
+}

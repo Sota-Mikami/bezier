@@ -1,0 +1,105 @@
+{
+  "label": "Agent Activity Log",
+  "route": "/activity",
+  "reused": [
+    "ProtoNav",
+    "ActivityView",
+    "AgentsView",
+    "AgentDock",
+    "CommandPalette"
+  ],
+  "nodes": [
+    {
+      "node_kind": "existing_component",
+      "component": "ProtoNav",
+      "props": {
+        "slot": "top-nav"
+      }
+    },
+    {
+      "node_kind": "generated",
+      "props": {
+        "role": "page-shell",
+        "layout": "grid",
+        "columns": "260px 1fr",
+        "gap": "0",
+        "background": "var(--background)",
+        "minHeight": "100vh",
+        "note": "二カラム: 左=エージェント一覧, 右=実行ログ本体"
+      },
+      "children_note": "left column hosts AgentsView; right column hosts the log header + ActivityView"
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "AgentsView",
+      "props": {
+        "workspaceId": "{{workspaceId}}",
+        "slot": "left-rail",
+        "note": "エージェント選択でログを絞り込む文脈サイドバー"
+      }
+    },
+    {
+      "node_kind": "generated",
+      "props": {
+        "role": "log-header",
+        "layout": "stack",
+        "direction": "horizontal",
+        "align": "center",
+        "justify": "space-between",
+        "padding": "16px 24px",
+        "borderBottom": "1px solid var(--border)",
+        "title": "実行ログ / アクティビティ",
+        "note": "右カラム上部。タイトル + フィルタ群"
+      },
+      "children_note": "title text on the left, FilterBar controls on the right"
+    },
+    {
+      "node_kind": "generated",
+      "props": {
+        "role": "filter-bar",
+        "layout": "stack",
+        "direction": "horizontal",
+        "gap": "8px",
+        "controls": [
+          "status: all / running / success / failed",
+          "agent: all",
+          "timeRange: last 24h",
+          "search input"
+        ],
+        "radius": "var(--radius-md)",
+        "border": "1px solid var(--input)",
+        "note": "ステータス・エージェント・期間でログを絞り込むフィルタ。既存パーツが無いため最小生成"
+      }
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "ActivityView",
+      "props": {
+        "workspaceId": "{{workspaceId}}",
+        "slot": "main",
+        "note": "メインの実行ログ/アクティビティ一覧。タイムライン形式の行リスト本体"
+      }
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "AgentDock",
+      "props": {
+        "issueId": "{{selectedRunIssueId}}",
+        "open": "{{detailOpen}}",
+        "onClose": "{{closeDetail}}",
+        "slot": "right-drawer",
+        "note": "行クリックで開く実行詳細ドロワー（ステップ/ツール呼び出しの詳細ログ）"
+      }
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "CommandPalette",
+      "props": {
+        "open": "{{paletteOpen}}",
+        "onOpenChange": "{{setPaletteOpen}}",
+        "currentWorkspaceId": "{{workspaceId}}",
+        "note": "⌘K グローバル操作（ログのジャンプ/フィルタ呼び出し）"
+      }
+    }
+  ]
+}

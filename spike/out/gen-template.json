@@ -1,0 +1,160 @@
+{
+  "label": "Board Share & Export Settings",
+  "route": "/board/share",
+  "reused": [
+    "ProtoNav",
+    "AuthGate",
+    "ScreenPanel"
+  ],
+  "nodes": [
+    {
+      "node_kind": "existing_component",
+      "component": "ProtoNav",
+      "props": {
+        "slot": "top",
+        "title": "Design Board — Share & Export"
+      }
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "AuthGate",
+      "props": {
+        "purpose": "Gate share/export controls behind sign-in",
+        "children_note": "wraps the settings body so only authed makers can change visibility"
+      },
+      "children_note": "contains the page body below"
+    },
+    {
+      "node_kind": "generated",
+      "props": {
+        "role": "page-body",
+        "layout": "two-column",
+        "note": "left = settings forms, right = live board preview"
+      },
+      "children_note": "ShareSettingsCard + ExportSettingsCard on left, board preview (ScreenPanel) on right"
+    },
+    {
+      "node_kind": "generated",
+      "props": {
+        "role": "section-card",
+        "title": "Share",
+        "fields": [
+          {
+            "type": "segmented",
+            "label": "Visibility",
+            "options": [
+              "Private",
+              "Anyone with link",
+              "Public"
+            ],
+            "value": "Anyone with link"
+          },
+          {
+            "type": "copy-input",
+            "label": "Share link",
+            "value": "https://proto.duong-sm.com/board/abc123",
+            "action": "Copy"
+          },
+          {
+            "type": "toggle",
+            "label": "Allow comments",
+            "value": true
+          },
+          {
+            "type": "toggle",
+            "label": "Allow viewers to export",
+            "value": false
+          },
+          {
+            "type": "select",
+            "label": "Link expiry",
+            "options": [
+              "Never",
+              "7 days",
+              "30 days"
+            ],
+            "value": "Never"
+          }
+        ]
+      },
+      "children_note": "invite-by-email row with role dropdown (Viewer/Commenter/Editor)"
+    },
+    {
+      "node_kind": "generated",
+      "props": {
+        "role": "section-card",
+        "title": "Export",
+        "fields": [
+          {
+            "type": "radio-group",
+            "label": "Format",
+            "options": [
+              "PNG",
+              "PDF",
+              "SVG",
+              "JSON spec"
+            ],
+            "value": "PNG"
+          },
+          {
+            "type": "segmented",
+            "label": "Scale",
+            "options": [
+              "1x",
+              "2x",
+              "3x"
+            ],
+            "value": "2x"
+          },
+          {
+            "type": "checkbox-group",
+            "label": "Include",
+            "options": [
+              "Comments",
+              "Screen labels",
+              "Background"
+            ],
+            "value": [
+              "Screen labels"
+            ]
+          },
+          {
+            "type": "select",
+            "label": "Scope",
+            "options": [
+              "Entire board",
+              "Selected screens",
+              "Current viewport"
+            ],
+            "value": "Entire board"
+          }
+        ]
+      },
+      "children_note": "primary 'Export' button + secondary 'Save settings'"
+    },
+    {
+      "node_kind": "existing_component",
+      "component": "ScreenPanel",
+      "props": {
+        "role": "preview",
+        "note": "live board preview pane reflecting export scope/scale selection"
+      }
+    },
+    {
+      "node_kind": "primitive",
+      "props": {
+        "role": "footer-actions",
+        "buttons": [
+          {
+            "label": "Cancel",
+            "variant": "ghost"
+          },
+          {
+            "label": "Save changes",
+            "variant": "primary"
+          }
+        ]
+      }
+    }
+  ]
+}

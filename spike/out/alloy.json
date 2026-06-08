@@ -1,0 +1,1478 @@
+{
+  "repo": "/Users/sota/Workspaces/Personal/projects/alloy",
+  "scannedFiles": 34,
+  "parseErrors": 0,
+  "counts": {
+    "components": 23,
+    "screens": 3,
+    "parts": 20,
+    "edges": 222,
+    "colors": 0,
+    "cssVars": 81
+  },
+  "components": [
+    {
+      "name": "RootLayout",
+      "file": "src/app/layout.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "ref",
+        "name": "Readonly"
+      }
+    },
+    {
+      "name": "HomePage",
+      "file": "src/app/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "PasswordGate",
+      "file": "src/app/password-gate.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "ProtoNav",
+      "file": "src/app/proto-nav.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "AgentDock",
+      "file": "src/components/agent-dock.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "issueId",
+          "open",
+          "onClose"
+        ]
+      }
+    },
+    {
+      "name": "CommandPalette",
+      "file": "src/components/command-palette.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "open",
+          "onOpenChange",
+          "currentWorkspaceId",
+          "extraActions"
+        ]
+      }
+    },
+    {
+      "name": "ConnectSourceWizard",
+      "file": "src/components/connect-source-wizard.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "open",
+          "onOpenChange",
+          "defaultProvider",
+          "defaultRole"
+        ]
+      }
+    },
+    {
+      "name": "DocumentEditor",
+      "file": "src/components/document-editor.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "document"
+        ]
+      }
+    },
+    {
+      "name": "MarkdownEditor",
+      "file": "src/components/markdown-editor.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "markdown",
+          "className"
+        ]
+      }
+    },
+    {
+      "name": "SettingsView",
+      "file": "src/components/settings-view.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "workspace",
+          "initialSection",
+          "onSectionChange"
+        ]
+      }
+    },
+    {
+      "name": "AuthGate",
+      "file": "src/app/comments/auth-gate.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "CommentContextProvider",
+      "file": "src/app/comments/comment-context.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "CommentOverlay",
+      "file": "src/app/comments/comment-overlay.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "CommentPin",
+      "file": "src/app/comments/comment-pin.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "CommentPinProps"
+      }
+    },
+    {
+      "name": "CommentPopover",
+      "file": "src/app/comments/comment-popover.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "CommentPopoverProps"
+      }
+    },
+    {
+      "name": "CommentLayer",
+      "file": "src/app/comments/comment-provider.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "NewCommentPopover",
+      "file": "src/app/comments/new-comment-popover.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "NewCommentPopoverProps"
+      }
+    },
+    {
+      "name": "ActivityView",
+      "file": "src/components/views/activity-view.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "workspaceId"
+        ]
+      }
+    },
+    {
+      "name": "AgentsView",
+      "file": "src/components/views/agents-view.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "workspaceId"
+        ]
+      }
+    },
+    {
+      "name": "InboxView",
+      "file": "src/components/views/inbox-view.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "workspaceId"
+        ]
+      }
+    },
+    {
+      "name": "InitiativesView",
+      "file": "src/components/views/initiatives-view.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "workspaceId",
+          "view",
+          "setView",
+          "onCompose"
+        ]
+      }
+    },
+    {
+      "name": "IssueWorkspacePage",
+      "file": "src/app/i/[issueId]/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "IssueWorkspaceClient",
+      "file": "src/app/i/[issueId]/workspace.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "issueId"
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "RootLayout",
+      "to": "PasswordGate",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "CommentContextProvider",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "ProtoNav",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "CommentLayer",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Suspense",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Plus",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "InboxIcon",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Rocket",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Bot",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "ActivityIcon",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "FolderGit2",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Settings",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "TooltipProvider",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "InboxView",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "InitiativesView",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "AgentsView",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "ActivityView",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "SettingsView",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "ConnectSourceWizard",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "CommandPalette",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "ScrollArea",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DropdownMenu",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DropdownMenuTrigger",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "ChevronsUpDown",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DropdownMenuContent",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DropdownMenuLabel",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DropdownMenuItem",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Check",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DropdownMenuSeparator",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Eye",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Edit3",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Button",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Github",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Tooltip",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "TooltipTrigger",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "GitBranch",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "TooltipContent",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Sparkles",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Loader2",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "RefreshCw",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "ExternalLink",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Dialog",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DialogContent",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DialogHeader",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DialogTitle",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DialogDescription",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "DialogFooter",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "Plug",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "HomePage",
+      "to": "ChevronRight",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "PasswordGate",
+      "to": "EyeOff",
+      "file": "src/app/password-gate.tsx"
+    },
+    {
+      "from": "PasswordGate",
+      "to": "Eye",
+      "file": "src/app/password-gate.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "Link",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "Badge",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "Button",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "HelpCircle",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "MessageCircle",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "ChevronDown",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "Settings",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "LogOut",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "ProtoNav",
+      "to": "Suspense",
+      "file": "src/app/proto-nav.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "ScrollArea",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Sparkles",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Badge",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Loader2",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Clock",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "X",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "ChevronDown",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "ChevronRight",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Tooltip",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "TooltipTrigger",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Button",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "TooltipContent",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Check",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "FileCode",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Pencil",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "FilePlus",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Brain",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "MessageCircle",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Plus",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Send",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Wand2",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "DropdownMenu",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "DropdownMenuTrigger",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "Cpu",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "DropdownMenuContent",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "DropdownMenuLabel",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "DropdownMenuSeparator",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "AgentDock",
+      "to": "DropdownMenuItem",
+      "file": "src/components/agent-dock.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "Inbox",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "FolderGit2",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "CommandDialog",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "CommandInput",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "CommandList",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "CommandEmpty",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "CommandSeparator",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "CommandGroup",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "CommandItem",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "Workflow",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "CommandPalette",
+      "to": "CommandShortcut",
+      "file": "src/components/command-palette.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Dialog",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "DialogContent",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "DialogFooter",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Button",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "ChevronLeft",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "DialogHeader",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Github",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "DialogTitle",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "DialogDescription",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Badge",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Check",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Sparkles",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Card",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "ShieldCheck",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Lock",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Loader2",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "ExternalLink",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Building2",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "User",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Search",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "ScrollArea",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Folder",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "LinkIcon",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "Globe",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "ConnectSourceWizard",
+      "to": "ChevronRight",
+      "file": "src/components/connect-source-wizard.tsx"
+    },
+    {
+      "from": "DocumentEditor",
+      "to": "MarkdownEditor",
+      "file": "src/components/document-editor.tsx"
+    },
+    {
+      "from": "MarkdownEditor",
+      "to": "BlockNoteView",
+      "file": "src/components/markdown-editor.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "ScrollArea",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "Button",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "Trash2",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "Badge",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "Check",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "Tooltip",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "TooltipTrigger",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "EyeOff",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "Eye",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "SettingsView",
+      "to": "TooltipContent",
+      "file": "src/components/settings-view.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "X",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "ShieldX",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "LogOut",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "CheckCircle",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "Mail",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "Loader2",
+      "file": "src/app/comments/auth-gate.tsx"
+    },
+    {
+      "from": "CommentOverlay",
+      "to": "CommentPopover",
+      "file": "src/app/comments/comment-overlay.tsx"
+    },
+    {
+      "from": "CommentOverlay",
+      "to": "NewCommentPopover",
+      "file": "src/app/comments/comment-overlay.tsx"
+    },
+    {
+      "from": "CommentOverlay",
+      "to": "CommentPin",
+      "file": "src/app/comments/comment-overlay.tsx"
+    },
+    {
+      "from": "CommentPopover",
+      "to": "Thread",
+      "file": "src/app/comments/comment-popover.tsx"
+    },
+    {
+      "from": "CommentLayer",
+      "to": "LiveblocksProvider",
+      "file": "src/app/comments/comment-provider.tsx"
+    },
+    {
+      "from": "CommentLayer",
+      "to": "RoomProvider",
+      "file": "src/app/comments/comment-provider.tsx"
+    },
+    {
+      "from": "CommentLayer",
+      "to": "CommentOverlay",
+      "file": "src/app/comments/comment-provider.tsx"
+    },
+    {
+      "from": "CommentLayer",
+      "to": "AuthGate",
+      "file": "src/app/comments/comment-provider.tsx"
+    },
+    {
+      "from": "NewCommentPopover",
+      "to": "Composer",
+      "file": "src/app/comments/new-comment-popover.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "Play",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "Brain",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "Check",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "InboxIcon",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "XIcon",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "ArrowRight",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "ScrollArea",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "AlertTriangle",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "ActivityView",
+      "to": "Badge",
+      "file": "src/components/views/activity-view.tsx"
+    },
+    {
+      "from": "AgentsView",
+      "to": "ScrollArea",
+      "file": "src/components/views/agents-view.tsx"
+    },
+    {
+      "from": "AgentsView",
+      "to": "Badge",
+      "file": "src/components/views/agents-view.tsx"
+    },
+    {
+      "from": "AgentsView",
+      "to": "Loader2",
+      "file": "src/components/views/agents-view.tsx"
+    },
+    {
+      "from": "AgentsView",
+      "to": "Pause",
+      "file": "src/components/views/agents-view.tsx"
+    },
+    {
+      "from": "AgentsView",
+      "to": "Cpu",
+      "file": "src/components/views/agents-view.tsx"
+    },
+    {
+      "from": "AgentsView",
+      "to": "ChevronRight",
+      "file": "src/components/views/agents-view.tsx"
+    },
+    {
+      "from": "AgentsView",
+      "to": "Button",
+      "file": "src/components/views/agents-view.tsx"
+    },
+    {
+      "from": "InboxView",
+      "to": "InboxIcon",
+      "file": "src/components/views/inbox-view.tsx"
+    },
+    {
+      "from": "InboxView",
+      "to": "Badge",
+      "file": "src/components/views/inbox-view.tsx"
+    },
+    {
+      "from": "InboxView",
+      "to": "Check",
+      "file": "src/components/views/inbox-view.tsx"
+    },
+    {
+      "from": "InboxView",
+      "to": "MessageSquare",
+      "file": "src/components/views/inbox-view.tsx"
+    },
+    {
+      "from": "InboxView",
+      "to": "Button",
+      "file": "src/components/views/inbox-view.tsx"
+    },
+    {
+      "from": "InboxView",
+      "to": "ChevronRight",
+      "file": "src/components/views/inbox-view.tsx"
+    },
+    {
+      "from": "InboxView",
+      "to": "X",
+      "file": "src/components/views/inbox-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "Button",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "Plus",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "ScrollArea",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "Tooltip",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "TooltipTrigger",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "TooltipContent",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "Check",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "Rocket",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "Loader2",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "Clock",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "InitiativesView",
+      "to": "XIcon",
+      "file": "src/components/views/initiatives-view.tsx"
+    },
+    {
+      "from": "IssueWorkspacePage",
+      "to": "IssueWorkspaceClient",
+      "file": "src/app/i/[issueId]/page.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Suspense",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "FileText",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Layers",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "GitPullRequest",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "ShieldCheck",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Megaphone",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Briefcase",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "ActivityIcon",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "TooltipProvider",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "CommandPalette",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Link",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "ChevronLeft",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Separator",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Tooltip",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "TooltipTrigger",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Badge",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Clock",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "TooltipContent",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Loader2",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Check",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Rocket",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "X",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "ScrollArea",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "ChevronRight",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Cpu",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Card",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "MarkdownEditor",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Sparkles",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Github",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Button",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "ExternalLink",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "CheckCircle2",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "AlertTriangle",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Bug",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "Brain",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    },
+    {
+      "from": "IssueWorkspaceClient",
+      "to": "ArrowRight",
+      "file": "src/app/i/[issueId]/workspace.tsx"
+    }
+  ],
+  "tokens": {
+    "colors": [],
+    "cssVars": [
+      "--radius",
+      "--background",
+      "--foreground",
+      "--card",
+      "--card-foreground",
+      "--popover",
+      "--popover-foreground",
+      "--primary",
+      "--primary-foreground",
+      "--secondary",
+      "--secondary-foreground",
+      "--muted",
+      "--muted-foreground",
+      "--accent",
+      "--accent-foreground",
+      "--destructive",
+      "--destructive-foreground",
+      "--border",
+      "--input",
+      "--ring",
+      "--brand",
+      "--brand-foreground",
+      "--brand-soft",
+      "--surface",
+      "--surface-2",
+      "--color-background",
+      "--color-foreground",
+      "--color-card",
+      "--color-card-foreground",
+      "--color-popover",
+      "--color-popover-foreground",
+      "--color-primary",
+      "--color-primary-foreground",
+      "--color-secondary",
+      "--color-secondary-foreground",
+      "--color-muted",
+      "--color-muted-foreground",
+      "--color-accent",
+      "--color-accent-foreground",
+      "--color-destructive",
+      "--color-destructive-foreground",
+      "--color-border",
+      "--color-input",
+      "--color-ring",
+      "--color-brand",
+      "--color-brand-foreground",
+      "--color-brand-soft",
+      "--color-surface",
+      "--color-surface-2",
+      "--radius-sm",
+      "--radius-md",
+      "--radius-lg",
+      "--radius-xl",
+      "--font-sans",
+      "--font-mono",
+      "--color-orange-50",
+      "--color-orange-100",
+      "--color-orange-200",
+      "--color-orange-300",
+      "--color-orange-400",
+      "--color-orange-500",
+      "--color-orange-600",
+      "--color-orange-700",
+      "--color-orange-800",
+      "--color-orange-900",
+      "--bn-colors-editor-text",
+      "--bn-colors-editor-background",
+      "--bn-colors-menu-text",
+      "--bn-colors-menu-background",
+      "--bn-colors-tooltip-text",
+      "--bn-colors-tooltip-background",
+      "--bn-colors-hovered-text",
+      "--bn-colors-hovered-background",
+      "--bn-colors-selected-text",
+      "--bn-colors-selected-background",
+      "--bn-colors-disabled-text",
+      "--bn-colors-disabled-background",
+      "--bn-colors-shadow",
+      "--bn-colors-border",
+      "--bn-colors-side-menu",
+      "--bn-colors-highlights-gray-background"
+    ],
+    "source": [
+      "src/app/globals.css"
+    ]
+  }
+}

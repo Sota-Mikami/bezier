@@ -1,0 +1,1944 @@
+{
+  "repo": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom",
+  "scannedFiles": 85,
+  "parseErrors": 0,
+  "counts": {
+    "components": 90,
+    "screens": 23,
+    "parts": 67,
+    "edges": 169,
+    "colors": 0,
+    "cssVars": 72
+  },
+  "components": [
+    {
+      "name": "RootLayout",
+      "file": "src/app/layout.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "Home",
+      "file": "src/app/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "AchievementCelebration",
+      "file": "src/components/AchievementCelebration.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "achievements",
+          "onClose"
+        ]
+      }
+    },
+    {
+      "name": "AchievementWatcher",
+      "file": "src/components/AchievementWatcher.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bundles"
+        ]
+      }
+    },
+    {
+      "name": "AuthGate",
+      "file": "src/components/AuthGate.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "BlockRenderer",
+      "file": "src/components/Block.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "block"
+        ]
+      }
+    },
+    {
+      "name": "BlockListRenderer",
+      "file": "src/components/Block.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "blocks"
+        ]
+      }
+    },
+    {
+      "name": "InteractiveSentence",
+      "file": "src/components/InteractiveSentence.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "sentence_html",
+          "tokens",
+          "className"
+        ]
+      }
+    },
+    {
+      "name": "LessonHub",
+      "file": "src/components/LessonHub.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bundle"
+        ]
+      }
+    },
+    {
+      "name": "LessonPlayer",
+      "file": "src/components/LessonPlayer.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bundle"
+        ]
+      }
+    },
+    {
+      "name": "MediaLessonPlayer",
+      "file": "src/components/MediaLessonPlayer.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lesson_id",
+          "meta",
+          "sections",
+          "mode"
+        ]
+      }
+    },
+    {
+      "name": "CoverPage",
+      "file": "src/components/Page.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "page"
+        ]
+      }
+    },
+    {
+      "name": "BlocksBasedPage",
+      "file": "src/components/Page.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "page"
+        ]
+      }
+    },
+    {
+      "name": "PracticePage",
+      "file": "src/components/Page.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "page",
+          "onAnswered"
+        ]
+      }
+    },
+    {
+      "name": "CompletionPage",
+      "file": "src/components/Page.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "page"
+        ]
+      }
+    },
+    {
+      "name": "ReviewSession",
+      "file": "src/components/ReviewSession.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "items"
+        ]
+      }
+    },
+    {
+      "name": "TabBar",
+      "file": "src/components/TabBar.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "active",
+          "dueCount"
+        ]
+      }
+    },
+    {
+      "name": "TextbookPlayer",
+      "file": "src/components/TextbookPlayer.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lesson_id",
+          "meta",
+          "pdfSource",
+          "textbookAudio"
+        ]
+      }
+    },
+    {
+      "name": "VocabChoice",
+      "file": "src/components/VocabChoice.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lesson_id",
+          "meta",
+          "vocab",
+          "freeplay"
+        ]
+      }
+    },
+    {
+      "name": "VocabFlashcard",
+      "file": "src/components/VocabFlashcard.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lesson_id",
+          "meta",
+          "vocab",
+          "freeplay"
+        ]
+      }
+    },
+    {
+      "name": "VocabListening",
+      "file": "src/components/VocabListening.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lesson_id",
+          "meta",
+          "vocab",
+          "freeplay"
+        ]
+      }
+    },
+    {
+      "name": "VocabPlayer",
+      "file": "src/components/VocabPlayer.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lesson_id",
+          "meta",
+          "vocab"
+        ]
+      }
+    },
+    {
+      "name": "VocabReorder",
+      "file": "src/components/VocabReorder.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lesson_id",
+          "meta",
+          "vocab",
+          "freeplay"
+        ]
+      }
+    },
+    {
+      "name": "VocabReview",
+      "file": "src/components/VocabReview.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "items"
+        ]
+      }
+    },
+    {
+      "name": "AIContextProvider",
+      "file": "src/lib/ai-context.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "ChatSessionProvider",
+      "file": "src/lib/chat-session.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "children"
+        ]
+      }
+    },
+    {
+      "name": "ChatPage",
+      "file": "src/app/chat/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "CoachRoutePage",
+      "file": "src/app/coach/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "ProgressLegacyRedirect",
+      "file": "src/app/progress/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "ReviewPage",
+      "file": "src/app/review/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "SearchRoutePage",
+      "file": "src/app/search/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "SettingsRoutePage",
+      "file": "src/app/settings/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "AskAIFab",
+      "file": "src/components/ai/AskAIFab.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "AskAISheet",
+      "file": "src/components/ai/AskAISheet.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "ChatDetail",
+      "file": "src/components/ai/ChatDetail.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "conversationId"
+        ]
+      }
+    },
+    {
+      "name": "ChatHistoryList",
+      "file": "src/components/ai/ChatHistoryList.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "ContextChip",
+      "file": "src/components/ai/ContextChip.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "MessageBubble",
+      "file": "src/components/ai/MessageBubble.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "CheckIcon",
+      "file": "src/components/blocks/icons.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "ExclamationIcon",
+      "file": "src/components/blocks/icons.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "ThumbIcon",
+      "file": "src/components/blocks/icons.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "CoachPage",
+      "file": "src/components/coach/CoachPage.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bundles"
+        ]
+      }
+    },
+    {
+      "name": "GoalProgressCard",
+      "file": "src/components/coach/GoalProgressCard.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "goal",
+          "aggregate",
+          "plan"
+        ]
+      }
+    },
+    {
+      "name": "GoalSetupWizard",
+      "file": "src/components/coach/GoalSetupWizard.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "LessonStatusList",
+      "file": "src/components/coach/LessonStatusList.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lessons",
+          "threshold"
+        ]
+      }
+    },
+    {
+      "name": "MoreLearningSection",
+      "file": "src/components/coach/MoreLearningSection.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "TodayCard",
+      "file": "src/components/coach/TodayCard.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "HandsfreeCamera",
+      "file": "src/components/handsfree/HandsfreeCamera.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "revealed",
+          "onAction",
+          "onError"
+        ]
+      }
+    },
+    {
+      "name": "HandsfreeIntroModal",
+      "file": "src/components/handsfree/HandsfreeIntroModal.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "open",
+          "onConfirm",
+          "onCancel"
+        ]
+      }
+    },
+    {
+      "name": "HandsfreeToggle",
+      "file": "src/components/handsfree/HandsfreeToggle.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "enabled",
+          "onToggle"
+        ]
+      }
+    },
+    {
+      "name": "BooksHome",
+      "file": "src/components/home/BooksHome.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "books"
+        ]
+      }
+    },
+    {
+      "name": "CourseDetail",
+      "file": "src/components/home/CourseDetail.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "course_id",
+          "chapter_no",
+          "chapter_name",
+          "chapters"
+        ]
+      }
+    },
+    {
+      "name": "BaiHub",
+      "file": "src/components/lesson/BaiHub.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bundle"
+        ]
+      }
+    },
+    {
+      "name": "FreeplayRun",
+      "file": "src/components/review/FreeplayRun.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "baiVocab"
+        ]
+      }
+    },
+    {
+      "name": "FreeplaySetup",
+      "file": "src/components/review/FreeplaySetup.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bais"
+        ]
+      }
+    },
+    {
+      "name": "ReviewHub",
+      "file": "src/components/review/ReviewHub.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": null
+    },
+    {
+      "name": "SearchPage",
+      "file": "src/components/search/SearchPage.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bundles"
+        ]
+      }
+    },
+    {
+      "name": "SettingsAchievementsSection",
+      "file": "src/components/settings/SettingsAchievementsSection.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bundles"
+        ]
+      }
+    },
+    {
+      "name": "SettingsPage",
+      "file": "src/components/settings/SettingsPage.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "bundles"
+        ]
+      }
+    },
+    {
+      "name": "Badge",
+      "file": "src/components/ui/Badge.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "BadgeProps"
+      }
+    },
+    {
+      "name": "ConfirmModal",
+      "file": "src/components/ui/ConfirmModal.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "ConfirmModalProps"
+      }
+    },
+    {
+      "name": "ContentCard",
+      "file": "src/components/ui/ContentCard.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "ContentCardProps"
+      }
+    },
+    {
+      "name": "EmptyState",
+      "file": "src/components/ui/EmptyState.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "EmptyStateProps"
+      }
+    },
+    {
+      "name": "Header",
+      "file": "src/components/ui/Header.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "HeaderProps"
+      }
+    },
+    {
+      "name": "Modal",
+      "file": "src/components/ui/Modal.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "ModalProps"
+      }
+    },
+    {
+      "name": "ProgressBar",
+      "file": "src/components/ui/ProgressBar.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "ProgressBarProps"
+      }
+    },
+    {
+      "name": "MasteryRing",
+      "file": "src/components/vocab/MasteryRing.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "size",
+          "stroke",
+          "summary",
+          "centerLabel",
+          "centerLabelClassName"
+        ]
+      }
+    },
+    {
+      "name": "FlashcardModeIcon",
+      "file": "src/components/vocab/ModeIcons.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "IconProps"
+      }
+    },
+    {
+      "name": "ChoiceModeIcon",
+      "file": "src/components/vocab/ModeIcons.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "IconProps"
+      }
+    },
+    {
+      "name": "ReorderModeIcon",
+      "file": "src/components/vocab/ModeIcons.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "IconProps"
+      }
+    },
+    {
+      "name": "ListenModeIcon",
+      "file": "src/components/vocab/ModeIcons.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "IconProps"
+      }
+    },
+    {
+      "name": "StudyResultScreen",
+      "file": "src/components/vocab/StudyResultScreen.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "Stat",
+      "file": "src/components/vocab/StudyResultScreen.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "label",
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "VocabStudyModal",
+      "file": "src/components/vocab/VocabStudyModal.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "lesson_id",
+          "partNo",
+          "partName",
+          "vocab",
+          "onClose"
+        ]
+      }
+    },
+    {
+      "name": "VocabWordDetail",
+      "file": "src/components/vocab/VocabWordDetail.tsx",
+      "kind": "part",
+      "isDefault": false,
+      "props": {
+        "kind": "ref",
+        "name": "Props"
+      }
+    },
+    {
+      "name": "LessonPage",
+      "file": "src/app/lesson/[id]/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "CoursePage",
+      "file": "src/app/library/[course]/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "FreeplaySetupPage",
+      "file": "src/app/review/freeplay/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "ReviewSessionPage",
+      "file": "src/app/review/session/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "ReviewVocabPage",
+      "file": "src/app/review/vocab/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "LessonStudyPage",
+      "file": "src/app/lesson/[id]/study/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "LessonTextbookPage",
+      "file": "src/app/lesson/[id]/textbook/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "LessonVideoPage",
+      "file": "src/app/lesson/[id]/video/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "LessonVocabPage",
+      "file": "src/app/lesson/[id]/vocab/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "FreeplayRunPage",
+      "file": "src/app/review/freeplay/run/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": null
+    },
+    {
+      "name": "LessonVocabWordDetailPage",
+      "file": "src/app/lesson/[id]/vocab/[wordKey]/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "LessonVocabChoicePage",
+      "file": "src/app/lesson/[id]/vocab/choice/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "LessonVocabListenPage",
+      "file": "src/app/lesson/[id]/vocab/listen/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "LessonVocabFlashcardPage",
+      "file": "src/app/lesson/[id]/vocab/flashcard/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    },
+    {
+      "name": "LessonVocabReorderPage",
+      "file": "src/app/lesson/[id]/vocab/reorder/page.tsx",
+      "kind": "screen",
+      "isDefault": true,
+      "props": {
+        "kind": "inline",
+        "props": [
+          "params"
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "RootLayout",
+      "to": "AIContextProvider",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "AuthGate",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "ChatSessionProvider",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "AskAIFab",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "RootLayout",
+      "to": "ServiceWorkerRegister",
+      "file": "src/app/layout.tsx"
+    },
+    {
+      "from": "Home",
+      "to": "BooksHome",
+      "file": "src/app/page.tsx"
+    },
+    {
+      "from": "AchievementCelebration",
+      "to": "Modal",
+      "file": "src/components/AchievementCelebration.tsx"
+    },
+    {
+      "from": "AchievementWatcher",
+      "to": "AchievementCelebration",
+      "file": "src/components/AchievementWatcher.tsx"
+    },
+    {
+      "from": "AuthGate",
+      "to": "Button",
+      "file": "src/components/AuthGate.tsx"
+    },
+    {
+      "from": "BlockRenderer",
+      "to": "InteractiveSentence",
+      "file": "src/components/Block.tsx"
+    },
+    {
+      "from": "BlockRenderer",
+      "to": "ExclamationIcon",
+      "file": "src/components/Block.tsx"
+    },
+    {
+      "from": "BlockRenderer",
+      "to": "ThumbIcon",
+      "file": "src/components/Block.tsx"
+    },
+    {
+      "from": "BlockRenderer",
+      "to": "CheckIcon",
+      "file": "src/components/Block.tsx"
+    },
+    {
+      "from": "BlockListRenderer",
+      "to": "InteractiveSentence",
+      "file": "src/components/Block.tsx"
+    },
+    {
+      "from": "BlockListRenderer",
+      "to": "ExclamationIcon",
+      "file": "src/components/Block.tsx"
+    },
+    {
+      "from": "BlockListRenderer",
+      "to": "ThumbIcon",
+      "file": "src/components/Block.tsx"
+    },
+    {
+      "from": "BlockListRenderer",
+      "to": "CheckIcon",
+      "file": "src/components/Block.tsx"
+    },
+    {
+      "from": "LessonHub",
+      "to": "Header",
+      "file": "src/components/LessonHub.tsx"
+    },
+    {
+      "from": "LessonHub",
+      "to": "Card",
+      "file": "src/components/LessonHub.tsx"
+    },
+    {
+      "from": "LessonHub",
+      "to": "Badge",
+      "file": "src/components/LessonHub.tsx"
+    },
+    {
+      "from": "LessonHub",
+      "to": "Link",
+      "file": "src/components/LessonHub.tsx"
+    },
+    {
+      "from": "LessonPlayer",
+      "to": "CoverPage",
+      "file": "src/components/LessonPlayer.tsx"
+    },
+    {
+      "from": "LessonPlayer",
+      "to": "BlocksBasedPage",
+      "file": "src/components/LessonPlayer.tsx"
+    },
+    {
+      "from": "LessonPlayer",
+      "to": "PracticePage",
+      "file": "src/components/LessonPlayer.tsx"
+    },
+    {
+      "from": "LessonPlayer",
+      "to": "CompletionPage",
+      "file": "src/components/LessonPlayer.tsx"
+    },
+    {
+      "from": "LessonPlayer",
+      "to": "Header",
+      "file": "src/components/LessonPlayer.tsx"
+    },
+    {
+      "from": "LessonPlayer",
+      "to": "ProgressBar",
+      "file": "src/components/LessonPlayer.tsx"
+    },
+    {
+      "from": "LessonPlayer",
+      "to": "Button",
+      "file": "src/components/LessonPlayer.tsx"
+    },
+    {
+      "from": "MediaLessonPlayer",
+      "to": "Header",
+      "file": "src/components/MediaLessonPlayer.tsx"
+    },
+    {
+      "from": "MediaLessonPlayer",
+      "to": "EmptyState",
+      "file": "src/components/MediaLessonPlayer.tsx"
+    },
+    {
+      "from": "MediaLessonPlayer",
+      "to": "Link",
+      "file": "src/components/MediaLessonPlayer.tsx"
+    },
+    {
+      "from": "CoverPage",
+      "to": "BlockListRenderer",
+      "file": "src/components/Page.tsx"
+    },
+    {
+      "from": "BlocksBasedPage",
+      "to": "BlockListRenderer",
+      "file": "src/components/Page.tsx"
+    },
+    {
+      "from": "PracticePage",
+      "to": "BlockListRenderer",
+      "file": "src/components/Page.tsx"
+    },
+    {
+      "from": "CompletionPage",
+      "to": "BlockListRenderer",
+      "file": "src/components/Page.tsx"
+    },
+    {
+      "from": "ReviewSession",
+      "to": "Header",
+      "file": "src/components/ReviewSession.tsx"
+    },
+    {
+      "from": "ReviewSession",
+      "to": "ProgressBar",
+      "file": "src/components/ReviewSession.tsx"
+    },
+    {
+      "from": "ReviewSession",
+      "to": "PracticePage",
+      "file": "src/components/ReviewSession.tsx"
+    },
+    {
+      "from": "ReviewSession",
+      "to": "Button",
+      "file": "src/components/ReviewSession.tsx"
+    },
+    {
+      "from": "ReviewSession",
+      "to": "EmptyState",
+      "file": "src/components/ReviewSession.tsx"
+    },
+    {
+      "from": "ReviewSession",
+      "to": "Link",
+      "file": "src/components/ReviewSession.tsx"
+    },
+    {
+      "from": "TabBar",
+      "to": "Link",
+      "file": "src/components/TabBar.tsx"
+    },
+    {
+      "from": "TextbookPlayer",
+      "to": "Header",
+      "file": "src/components/TextbookPlayer.tsx"
+    },
+    {
+      "from": "TextbookPlayer",
+      "to": "EmptyState",
+      "file": "src/components/TextbookPlayer.tsx"
+    },
+    {
+      "from": "TextbookPlayer",
+      "to": "Link",
+      "file": "src/components/TextbookPlayer.tsx"
+    },
+    {
+      "from": "VocabChoice",
+      "to": "StudyResultScreen",
+      "file": "src/components/VocabChoice.tsx"
+    },
+    {
+      "from": "VocabChoice",
+      "to": "Header",
+      "file": "src/components/VocabChoice.tsx"
+    },
+    {
+      "from": "VocabChoice",
+      "to": "Button",
+      "file": "src/components/VocabChoice.tsx"
+    },
+    {
+      "from": "VocabChoice",
+      "to": "EmptyState",
+      "file": "src/components/VocabChoice.tsx"
+    },
+    {
+      "from": "VocabChoice",
+      "to": "Link",
+      "file": "src/components/VocabChoice.tsx"
+    },
+    {
+      "from": "VocabFlashcard",
+      "to": "Header",
+      "file": "src/components/VocabFlashcard.tsx"
+    },
+    {
+      "from": "VocabFlashcard",
+      "to": "HandsfreeToggle",
+      "file": "src/components/VocabFlashcard.tsx"
+    },
+    {
+      "from": "VocabFlashcard",
+      "to": "HandsfreeCamera",
+      "file": "src/components/VocabFlashcard.tsx"
+    },
+    {
+      "from": "VocabFlashcard",
+      "to": "HandsfreeIntroModal",
+      "file": "src/components/VocabFlashcard.tsx"
+    },
+    {
+      "from": "VocabFlashcard",
+      "to": "Button",
+      "file": "src/components/VocabFlashcard.tsx"
+    },
+    {
+      "from": "VocabFlashcard",
+      "to": "Link",
+      "file": "src/components/VocabFlashcard.tsx"
+    },
+    {
+      "from": "VocabFlashcard",
+      "to": "EmptyState",
+      "file": "src/components/VocabFlashcard.tsx"
+    },
+    {
+      "from": "VocabListening",
+      "to": "StudyResultScreen",
+      "file": "src/components/VocabListening.tsx"
+    },
+    {
+      "from": "VocabListening",
+      "to": "Header",
+      "file": "src/components/VocabListening.tsx"
+    },
+    {
+      "from": "VocabListening",
+      "to": "Button",
+      "file": "src/components/VocabListening.tsx"
+    },
+    {
+      "from": "VocabListening",
+      "to": "EmptyState",
+      "file": "src/components/VocabListening.tsx"
+    },
+    {
+      "from": "VocabListening",
+      "to": "Link",
+      "file": "src/components/VocabListening.tsx"
+    },
+    {
+      "from": "VocabPlayer",
+      "to": "Header",
+      "file": "src/components/VocabPlayer.tsx"
+    },
+    {
+      "from": "VocabPlayer",
+      "to": "EmptyState",
+      "file": "src/components/VocabPlayer.tsx"
+    },
+    {
+      "from": "VocabPlayer",
+      "to": "Link",
+      "file": "src/components/VocabPlayer.tsx"
+    },
+    {
+      "from": "VocabPlayer",
+      "to": "Badge",
+      "file": "src/components/VocabPlayer.tsx"
+    },
+    {
+      "from": "VocabReorder",
+      "to": "StudyResultScreen",
+      "file": "src/components/VocabReorder.tsx"
+    },
+    {
+      "from": "VocabReorder",
+      "to": "Header",
+      "file": "src/components/VocabReorder.tsx"
+    },
+    {
+      "from": "VocabReorder",
+      "to": "DndContext",
+      "file": "src/components/VocabReorder.tsx"
+    },
+    {
+      "from": "VocabReorder",
+      "to": "SortableContext",
+      "file": "src/components/VocabReorder.tsx"
+    },
+    {
+      "from": "VocabReorder",
+      "to": "Button",
+      "file": "src/components/VocabReorder.tsx"
+    },
+    {
+      "from": "VocabReorder",
+      "to": "EmptyState",
+      "file": "src/components/VocabReorder.tsx"
+    },
+    {
+      "from": "VocabReorder",
+      "to": "Link",
+      "file": "src/components/VocabReorder.tsx"
+    },
+    {
+      "from": "VocabReview",
+      "to": "Header",
+      "file": "src/components/VocabReview.tsx"
+    },
+    {
+      "from": "VocabReview",
+      "to": "Button",
+      "file": "src/components/VocabReview.tsx"
+    },
+    {
+      "from": "VocabReview",
+      "to": "EmptyState",
+      "file": "src/components/VocabReview.tsx"
+    },
+    {
+      "from": "VocabReview",
+      "to": "Link",
+      "file": "src/components/VocabReview.tsx"
+    },
+    {
+      "from": "ChatPage",
+      "to": "Suspense",
+      "file": "src/app/chat/page.tsx"
+    },
+    {
+      "from": "ChatPage",
+      "to": "ChatDetail",
+      "file": "src/app/chat/page.tsx"
+    },
+    {
+      "from": "ChatPage",
+      "to": "ChatHistoryList",
+      "file": "src/app/chat/page.tsx"
+    },
+    {
+      "from": "CoachRoutePage",
+      "to": "CoachPage",
+      "file": "src/app/coach/page.tsx"
+    },
+    {
+      "from": "ReviewPage",
+      "to": "ReviewHub",
+      "file": "src/app/review/page.tsx"
+    },
+    {
+      "from": "SearchRoutePage",
+      "to": "SearchPage",
+      "file": "src/app/search/page.tsx"
+    },
+    {
+      "from": "SettingsRoutePage",
+      "to": "SettingsPage",
+      "file": "src/app/settings/page.tsx"
+    },
+    {
+      "from": "AskAIFab",
+      "to": "AskAISheet",
+      "file": "src/components/ai/AskAIFab.tsx"
+    },
+    {
+      "from": "AskAISheet",
+      "to": "Modal",
+      "file": "src/components/ai/AskAISheet.tsx"
+    },
+    {
+      "from": "AskAISheet",
+      "to": "ContextChip",
+      "file": "src/components/ai/AskAISheet.tsx"
+    },
+    {
+      "from": "AskAISheet",
+      "to": "MessageBubble",
+      "file": "src/components/ai/AskAISheet.tsx"
+    },
+    {
+      "from": "AskAISheet",
+      "to": "ChatComposer",
+      "file": "src/components/ai/AskAISheet.tsx"
+    },
+    {
+      "from": "ChatDetail",
+      "to": "MessageBubble",
+      "file": "src/components/ai/ChatDetail.tsx"
+    },
+    {
+      "from": "ChatDetail",
+      "to": "ChatComposer",
+      "file": "src/components/ai/ChatDetail.tsx"
+    },
+    {
+      "from": "MessageBubble",
+      "to": "ReactMarkdown",
+      "file": "src/components/ai/MessageBubble.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "TodayCard",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "GoalProgressCard",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "LessonStatusList",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "MoreLearningSection",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "Button",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "ConfirmModal",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "GoalSetupWizard",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "AchievementWatcher",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "CoachPage",
+      "to": "TabBar",
+      "file": "src/components/coach/CoachPage.tsx"
+    },
+    {
+      "from": "GoalProgressCard",
+      "to": "ProgressBar",
+      "file": "src/components/coach/GoalProgressCard.tsx"
+    },
+    {
+      "from": "GoalSetupWizard",
+      "to": "Modal",
+      "file": "src/components/coach/GoalSetupWizard.tsx"
+    },
+    {
+      "from": "GoalSetupWizard",
+      "to": "Button",
+      "file": "src/components/coach/GoalSetupWizard.tsx"
+    },
+    {
+      "from": "LessonStatusList",
+      "to": "Link",
+      "file": "src/components/coach/LessonStatusList.tsx"
+    },
+    {
+      "from": "LessonStatusList",
+      "to": "ProgressBar",
+      "file": "src/components/coach/LessonStatusList.tsx"
+    },
+    {
+      "from": "MoreLearningSection",
+      "to": "Card",
+      "file": "src/components/coach/MoreLearningSection.tsx"
+    },
+    {
+      "from": "MoreLearningSection",
+      "to": "Link",
+      "file": "src/components/coach/MoreLearningSection.tsx"
+    },
+    {
+      "from": "TodayCard",
+      "to": "Link",
+      "file": "src/components/coach/TodayCard.tsx"
+    },
+    {
+      "from": "TodayCard",
+      "to": "Modal",
+      "file": "src/components/coach/TodayCard.tsx"
+    },
+    {
+      "from": "HandsfreeIntroModal",
+      "to": "Modal",
+      "file": "src/components/handsfree/HandsfreeIntroModal.tsx"
+    },
+    {
+      "from": "BooksHome",
+      "to": "Link",
+      "file": "src/components/home/BooksHome.tsx"
+    },
+    {
+      "from": "BooksHome",
+      "to": "TabBar",
+      "file": "src/components/home/BooksHome.tsx"
+    },
+    {
+      "from": "BooksHome",
+      "to": "Badge",
+      "file": "src/components/home/BooksHome.tsx"
+    },
+    {
+      "from": "CourseDetail",
+      "to": "Header",
+      "file": "src/components/home/CourseDetail.tsx"
+    },
+    {
+      "from": "CourseDetail",
+      "to": "Link",
+      "file": "src/components/home/CourseDetail.tsx"
+    },
+    {
+      "from": "CourseDetail",
+      "to": "Badge",
+      "file": "src/components/home/CourseDetail.tsx"
+    },
+    {
+      "from": "CourseDetail",
+      "to": "TabBar",
+      "file": "src/components/home/CourseDetail.tsx"
+    },
+    {
+      "from": "BaiHub",
+      "to": "Header",
+      "file": "src/components/lesson/BaiHub.tsx"
+    },
+    {
+      "from": "BaiHub",
+      "to": "ContentCard",
+      "file": "src/components/lesson/BaiHub.tsx"
+    },
+    {
+      "from": "BaiHub",
+      "to": "ConfirmModal",
+      "file": "src/components/lesson/BaiHub.tsx"
+    },
+    {
+      "from": "BaiHub",
+      "to": "VocabStudyModal",
+      "file": "src/components/lesson/BaiHub.tsx"
+    },
+    {
+      "from": "FreeplayRun",
+      "to": "VocabFlashcard",
+      "file": "src/components/review/FreeplayRun.tsx"
+    },
+    {
+      "from": "FreeplayRun",
+      "to": "VocabChoice",
+      "file": "src/components/review/FreeplayRun.tsx"
+    },
+    {
+      "from": "FreeplayRun",
+      "to": "VocabReorder",
+      "file": "src/components/review/FreeplayRun.tsx"
+    },
+    {
+      "from": "FreeplayRun",
+      "to": "VocabListening",
+      "file": "src/components/review/FreeplayRun.tsx"
+    },
+    {
+      "from": "FreeplaySetup",
+      "to": "Link",
+      "file": "src/components/review/FreeplaySetup.tsx"
+    },
+    {
+      "from": "FreeplaySetup",
+      "to": "TabBar",
+      "file": "src/components/review/FreeplaySetup.tsx"
+    },
+    {
+      "from": "ReviewHub",
+      "to": "Header",
+      "file": "src/components/review/ReviewHub.tsx"
+    },
+    {
+      "from": "ReviewHub",
+      "to": "Link",
+      "file": "src/components/review/ReviewHub.tsx"
+    },
+    {
+      "from": "SearchPage",
+      "to": "TabBar",
+      "file": "src/components/search/SearchPage.tsx"
+    },
+    {
+      "from": "SearchPage",
+      "to": "Link",
+      "file": "src/components/search/SearchPage.tsx"
+    },
+    {
+      "from": "SettingsPage",
+      "to": "SettingsAchievementsSection",
+      "file": "src/components/settings/SettingsPage.tsx"
+    },
+    {
+      "from": "SettingsPage",
+      "to": "Button",
+      "file": "src/components/settings/SettingsPage.tsx"
+    },
+    {
+      "from": "SettingsPage",
+      "to": "TabBar",
+      "file": "src/components/settings/SettingsPage.tsx"
+    },
+    {
+      "from": "ConfirmModal",
+      "to": "Modal",
+      "file": "src/components/ui/ConfirmModal.tsx"
+    },
+    {
+      "from": "ContentCard",
+      "to": "Link",
+      "file": "src/components/ui/ContentCard.tsx"
+    },
+    {
+      "from": "Header",
+      "to": "Link",
+      "file": "src/components/ui/Header.tsx"
+    },
+    {
+      "from": "Header",
+      "to": "IconButton",
+      "file": "src/components/ui/Header.tsx"
+    },
+    {
+      "from": "StudyResultScreen",
+      "to": "Header",
+      "file": "src/components/vocab/StudyResultScreen.tsx"
+    },
+    {
+      "from": "StudyResultScreen",
+      "to": "Button",
+      "file": "src/components/vocab/StudyResultScreen.tsx"
+    },
+    {
+      "from": "StudyResultScreen",
+      "to": "Link",
+      "file": "src/components/vocab/StudyResultScreen.tsx"
+    },
+    {
+      "from": "Stat",
+      "to": "Header",
+      "file": "src/components/vocab/StudyResultScreen.tsx"
+    },
+    {
+      "from": "Stat",
+      "to": "Button",
+      "file": "src/components/vocab/StudyResultScreen.tsx"
+    },
+    {
+      "from": "Stat",
+      "to": "Link",
+      "file": "src/components/vocab/StudyResultScreen.tsx"
+    },
+    {
+      "from": "VocabStudyModal",
+      "to": "Modal",
+      "file": "src/components/vocab/VocabStudyModal.tsx"
+    },
+    {
+      "from": "VocabStudyModal",
+      "to": "MasteryRing",
+      "file": "src/components/vocab/VocabStudyModal.tsx"
+    },
+    {
+      "from": "VocabStudyModal",
+      "to": "FlashcardModeIcon",
+      "file": "src/components/vocab/VocabStudyModal.tsx"
+    },
+    {
+      "from": "VocabStudyModal",
+      "to": "ChoiceModeIcon",
+      "file": "src/components/vocab/VocabStudyModal.tsx"
+    },
+    {
+      "from": "VocabStudyModal",
+      "to": "ReorderModeIcon",
+      "file": "src/components/vocab/VocabStudyModal.tsx"
+    },
+    {
+      "from": "VocabStudyModal",
+      "to": "ListenModeIcon",
+      "file": "src/components/vocab/VocabStudyModal.tsx"
+    },
+    {
+      "from": "VocabStudyModal",
+      "to": "Button",
+      "file": "src/components/vocab/VocabStudyModal.tsx"
+    },
+    {
+      "from": "VocabWordDetail",
+      "to": "Header",
+      "file": "src/components/vocab/VocabWordDetail.tsx"
+    },
+    {
+      "from": "VocabWordDetail",
+      "to": "Link",
+      "file": "src/components/vocab/VocabWordDetail.tsx"
+    },
+    {
+      "from": "LessonPage",
+      "to": "BaiHub",
+      "file": "src/app/lesson/[id]/page.tsx"
+    },
+    {
+      "from": "CoursePage",
+      "to": "CourseDetail",
+      "file": "src/app/library/[course]/page.tsx"
+    },
+    {
+      "from": "FreeplaySetupPage",
+      "to": "FreeplaySetup",
+      "file": "src/app/review/freeplay/page.tsx"
+    },
+    {
+      "from": "ReviewSessionPage",
+      "to": "ReviewSession",
+      "file": "src/app/review/session/page.tsx"
+    },
+    {
+      "from": "ReviewVocabPage",
+      "to": "VocabReview",
+      "file": "src/app/review/vocab/page.tsx"
+    },
+    {
+      "from": "LessonStudyPage",
+      "to": "LessonPlayer",
+      "file": "src/app/lesson/[id]/study/page.tsx"
+    },
+    {
+      "from": "LessonTextbookPage",
+      "to": "TextbookPlayer",
+      "file": "src/app/lesson/[id]/textbook/page.tsx"
+    },
+    {
+      "from": "LessonVideoPage",
+      "to": "MediaLessonPlayer",
+      "file": "src/app/lesson/[id]/video/page.tsx"
+    },
+    {
+      "from": "LessonVocabPage",
+      "to": "VocabPlayer",
+      "file": "src/app/lesson/[id]/vocab/page.tsx"
+    },
+    {
+      "from": "FreeplayRunPage",
+      "to": "FreeplayRun",
+      "file": "src/app/review/freeplay/run/page.tsx"
+    },
+    {
+      "from": "LessonVocabWordDetailPage",
+      "to": "VocabWordDetail",
+      "file": "src/app/lesson/[id]/vocab/[wordKey]/page.tsx"
+    },
+    {
+      "from": "LessonVocabChoicePage",
+      "to": "VocabChoice",
+      "file": "src/app/lesson/[id]/vocab/choice/page.tsx"
+    },
+    {
+      "from": "LessonVocabListenPage",
+      "to": "VocabListening",
+      "file": "src/app/lesson/[id]/vocab/listen/page.tsx"
+    },
+    {
+      "from": "LessonVocabFlashcardPage",
+      "to": "VocabFlashcard",
+      "file": "src/app/lesson/[id]/vocab/flashcard/page.tsx"
+    },
+    {
+      "from": "LessonVocabReorderPage",
+      "to": "VocabReorder",
+      "file": "src/app/lesson/[id]/vocab/reorder/page.tsx"
+    }
+  ],
+  "tokens": {
+    "colors": [],
+    "cssVars": [
+      "--color-text-main",
+      "--color-text-sub",
+      "--color-text-main-black",
+      "--color-text-main-black-90",
+      "--color-text-main-black-60",
+      "--color-text-mikanorange",
+      "--color-text-gray-body",
+      "--color-text-link-blue",
+      "--color-text-goodgreen",
+      "--color-background-main",
+      "--color-surface-mono-0",
+      "--color-surface-mono-4",
+      "--color-surface-mono-10",
+      "--color-surface-mono-15",
+      "--color-surface-badblue-10",
+      "--color-surface-green-good-10",
+      "--color-mikan-orange",
+      "--color-mikan-orange-100",
+      "--color-mikan-orange-shadow",
+      "--color-mikan-orange-callout-bg",
+      "--color-mikan-orange-bg-soft",
+      "--color-mikan-orange-10",
+      "--color-good-green",
+      "--color-good-green-10",
+      "--color-answer-green",
+      "--color-wrong-icon",
+      "--color-rambutan",
+      "--color-rambutan-soft",
+      "--color-rambutan-deep",
+      "--color-vn-green",
+      "--color-vn-green-soft",
+      "--color-vn-green-deep",
+      "--color-surface-warm-1",
+      "--color-surface-cool-1",
+      "--color-divider-soft",
+      "--font-jp",
+      "--font-en",
+      "--font-vn",
+      "--text-caption",
+      "--text-caption--line-height",
+      "--text-tiny",
+      "--text-tiny--line-height",
+      "--text-body-sm",
+      "--text-body-sm--line-height",
+      "--text-body",
+      "--text-body--line-height",
+      "--text-lead",
+      "--text-lead--line-height",
+      "--text-subtitle",
+      "--text-subtitle--line-height",
+      "--text-title-sm",
+      "--text-title-sm--line-height",
+      "--text-title",
+      "--text-title--line-height",
+      "--text-title-lg",
+      "--text-title-lg--line-height",
+      "--text-hero",
+      "--text-hero--line-height",
+      "--text-display",
+      "--text-display--line-height",
+      "--radius-sm",
+      "--radius-md",
+      "--radius-lg",
+      "--radius-card",
+      "--radius-xl",
+      "--radius-pill",
+      "--shadow-cta",
+      "--shadow-cta-lg",
+      "--shadow-soft",
+      "--shadow-card",
+      "--shadow-card-hover",
+      "--shadow-hero"
+    ],
+    "source": [
+      "src/app/globals.css"
+    ]
+  }
+}

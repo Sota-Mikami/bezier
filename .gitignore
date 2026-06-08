@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+app/node_modules/
+
+# Next.js build / static export
+app/.next/
+app/out/
+
+# Tauri / Rust build artifacts
+app/src-tauri/target/
+
+# Corpus (markdown round-trip fixtures, generated/local)
+app/corpus/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Editor / OS
+.DS_Store
+
+# Env
+.env*
+
+# Screenshots scratch
+app/.shots/
