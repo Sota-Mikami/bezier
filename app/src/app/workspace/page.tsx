@@ -22,6 +22,13 @@ import {
   Loader2,
   Terminal as TerminalIcon,
   ChevronDown,
+  Frame as FrameIcon,
+  LayoutGrid,
+  LayoutDashboard,
+  Hand,
+  MousePointerClick,
+  Plus,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -44,6 +51,17 @@ import { AgentLauncher } from "@/components/workspace/agent-launcher";
 import type { AgentLaunchSpec } from "@/lib/agents";
 import { ptyWrite } from "@/lib/pty";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
+// v0.3 Canvas SoR + views. The board uses @xyflow/react (browser-only) so it is
+// loaded via next/dynamic({ssr:false}); the gallery + add-screen form are plain
+// React and SSG-safe, imported statically.
+import {
+  loadScreens,
+  saveScreens,
+  type Screen,
+} from "@/lib/screens";
+import type { CanvasBoardProps } from "@/components/workspace/canvas-board";
+import ScreenGallery from "@/components/workspace/screen-gallery";
+import AddScreen from "@/components/workspace/add-screen";
 
 // Plate is client-only (touches `document` at module load). Load it lazily and
 // disable SSR so the platejs imports never run on the server. The Next loadable
@@ -79,6 +97,25 @@ const TerminalPane = dynamic(
   },
 ) as React.ComponentType<TerminalPaneProps>;
 
+// The Canvas board renders react-flow, which touches browser APIs (ResizeObserver,
+// window) and imports its own CSS. It must never run during SSG prerender
+// (output: "export"), so load it client-only.
+const CanvasBoard = dynamic(
+  () => import("@/components/workspace/canvas-board"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        Loading canvas…
+      </div>
+    ),
+  },
+) as React.ComponentType<CanvasBoardProps>;
+
+type WorkspaceView = "editor" | "canvas";
+type CanvasMode = "board" | "gallery";
+
 export default function WorkspacePage() {
   const [rootPath, setRootPath] = React.useState<string | null>(null);
   const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
@@ -103,11 +140,91 @@ export default function WorkspacePage() {
   // in a ref so the (stable) onReady handler reads the latest value.
   const pendingInputRef = React.useRef<string | null>(null);
 
+  // --- v0.3 Canvas -----------------------------------------------------------
+  // `screens` is the in-memory mirror of <root>/.continuum/screens.json (the
+  // Git-managed SoR). Every mutation (move/add/remove) updates state AND writes
+  // the doc back so layout round-trips. `screensRef` mirrors the latest array so
+  // the move/add/remove callbacks compute from fresh data without stale closures
+  // or side-effects inside a setState updater.
+  const [view, setView] = React.useState<WorkspaceView>("editor");
+  const [canvasMode, setCanvasMode] = React.useState<CanvasMode>("board");
+  const [interactive, setInteractive] = React.useState(false);
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [screens, setScreens] = React.useState<Screen[]>([]);
+  const screensRef = React.useRef<Screen[]>([]);
+  React.useEffect(() => {
+    screensRef.current = screens;
+  }, [screens]);
+
+  // Load the SoR whenever the workspace root changes. loadScreens never rejects
+  // (missing file => empty doc), so we only set state from the async result.
+  // The previous root's screens are cleared synchronously in handleOpenFolder,
+  // so this effect never needs a synchronous reset (rootPath only ever goes
+  // null -> set, and screens starts []).
+  React.useEffect(() => {
+    if (!rootPath) return;
+    let cancelled = false;
+    loadScreens(rootPath)
+      .then((doc) => {
+        if (!cancelled) setScreens(doc.screens);
+      })
+      .catch(() => {
+        if (!cancelled) setScreens([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rootPath]);
+
+  // Update state + persist the SoR back to disk (pretty JSON, stable order).
+  const persistScreens = React.useCallback(
+    (next: Screen[]) => {
+      setScreens(next);
+      const root = rootPath;
+      if (!root) return;
+      void saveScreens(root, { schema: "1", screens: next }).catch(
+        (err: unknown) => {
+          // Non-fatal: keep the in-memory edit; surface to the console.
+          console.error("saveScreens failed", err);
+        },
+      );
+    },
+    [rootPath],
+  );
+
+  const handleScreenMove = React.useCallback(
+    (id: string, x: number, y: number) => {
+      persistScreens(
+        screensRef.current.map((s) => (s.id === id ? { ...s, x, y } : s)),
+      );
+    },
+    [persistScreens],
+  );
+
+  const handleScreenAdd = React.useCallback(
+    (s: Screen) => {
+      persistScreens([...screensRef.current, s]);
+      setAddOpen(false);
+    },
+    [persistScreens],
+  );
+
+  const handleScreenRemove = React.useCallback(
+    (id: string) => {
+      persistScreens(screensRef.current.filter((s) => s.id !== id));
+    },
+    [persistScreens],
+  );
+
   async function handleOpenFolder() {
     const picked = await openFolder();
     if (picked) {
       setRootPath(picked);
       setSelectedPath(null);
+      // New root => the previous folder's screens are stale; clear immediately
+      // (the load effect will repopulate from the new root's SoR).
+      setScreens([]);
+      setAddOpen(false);
       // New root => any running terminal/agent points at the old folder; reset
       // to a fresh (default-shell) session for the new root.
       setTermSpawn(undefined);
@@ -154,6 +271,30 @@ export default function WorkspacePage() {
         <Separator orientation="vertical" className="mx-1 h-5" />
         <PanelsTopLeft className="size-4 text-muted-foreground" />
         <span className="text-sm font-medium">Workspace</span>
+
+        {/* View toggle: Editor (file tree + Plate/YAML + terminal) vs Canvas
+            (react-flow board / gallery of live screen frames). */}
+        <div className="ml-3 flex items-center rounded-md border p-0.5">
+          <Button
+            variant={view === "editor" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 gap-1.5"
+            onClick={() => setView("editor")}
+          >
+            <FileText className="size-3.5" />
+            Editor
+          </Button>
+          <Button
+            variant={view === "canvas" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 gap-1.5"
+            onClick={() => setView("canvas")}
+          >
+            <FrameIcon className="size-3.5" />
+            Canvas
+          </Button>
+        </div>
+
         <div className="ml-auto flex items-center gap-2">
           <Button
             variant={termOpen ? "secondary" : "ghost"}
@@ -222,16 +363,32 @@ export default function WorkspacePage() {
           )}
         </aside>
 
-        {/* Right: editor (top) + terminal pane (bottom, toggleable) */}
+        {/* Right: editor or canvas (top) + terminal pane (bottom, toggleable) */}
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col">
-            {/* Key by path + reload token so each load is a fresh mount: state
-                (doc/loading/error/dirty) resets without any setState-in-effect. */}
-            <Editor
-              key={`${selectedPath ?? "__none__"}#${reloadToken}`}
-              selectedPath={selectedPath}
-              onReload={() => setReloadToken((t) => t + 1)}
-            />
+            {view === "editor" ? (
+              /* Key by path + reload token so each load is a fresh mount: state
+                 (doc/loading/error/dirty) resets without any setState-in-effect. */
+              <Editor
+                key={`${selectedPath ?? "__none__"}#${reloadToken}`}
+                selectedPath={selectedPath}
+                onReload={() => setReloadToken((t) => t + 1)}
+              />
+            ) : (
+              <CanvasView
+                rootPath={rootPath}
+                screens={screens}
+                mode={canvasMode}
+                onModeChange={setCanvasMode}
+                interactive={interactive}
+                onInteractiveChange={setInteractive}
+                addOpen={addOpen}
+                onAddOpenChange={setAddOpen}
+                onAdd={handleScreenAdd}
+                onMove={handleScreenMove}
+                onRemove={handleScreenRemove}
+              />
+            )}
           </div>
 
           {/* Bottom terminal panel. Stays mounted once opened (kept alive while
@@ -271,6 +428,140 @@ export default function WorkspacePage() {
             </div>
           )}
         </main>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Canvas pane (v0.3). A toolbar (Board/Gallery sub-toggle + Interact toggle +
+ * Add screen) over either the react-flow <CanvasBoard> or the <ScreenGallery>.
+ * All mutations bubble to the page, which owns the screens state + persistence
+ * to <root>/.continuum/screens.json. CanvasBoard is the dynamic({ssr:false})
+ * wrapper declared at module top.
+ */
+function CanvasView({
+  rootPath,
+  screens,
+  mode,
+  onModeChange,
+  interactive,
+  onInteractiveChange,
+  addOpen,
+  onAddOpenChange,
+  onAdd,
+  onMove,
+  onRemove,
+}: {
+  rootPath: string | null;
+  screens: Screen[];
+  mode: CanvasMode;
+  onModeChange: (m: CanvasMode) => void;
+  interactive: boolean;
+  onInteractiveChange: (v: boolean) => void;
+  addOpen: boolean;
+  onAddOpenChange: (v: boolean) => void;
+  onAdd: (s: Screen) => void;
+  onMove: (id: string, x: number, y: number) => void;
+  onRemove: (id: string) => void;
+}) {
+  if (!rootPath) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        Open a folder to use the canvas.
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Canvas toolbar */}
+      <header className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+        {/* Board / Gallery sub-toggle */}
+        <div className="flex items-center rounded-md border p-0.5">
+          <Button
+            variant={mode === "board" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 gap-1.5"
+            onClick={() => onModeChange("board")}
+          >
+            <LayoutDashboard className="size-3.5" />
+            Board
+          </Button>
+          <Button
+            variant={mode === "gallery" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 gap-1.5"
+            onClick={() => onModeChange("gallery")}
+          >
+            <LayoutGrid className="size-3.5" />
+            Gallery
+          </Button>
+        </div>
+
+        {/* Interact toggle: flips frames to live, pointer-receiving iframes. */}
+        <Button
+          variant={interactive ? "secondary" : "ghost"}
+          size="sm"
+          className="h-7 gap-1.5"
+          onClick={() => onInteractiveChange(!interactive)}
+          title={
+            interactive
+              ? "Interacting: frames receive clicks/taps"
+              : "Static: frames are draggable, not clickable"
+          }
+        >
+          {interactive ? (
+            <MousePointerClick className="size-3.5" />
+          ) : (
+            <Hand className="size-3.5" />
+          )}
+          {interactive ? "Interacting" : "Interact"}
+        </Button>
+
+        <span className="text-xs text-muted-foreground">
+          {screens.length} screen{screens.length === 1 ? "" : "s"}
+        </span>
+
+        <div className="ml-auto">
+          <Button
+            variant={addOpen ? "secondary" : "outline"}
+            size="sm"
+            className="h-7 gap-1.5"
+            onClick={() => onAddOpenChange(!addOpen)}
+          >
+            {addOpen ? <X className="size-3.5" /> : <Plus className="size-3.5" />}
+            Add screen
+          </Button>
+        </div>
+      </header>
+
+      {/* Add-screen inline panel */}
+      {addOpen && (
+        <div className="border-b bg-muted/30 px-4 py-3">
+          <div className="mx-auto max-w-md">
+            <AddScreen existing={screens} onAdd={onAdd} />
+          </div>
+        </div>
+      )}
+
+      {/* Canvas body: board (react-flow) or gallery (scaled live frames). */}
+      <div className="relative min-h-0 flex-1">
+        {mode === "board" ? (
+          <CanvasBoard
+            screens={screens}
+            interactive={interactive}
+            onMove={onMove}
+            onRemove={onRemove}
+          />
+        ) : (
+          <ScrollArea className="h-full">
+            <ScreenGallery
+              screens={screens}
+              onRemove={onRemove}
+            />
+          </ScrollArea>
+        )}
       </div>
     </div>
   );

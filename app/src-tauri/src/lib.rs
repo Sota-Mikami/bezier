@@ -131,6 +131,14 @@ fn write_file(path: String, contents: String) -> Result<(), String> {
     let parent = target
         .parent()
         .ok_or_else(|| format!("write_file {path}: path has no parent directory"))?;
+    // Create the parent tree if it does not exist yet (e.g. the workspace SoR
+    // dir <root>/.continuum on first save). `target` already passed the `..`
+    // traversal guard above, so every parent component is safe to materialize.
+    // canonicalize (below) then resolves symlinks and validates the real path.
+    if !parent.as_os_str().is_empty() && !parent.exists() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("write_file {path}: cannot create parent dir: {e}"))?;
+    }
     let canonical_parent = fs::canonicalize(parent)
         .map_err(|e| format!("write_file {path}: cannot resolve parent dir: {e}"))?;
     let file_name = target
