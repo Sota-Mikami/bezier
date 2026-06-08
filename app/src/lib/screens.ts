@@ -8,7 +8,11 @@ import { readFile, writeFile } from "@/lib/ipc";
 export type ScreenSource =
   | { type: "url"; url: string }
   | { type: "html"; path: string }
-  | { type: "scenegraph"; path: string };
+  | { type: "scenegraph"; path: string }
+  // v0.4 — editable React+Tailwind app served by a (cooperating) dev server.
+  //   url      = the dev-server URL shown in the iframe
+  //   repoPath = local repo root used for Onlook-style AST write-back
+  | { type: "react-repo"; url: string; repoPath: string };
 
 export interface Screen {
   id: string;

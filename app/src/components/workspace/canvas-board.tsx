@@ -27,6 +27,14 @@ import "@xyflow/react/dist/style.css";
 
 import type { Screen } from "@/lib/screens";
 import ScreenFrame from "@/components/workspace/screen-frame";
+// EditableFrame is browser-only (postMessage/iframe), but canvas-board is itself
+// only ever loaded via next/dynamic({ssr:false}) from the workspace route, so a
+// static import here is never evaluated during SSG prerender (same pattern as
+// ScreenFrame above).
+import EditableFrame, {
+  type EditableFrameHandle,
+} from "@/components/workspace/editable-frame";
+import type { SelectedElement } from "@/lib/preview-bridge";
 import { cn } from "@/lib/utils";
 
 export interface CanvasBoardProps {
@@ -35,6 +43,18 @@ export interface CanvasBoardProps {
   onMove: (id: string, x: number, y: number) => void;
   onSelect?: (id: string) => void;
   onRemove?: (id: string) => void;
+  // --- v0.4 element editing -------------------------------------------------
+  /** When true, "react-repo" frames render an editable preview (needs interactive). */
+  editMode?: boolean;
+  /** A "react-repo" element was clicked in an editable preview. */
+  onElementSelect?: (screenId: string, element: SelectedElement) => void;
+  /** Double-click "open source" request from an editable preview. */
+  onOpenSource?: (screenId: string, oid: string | null) => void;
+  /** Registers/unregisters a frame's imperative handle (live preview / highlight). */
+  registerFrameHandle?: (
+    screenId: string,
+    handle: EditableFrameHandle | null,
+  ) => void;
 }
 
 /** Data carried by each ReactFlow node. */
@@ -42,13 +62,42 @@ type ScreenNodeData = {
   screen: Screen;
   interactive: boolean;
   onRemove?: (id: string) => void;
+  editMode: boolean;
+  onElementSelect?: (screenId: string, element: SelectedElement) => void;
+  onOpenSource?: (screenId: string, oid: string | null) => void;
+  registerFrameHandle?: (
+    screenId: string,
+    handle: EditableFrameHandle | null,
+  ) => void;
 };
 
 type ScreenNode = Node<ScreenNodeData, "screen">;
 
 /** Custom node: renders one live screen frame with a delete affordance. */
 function ScreenNodeComponent({ data, selected }: NodeProps<ScreenNode>) {
-  const { screen, interactive, onRemove } = data;
+  const {
+    screen,
+    interactive,
+    onRemove,
+    editMode,
+    onElementSelect,
+    onOpenSource,
+    registerFrameHandle,
+  } = data;
+
+  // Editable preview is used only for react-repo sources while Edit mode is on.
+  // Element selection also requires the frame to be interactive (pointer events
+  // reach the iframe); the EditableFrame still renders so the bridge can connect.
+  const editable = editMode && screen.source.type === "react-repo";
+
+  // Stable callback ref so React doesn't churn register/unregister each render.
+  const handleRef = useCallback(
+    (handle: EditableFrameHandle | null) => {
+      registerFrameHandle?.(screen.id, handle);
+    },
+    [registerFrameHandle, screen.id],
+  );
+
   return (
     <div
       className={cn(
@@ -81,7 +130,19 @@ function ScreenNodeComponent({ data, selected }: NodeProps<ScreenNode>) {
       </div>
       {/* Frame body fills remaining space. */}
       <div className="relative h-[calc(100%-1.75rem)] w-full">
-        <ScreenFrame screen={screen} interactive={interactive} />
+        {editable ? (
+          <div className="nodrag h-full w-full">
+            <EditableFrame
+              ref={handleRef}
+              screen={screen}
+              interactive={interactive}
+              onSelect={(el) => onElementSelect?.(screen.id, el)}
+              onOpenSource={(oid) => onOpenSource?.(screen.id, oid)}
+            />
+          </div>
+        ) : (
+          <ScreenFrame screen={screen} interactive={interactive} />
+        )}
       </div>
     </div>
   );
@@ -93,6 +154,10 @@ function CanvasBoardInner({
   onMove,
   onSelect,
   onRemove,
+  editMode = false,
+  onElementSelect,
+  onOpenSource,
+  registerFrameHandle,
 }: CanvasBoardProps) {
   const nodeTypes = useMemo<NodeTypes>(
     () => ({ screen: ScreenNodeComponent }),
@@ -105,10 +170,25 @@ function CanvasBoardInner({
         id: screen.id,
         type: "screen" as const,
         position: { x: screen.x, y: screen.y },
-        data: { screen, interactive, onRemove },
+        data: {
+          screen,
+          interactive,
+          onRemove,
+          editMode,
+          onElementSelect,
+          onOpenSource,
+          registerFrameHandle,
+        },
         style: { width: screen.w, height: screen.h },
       })),
-    [interactive, onRemove],
+    [
+      interactive,
+      onRemove,
+      editMode,
+      onElementSelect,
+      onOpenSource,
+      registerFrameHandle,
+    ],
   );
 
   const [nodes, setNodes] = useNodesState<ScreenNode>(toNodes(screens));

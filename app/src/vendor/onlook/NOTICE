@@ -1,0 +1,43 @@
+continuum — vendored Onlook parser subset
+==========================================
+
+This directory contains source code DERIVED FROM Onlook
+(https://github.com/onlook-dev/onlook), Copyright (c) Onlook
+<contact@onlook.com>, licensed under the Apache License, Version 2.0.
+A copy of that license is included in ./LICENSE.
+
+The upstream project has no NOTICE file and no per-file copyright headers
+(verified at scout time, commit a242be58). Per Apache-2.0 §4 we (a) include
+the license above, (b) retain attribution via this NOTICE plus a header
+comment atop each derived file pointing to its upstream path, and (c) state
+that the files were MODIFIED for continuum.
+
+Modifications made for continuum v0.4
+-------------------------------------
+- @onlook/* workspace imports were localized:
+    * @onlook/constants  -> inlined as ./constants.ts (only DATA_ONLOOK_ID etc.)
+    * @onlook/utility    -> createOid/createDomId re-implemented in ./constants.ts
+                            (nanoid customAlphabet, 3 lines) and customTwMerge
+                            replaced with plain `twMerge` from `tailwind-merge`.
+    * @onlook/models     -> not vendored; a tiny local CodeDiffRequest type is
+                            defined in ./code-edit/transform.ts instead.
+- code-edit/transform.ts was REDUCED to className + prop edits only. The
+  structureChanges branch (group/insert/move/remove/image/text) and its module
+  imports were dropped (out of scope for continuum v0.4 element editing).
+- The Babel engine is `@babel/standalone` (same as upstream packages.ts).
+
+Files in this directory and their upstream origin
+-------------------------------------------------
+  packages.ts            <- packages/parser/src/packages.ts            (verbatim)
+  helpers.ts             <- packages/parser/src/helpers.ts             (verbatim)
+  parse.ts               <- packages/parser/src/parse.ts               (import localized)
+  ids.ts                 <- packages/parser/src/ids.ts                 (import localized)
+  constants.ts           <- packages/constants/src/editor.ts +
+                            packages/utility/src/id.ts                 (subset, inlined)
+  code-edit/helpers.ts   <- packages/parser/src/code-edit/helpers.ts   (subset)
+  code-edit/style.ts     <- packages/parser/src/code-edit/style.ts     (twMerge swap)
+  code-edit/transform.ts <- packages/parser/src/code-edit/transform.ts (trimmed)
+
+continuum is fair-code; Apache-2.0 is permissive and compatible. No AGPL/GPL
+code is present in this dependency path. The npm engine deps used here
+(@babel/standalone MIT, tailwind-merge MIT, nanoid MIT) are likewise permissive.

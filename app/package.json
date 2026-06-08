@@ -10,6 +10,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@babel/standalone": "^7.29.7",
     "@base-ui/react": "^1.5.0",
     "@platejs/list": "^53.0.2",
     "@platejs/markdown": "53.0.4",
@@ -36,6 +37,8 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@tauri-apps/cli": "^2.11.2",
+    "@types/babel__standalone": "^7.1.9",
+    "@types/babel__traverse": "^7.28.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
