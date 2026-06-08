@@ -96,6 +96,19 @@ function asStringArray(v: unknown): string[] | undefined {
 }
 
 /**
+ * Normalize a YAML-parsed Date back to a string.
+ * A date-only scalar (e.g. `created: 2026-06-08`) is parsed by the YAML reader
+ * as midnight UTC; reproduce it as `YYYY-MM-DD` so the field both displays and
+ * (when frontmatter is edited) re-serializes identically to the source instead
+ * of leaking a full ISO timestamp (`2026-06-08T00:00:00.000Z`). Only fall back
+ * to full ISO when an actual time component is present.
+ */
+function dateToYamlString(d: Date): string {
+  const iso = d.toISOString();
+  return iso.endsWith("T00:00:00.000Z") ? iso.slice(0, 10) : iso;
+}
+
+/**
  * Map an arbitrary parsed YAML object to the typed Frontmatter shape.
  * PARSE-side only; never used to serialize back.
  */
@@ -109,7 +122,7 @@ function toFrontmatter(data: Record<string, unknown> | null | undefined): Frontm
   const status = asString(data.status);
   if (status !== undefined) fm.status = status;
   // `created` may be parsed by gray-matter as a Date; normalize to string.
-  if (data.created instanceof Date) fm.created = data.created.toISOString();
+  if (data.created instanceof Date) fm.created = dateToYamlString(data.created);
   else {
     const created = asString(data.created);
     if (created !== undefined) fm.created = created;

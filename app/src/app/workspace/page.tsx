@@ -14,7 +14,15 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { FolderOpen, FileText, PanelsTopLeft, Save, Loader2 } from "lucide-react";
+import {
+  FolderOpen,
+  FileText,
+  PanelsTopLeft,
+  Save,
+  Loader2,
+  Terminal as TerminalIcon,
+  ChevronDown,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -32,6 +40,10 @@ import FrontmatterPanel from "@/components/workspace/frontmatter-panel";
 import QaTable, {
   type QATableHandle,
 } from "@/components/workspace/qa-table";
+import { AgentLauncher } from "@/components/workspace/agent-launcher";
+import type { AgentLaunchSpec } from "@/lib/agents";
+import { ptyWrite } from "@/lib/pty";
+import type { TerminalPaneProps } from "@/components/workspace/terminal";
 
 // Plate is client-only (touches `document` at module load). Load it lazily and
 // disable SSR so the platejs imports never run on the server. The Next loadable
@@ -52,6 +64,21 @@ const PlateEditor = dynamic(
   PlateEditorProps & React.RefAttributes<PlateEditorHandle>
 >;
 
+// The embedded terminal (xterm) touches the DOM and imports xterm CSS, so it
+// must never run during SSG prerender (output: "export"). Load it client-only.
+const TerminalPane = dynamic(
+  () => import("@/components/workspace/terminal"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center gap-2 p-3 text-xs text-zinc-400">
+        <Loader2 className="size-3.5 animate-spin" />
+        Starting terminal…
+      </div>
+    ),
+  },
+) as React.ComponentType<TerminalPaneProps>;
+
 export default function WorkspacePage() {
   const [rootPath, setRootPath] = React.useState<string | null>(null);
   const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
@@ -59,13 +86,65 @@ export default function WorkspacePage() {
   // the on-disk content the new clean baseline.
   const [reloadToken, setReloadToken] = React.useState(0);
 
+  // --- Embedded terminal pane (v0.2) ---------------------------------------
+  // One active terminal at a time. `termMounted` keeps the pty alive while the
+  // panel is collapsed (the panel is hidden via CSS, not unmounted). `termSpawn`
+  // is undefined for the user shell, or { cmd, args } when an agent is launched.
+  // `termNonce` is part of the Terminal's `key`, so each (re)launch forces a
+  // fresh mount — killing the previous session and spawning the new one in the
+  // same pane (v0.2 "reuse the pane" semantics).
+  const [termMounted, setTermMounted] = React.useState(false);
+  const [termOpen, setTermOpen] = React.useState(false);
+  const [termSpawn, setTermSpawn] = React.useState<
+    { cmd: string; args?: string[] } | undefined
+  >(undefined);
+  const [termNonce, setTermNonce] = React.useState(0);
+  // Initial line to write into the pty once the agent's session is ready. Held
+  // in a ref so the (stable) onReady handler reads the latest value.
+  const pendingInputRef = React.useRef<string | null>(null);
+
   async function handleOpenFolder() {
     const picked = await openFolder();
     if (picked) {
       setRootPath(picked);
       setSelectedPath(null);
+      // New root => any running terminal/agent points at the old folder; reset
+      // to a fresh (default-shell) session for the new root.
+      setTermSpawn(undefined);
+      pendingInputRef.current = null;
+      setTermNonce((n) => n + 1);
     }
   }
+
+  // Toggle the terminal panel. First open mounts it (spawns the user shell);
+  // subsequent toggles just show/hide the panel, keeping the session alive.
+  const toggleTerminal = React.useCallback(() => {
+    setTermMounted(true);
+    setTermOpen((o) => !o);
+  }, []);
+
+  // Hand off: spawn a NEW terminal running the detected agent in the workspace
+  // root, then (once ready) write the "read the handoff file" line into its pty.
+  const handleAgentLaunch = React.useCallback((spec: AgentLaunchSpec) => {
+    pendingInputRef.current = spec.initialInput;
+    setTermSpawn({ cmd: spec.cmd, args: spec.args });
+    setTermMounted(true);
+    setTermOpen(true);
+    setTermNonce((n) => n + 1);
+  }, []);
+
+  // Fired by the Terminal once its pty is spawned. For an agent launch we feed
+  // the initial prompt; a short delay lets the CLI start its input loop first.
+  const handleTermReady = React.useCallback((id: string) => {
+    const input = pendingInputRef.current;
+    if (!input) return;
+    pendingInputRef.current = null;
+    window.setTimeout(() => {
+      void ptyWrite(id, input).catch(() => {
+        /* session may have been torn down already */
+      });
+    }, 800);
+  }, []);
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden">
@@ -75,6 +154,23 @@ export default function WorkspacePage() {
         <Separator orientation="vertical" className="mx-1 h-5" />
         <PanelsTopLeft className="size-4 text-muted-foreground" />
         <span className="text-sm font-medium">Workspace</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant={termOpen ? "secondary" : "ghost"}
+            size="sm"
+            className="gap-1.5"
+            disabled={!rootPath}
+            onClick={toggleTerminal}
+            title={
+              rootPath
+                ? "Toggle terminal"
+                : "Open a folder to use the terminal"
+            }
+          >
+            <TerminalIcon className="size-4" />
+            Terminal
+          </Button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -112,17 +208,68 @@ export default function WorkspacePage() {
               </p>
             )}
           </ScrollArea>
+          {rootPath && (
+            <>
+              <Separator />
+              <div className="p-3">
+                <AgentLauncher
+                  root={rootPath}
+                  docPaths={selectedPath ? [selectedPath] : []}
+                  onLaunch={handleAgentLaunch}
+                />
+              </div>
+            </>
+          )}
         </aside>
 
-        {/* Right: editor for the selected file */}
+        {/* Right: editor (top) + terminal pane (bottom, toggleable) */}
         <main className="flex min-w-0 flex-1 flex-col">
-          {/* Key by path + reload token so each load is a fresh mount: state
-              (doc/loading/error/dirty) resets without any setState-in-effect. */}
-          <Editor
-            key={`${selectedPath ?? "__none__"}#${reloadToken}`}
-            selectedPath={selectedPath}
-            onReload={() => setReloadToken((t) => t + 1)}
-          />
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* Key by path + reload token so each load is a fresh mount: state
+                (doc/loading/error/dirty) resets without any setState-in-effect. */}
+            <Editor
+              key={`${selectedPath ?? "__none__"}#${reloadToken}`}
+              selectedPath={selectedPath}
+              onReload={() => setReloadToken((t) => t + 1)}
+            />
+          </div>
+
+          {/* Bottom terminal panel. Stays mounted once opened (kept alive while
+              collapsed via `hidden`) so the shell/agent session survives toggling.
+              Remounts — killing + respawning — only when `key` changes (new root,
+              folder switch, or an agent launch via termNonce). */}
+          {rootPath && termMounted && (
+            <div
+              className={cn(
+                "flex shrink-0 flex-col border-t bg-[#0a0a0a]",
+                termOpen ? "h-72" : "hidden",
+              )}
+            >
+              <div className="flex h-8 shrink-0 items-center gap-2 border-b border-white/10 px-3">
+                <TerminalIcon className="size-3.5 text-zinc-400" />
+                <span className="font-mono text-xs text-zinc-300">
+                  {termSpawn ? termSpawn.cmd : "terminal"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="ml-auto size-6 text-zinc-400 hover:text-zinc-100"
+                  onClick={() => setTermOpen(false)}
+                  title="Hide terminal"
+                >
+                  <ChevronDown className="size-4" />
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <TerminalPane
+                  key={`${rootPath}#${termNonce}#${termSpawn?.cmd ?? "shell"}`}
+                  cwd={rootPath}
+                  spawn={termSpawn}
+                  onReady={handleTermReady}
+                />
+              </div>
+            </div>
+          )}
         </main>
       </div>
     </div>
