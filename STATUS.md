@@ -1,5 +1,9 @@
-<!-- 最終更新: 2026-06-08 / DEC-005: 再開（RESUMED）+ 再定義 / DEC-006: アーキ確定（Tauri+Web+OSS流用） -->
-# continuum — 現在地（2026-06-08 / ▶ RESUMED・再定義）
+<!-- 最終更新: 2026-06-08 / v0.1〜v0.4 ビルド完了・dogfood 前で停止 -->
+# continuum — 現在地（2026-06-08 / ▶ v0.1〜v0.4 built, dogfood pending）
+
+> ⭐ **再開時はまず `playbook/operations/2026-06-08_session-handoff.md` を読む**（v0.1〜v0.4 の全状況・停止地点・dogfood 手順・既知バグ）。
+> 要点: v0.1〜v0.4 を Workflow で自律ビルド・全 build green 独立検証・commit 済み（最新 `09eecf9` + ポート/リダイレクト修正）。ただし **一度も人手で実起動していない（build green ≠ 実働）**。dev ポートは衝突回避で **3210** に変更済み。次は **dogfood**（`cd app && npm run tauri dev`）。
+
 
 > ▶ **2026-06-08 再開（DEC-005）**。賭ける層を engine → **レイヤC（プロダクト意思決定の SoR + ベンダー横断オーケストレーション）** に移し、**自分用ツールとして全部入りで作り切る**方針（dogfood-first）。
 > 📌 再開時の読む順: この STATUS → `playbook/decisions-log.md`（DEC-005/006）→ `playbook/research/2026-06-08_competitive-landscape-orchestration-vs-design-sor.md`。

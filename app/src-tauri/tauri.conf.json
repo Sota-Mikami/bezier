@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.continuum.app",
   "build": {
-    "beforeDevCommand": "npm run dev -- -p 3100",
-    "devUrl": "http://localhost:3100",
+    "beforeDevCommand": "npm run dev -- -p 3210",
+    "devUrl": "http://localhost:3210",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../out"
   },
