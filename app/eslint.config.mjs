@@ -12,7 +12,23 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Rust build artifacts (Tauri emits generated JS like __global-api-script.js).
+    "src-tauri/**",
   ]),
+  {
+    rules: {
+      // Allow intentionally-unused args/vars prefixed with underscore
+      // (frozen-contract stubs keep their parameter names).
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

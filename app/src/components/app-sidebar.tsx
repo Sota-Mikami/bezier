@@ -6,6 +6,7 @@ import {
   Inbox,
   SquareKanban,
   Boxes,
+  FolderTree,
   ChevronsUpDown,
   Settings,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const nav = [
   { key: "inbox", label: "Inbox", icon: Inbox, href: "/inbox", unread: "2" },
   { key: "issues", label: "Design Issues", icon: SquareKanban, href: "/", count: "6" },
   { key: "library", label: "Components", icon: Boxes, href: "/library", count: "230" },
+  { key: "workspace", label: "Workspace", icon: FolderTree, href: "/workspace" },
 ];
 
 export function AppSidebar() {

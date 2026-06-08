@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# markdown round-trip corpus (seeded from real files; not committed)
+/corpus
+/.rtraw

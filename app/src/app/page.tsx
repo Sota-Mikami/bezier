@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/table";
 import { StageStepper } from "@/components/stage-stepper";
 import { issues, getIssue, deriveNextAction } from "@/lib/data";
-import type { Stage, Maturity } from "@/lib/data";
 
 export default function IssuesListPage() {
   const [selectedId, setSelectedId] = useState<string>("ISSUE-214");
