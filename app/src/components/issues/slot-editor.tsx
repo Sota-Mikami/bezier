@@ -1,17 +1,22 @@
 "use client";
 
 // Reusable markdown slot editor — the /workspace `Editor` pattern, factored for
-// Issue artifact slots (spec.md / decision.md). Reads a file
-// into an OpenDoc, mounts the shared CodeMirror <MarkdownEditor>, and wires a
-// Save button to its imperative handle. Frontmatter is preserved verbatim
+// Issue artifact slots (spec.md / decision.md). Reads a file into an OpenDoc and
+// mounts the shared CodeMirror <MarkdownEditor>.
+//
+// AUTOSAVE (v0.5 slice 2.6): there is NO manual Save button. Edits are persisted
+// on a short debounce after typing stops, and flushed on blur + on unmount
+// (leaving the Spec tab / issue). Crucially we do NOT remount / re-key / re-read
+// the editor on save — that would reset the caret/scroll mid-typing. The
+// editor's in-memory text is the source of truth; save() writes bytes + clears
+// the dirty flag without remounting. Frontmatter is preserved verbatim
 // (frontmatterDirty is always false here — slot frontmatter is a back-link we
 // never edit through this surface), so a clean save is a zero-diff write.
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { FileText, Save, Loader2 } from "lucide-react";
+import { FileText, Loader2, Check } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { readDoc, type OpenDoc } from "@/lib/workspace";
 import type {
@@ -35,34 +40,15 @@ const MarkdownEditor = dynamic(
   MarkdownEditorProps & React.RefAttributes<MarkdownEditorHandle>
 >;
 
-export function SlotEditor({
-  path,
-  label,
-}: {
-  path: string;
-  label?: string;
-}) {
-  // Remount on path change / after save so each load re-baselines from disk.
-  const [reloadToken, setReloadToken] = React.useState(0);
-  return (
-    <SlotEditorInner
-      key={`${path}#${reloadToken}`}
-      path={path}
-      label={label}
-      onReload={() => setReloadToken((t) => t + 1)}
-    />
-  );
+const AUTOSAVE_DEBOUNCE_MS = 700;
+
+export function SlotEditor({ path, label }: { path: string; label?: string }) {
+  // Remount only on path change so each load re-baselines from disk. Saves do
+  // NOT remount (that would jump the caret) — autosave just writes in place.
+  return <SlotEditorInner key={path} path={path} label={label} />;
 }
 
-function SlotEditorInner({
-  path,
-  label,
-  onReload,
-}: {
-  path: string;
-  label?: string;
-  onReload: () => void;
-}) {
+function SlotEditorInner({ path, label }: { path: string; label?: string }) {
   const [doc, setDoc] = React.useState<OpenDoc | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -70,6 +56,9 @@ function SlotEditorInner({
   const [dirty, setDirty] = React.useState(false);
 
   const mdRef = React.useRef<MarkdownEditorHandle>(null);
+  const timerRef = React.useRef<number | null>(null);
+  const savingRef = React.useRef(false);
+  const doSaveRef = React.useRef<() => Promise<void>>(async () => {});
 
   React.useEffect(() => {
     let cancelled = false;
@@ -78,7 +67,8 @@ function SlotEditorInner({
         if (!cancelled) setDoc(d);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -88,18 +78,66 @@ function SlotEditorInner({
     };
   }, [path]);
 
-  const handleSave = React.useCallback(async () => {
-    if (!doc) return;
+  const clearTimer = React.useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  // Persist the editor's in-memory text. Guarded against overlap; reschedules
+  // itself if new edits landed during the write. Never remounts.
+  const doSave = React.useCallback(async () => {
+    const md = mdRef.current;
+    if (!md || savingRef.current || !md.isDirty()) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
-      await mdRef.current?.save();
-      onReload(); // re-read so on-disk content becomes the new clean baseline
+      await md.save(); // writes bytes + clears dirty (no remount)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      savingRef.current = false;
       setSaving(false);
+      // Edits during the await? Re-arm the debounce.
+      if (mdRef.current?.isDirty()) {
+        clearTimer();
+        timerRef.current = window.setTimeout(() => {
+          timerRef.current = null;
+          void doSaveRef.current();
+        }, AUTOSAVE_DEBOUNCE_MS);
+      }
     }
-  }, [doc, onReload]);
+  }, [clearTimer]);
+
+  React.useEffect(() => {
+    doSaveRef.current = doSave;
+  }, [doSave]);
+
+  // Reset the debounce on every edit (onEdit fires per keystroke).
+  const handleEdit = React.useCallback(() => {
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      void doSaveRef.current();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }, [clearTimer]);
+
+  // Flush immediately on blur (e.g. clicking into the terminal / Design).
+  const flush = React.useCallback(() => {
+    clearTimer();
+    void doSaveRef.current();
+  }, [clearTimer]);
+
+  // Flush a final save if the parent unmounts before the debounce fires. The
+  // MarkdownEditor child unmounts first, so we ALSO pass flushOnUnmount to it as
+  // the real safety net; this clears our pending timer.
+  React.useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -112,36 +150,31 @@ function SlotEditorInner({
         >
           {path.slice(path.lastIndexOf("/.continuum/") + 1) || path}
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          <span
-            className={cn(
-              "text-[11px]",
-              dirty
-                ? "text-amber-600 dark:text-amber-500"
-                : "text-muted-foreground",
-            )}
-          >
-            {dirty ? "Unsaved changes" : "Saved"}
-          </span>
-          <Button
-            size="sm"
-            className="gap-1.5"
-            disabled={!doc || loading || saving}
-            onClick={handleSave}
-          >
-            {saving ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Save className="size-3.5" />
-            )}
-            Save
-          </Button>
+        <div className="ml-auto flex items-center gap-1.5 text-[11px]">
+          {saving ? (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              保存中…
+            </span>
+          ) : dirty ? (
+            <span className="text-amber-600 dark:text-amber-500">未保存…</span>
+          ) : (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <Check className="size-3" />
+              保存済み
+            </span>
+          )}
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div
+        className="min-h-0 flex-1 overflow-hidden"
+        onBlur={flush}
+      >
         {loading && <p className="p-4 text-sm text-muted-foreground">Loading…</p>}
-        {error && <p className="p-4 text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className={cn("p-4 text-sm text-destructive")}>{error}</p>
+        )}
         {doc && !loading && (
           <MarkdownEditor
             ref={mdRef}
@@ -149,6 +182,8 @@ function SlotEditorInner({
             frontmatter={doc.frontmatter}
             frontmatterDirty={false}
             onDirtyChange={setDirty}
+            onEdit={handleEdit}
+            flushOnUnmount
           />
         )}
       </div>

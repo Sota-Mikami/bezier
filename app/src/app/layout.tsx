@@ -18,6 +18,11 @@ export const metadata: Metadata = {
   description: "AI-native maker tool. Spec-driven, repo-aware.",
 };
 
+// Follow the OS light/dark setting (no manual toggle). Toggles `.dark` on <html>
+// synchronously (before paint -> no flash) and live-updates when the device
+// preference changes. The design system is class-based (.dark in globals.css).
+const THEME_SYNC = `(function(){try{var m=window.matchMedia('(prefers-color-scheme: dark)');var a=function(){document.documentElement.classList.toggle('dark',m.matches);};a();m.addEventListener('change',a);}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -37,6 +42,7 @@ export default function RootLayout({
       }
     >
       <body className="min-h-full font-sans">
+        <script dangerouslySetInnerHTML={{ __html: THEME_SYNC }} />
         <TooltipProvider delay={0}>
           <ReloadShortcut />
           <WorkspaceRootProvider>

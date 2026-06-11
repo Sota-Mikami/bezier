@@ -49,7 +49,9 @@ import {
   type IssueSlot,
 } from "@/lib/issues";
 import { SlotEditor } from "@/components/issues/slot-editor";
-import { ImplementPanel } from "@/components/issues/implement-panel";
+import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
+import { DesignReview } from "@/components/issues/design-review";
+import { useImplementSession } from "@/components/issues/use-implement-session";
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -324,10 +326,6 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
   const [issue, setIssue] = React.useState<Issue | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [notFound, setNotFound] = React.useState(false);
-  // Right pane has two artifact tabs: Spec (CM editor) and Design (iframe
-  // Preview + Diff + implement loop). Default to Spec.
-  const [tab, setTab] = React.useState<DetailTab>("spec");
-  const [creatingSpec, setCreatingSpec] = React.useState(false);
 
   // Load on mount (keyed by id at the call site, so this is a fresh mount per
   // issue). setState only ever runs in the async continuation, never in the
@@ -350,34 +348,6 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
       cancelled = true;
     };
   }, [root, id]);
-
-  const patchMeta = React.useCallback(
-    async (patch: { title?: string; status?: IssueStatus; labels?: string[] }) => {
-      if (!issue) return;
-      await updateIssueMeta(root, issue, patch);
-      setIssue((prev) => (prev ? { ...prev, ...patch } : prev));
-    },
-    [issue, root],
-  );
-
-  // Create spec.md on demand (the one hand-authored slot).
-  const ensureSpec = React.useCallback(async () => {
-    if (!issue || issue.slots.spec || creatingSpec) return;
-    setCreatingSpec(true);
-    try {
-      await createSlot(root, issue, "spec");
-      setIssue((prev) =>
-        prev ? { ...prev, slots: { ...prev.slots, spec: true } } : prev,
-      );
-    } finally {
-      setCreatingSpec(false);
-    }
-  }, [issue, root, creatingSpec]);
-
-  // Status changes from the Design panel keep the header badge in sync.
-  const handleStatusChange = React.useCallback((status: IssueStatus) => {
-    setIssue((prev) => (prev ? { ...prev, status } : prev));
-  }, []);
 
   if (loading) {
     return (
@@ -406,6 +376,67 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
     );
   }
 
+  // Issue is loaded — mount the workbench (which owns the shared implement
+  // session hook). Keyed by id so the session is fresh per issue.
+  return (
+    <IssueWorkbench key={issue.id} root={root} issue={issue} setIssue={setIssue} />
+  );
+}
+
+// The loaded Issue detail: a 3-region workbench.
+//   - LEFT: minimal thread (narrow).
+//   - CENTER: Spec (CM editor) | Design (Preview/Diff review only).
+//   - RIGHT: the persistent AI agent panel (picker + controls + terminal).
+// The center Spec/Design panes stay mounted (hidden toggling) so the CM caret +
+// preview iframe survive tab switches; the right terminal — being outside the
+// tabs entirely — never unmounts on a center-tab switch, so the agent session
+// persists.
+function IssueWorkbench({
+  root,
+  issue,
+  setIssue,
+}: {
+  root: string;
+  issue: Issue;
+  setIssue: React.Dispatch<React.SetStateAction<Issue | null>>;
+}) {
+  const [tab, setTab] = React.useState<DetailTab>("spec");
+  const [creatingSpec, setCreatingSpec] = React.useState(false);
+
+  const patchMeta = React.useCallback(
+    async (patch: { title?: string; status?: IssueStatus; labels?: string[] }) => {
+      await updateIssueMeta(root, issue, patch);
+      setIssue((prev) => (prev ? { ...prev, ...patch } : prev));
+    },
+    [issue, root, setIssue],
+  );
+
+  // Create spec.md on demand (the one hand-authored slot).
+  const ensureSpec = React.useCallback(async () => {
+    if (issue.slots.spec || creatingSpec) return;
+    setCreatingSpec(true);
+    try {
+      await createSlot(root, issue, "spec");
+      setIssue((prev) =>
+        prev ? { ...prev, slots: { ...prev.slots, spec: true } } : prev,
+      );
+    } finally {
+      setCreatingSpec(false);
+    }
+  }, [issue, root, creatingSpec, setIssue]);
+
+  // Status changes from the agent panel keep the header badge in sync.
+  const handleStatusChange = React.useCallback(
+    (status: IssueStatus) => {
+      setIssue((prev) => (prev ? { ...prev, status } : prev));
+    },
+    [setIssue],
+  );
+
+  // The SHARED implementation session — read by BOTH the right agent panel
+  // (terminal + controls) and the center Design tab (Preview + Diff).
+  const session = useImplementSession(root, issue, handleStatusChange);
+
   return (
     <div className="flex h-svh flex-col">
       <DetailHeader>
@@ -416,7 +447,7 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
         />
         <div className="ml-auto flex items-center gap-2">
           <LabelsEditor
-            key={(issue.labels ?? []).join(" ")}
+            key={(issue.labels ?? []).join(" ")}
             labels={issue.labels ?? []}
             onChange={(labels) => void patchMeta({ labels })}
           />
@@ -428,8 +459,8 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
       </DetailHeader>
 
       <div className="flex min-h-0 flex-1">
-        {/* left: minimal thread */}
-        <section className="flex w-[400px] shrink-0 flex-col border-r">
+        {/* left: minimal thread (narrow) */}
+        <section className="flex w-[280px] shrink-0 flex-col border-r">
           <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
             スレッド
           </div>
@@ -448,8 +479,8 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
           </ScrollArea>
         </section>
 
-        {/* right: artifact tabs — Spec (CM editor) | Design (preview + loop) */}
-        <section className="flex min-w-0 flex-1 flex-col">
+        {/* center: artifact tabs — Spec (CM editor) | Design (Preview/Diff) */}
+        <section className="flex min-w-0 flex-1 flex-col border-r">
           <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
             <Button
               variant={tab === "spec" ? "secondary" : "ghost"}
@@ -471,9 +502,11 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
             </Button>
           </div>
 
-          <div className="min-h-0 flex-1">
-            {tab === "spec" ? (
-              issue.slots.spec ? (
+          {/* Both panes stay mounted (hidden toggling) so the Spec caret + the
+              Design preview iframe survive switching tabs. */}
+          <div className="relative min-h-0 flex-1">
+            <div className={cn("absolute inset-0", tab !== "spec" && "hidden")}>
+              {issue.slots.spec ? (
                 <SlotEditor path={slotPath(issue, "spec")} label="Spec" />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
@@ -493,16 +526,17 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
                     Add Spec
                   </Button>
                 </div>
-              )
-            ) : (
-              <ImplementPanel
-                key={issue.id}
-                root={root}
-                issue={issue}
-                onStatusChange={handleStatusChange}
-              />
-            )}
+              )}
+            </div>
+            <div className={cn("absolute inset-0", tab !== "design" && "hidden")}>
+              <DesignReview session={session} />
+            </div>
           </div>
+        </section>
+
+        {/* right: persistent AI agent panel (picker + controls + terminal) */}
+        <section className="flex w-[42%] min-w-[360px] max-w-[680px] shrink-0 flex-col">
+          <IssueAgentPanel issue={issue} session={session} />
         </section>
       </div>
     </div>

@@ -58,6 +58,11 @@ export interface MarkdownEditorProps {
   /** Fired whenever the editor's body dirty state changes. */
   onDirtyChange?: (dirty: boolean) => void;
   /**
+   * Fired on EVERY document change (not just dirty transitions). Lets a parent
+   * implement debounced autosave by resetting a timer on each edit.
+   */
+  onEdit?: () => void;
+  /**
    * Current frontmatter values. When `frontmatterDirty` is true these are
    * re-emitted on save; otherwise the original raw block is preserved verbatim.
    */
@@ -66,6 +71,13 @@ export interface MarkdownEditorProps {
   frontmatterDirty?: boolean;
   /** Fired after a successful save. */
   onSaved?: () => void;
+  /**
+   * When true, best-effort flush a save() on unmount if the body is dirty.
+   * Opt-in (default off) so callers relying on remount-to-rebaseline (e.g.
+   * /workspace) are unaffected. Used by the autosaving Spec slot editor so the
+   * last edits aren't lost when leaving the issue before the debounce fires.
+   */
+  flushOnUnmount?: boolean;
   className?: string;
 }
 
@@ -381,8 +393,16 @@ function MarkdownEditorInner(
   props: MarkdownEditorProps,
   ref: React.ForwardedRef<MarkdownEditorHandle>,
 ) {
-  const { doc, onDirtyChange, frontmatter, frontmatterDirty, onSaved, className } =
-    props;
+  const {
+    doc,
+    onDirtyChange,
+    onEdit,
+    frontmatter,
+    frontmatterDirty,
+    onSaved,
+    flushOnUnmount,
+    className,
+  } = props;
 
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const viewRef = React.useRef<EditorView | null>(null);
@@ -398,12 +418,17 @@ function MarkdownEditorInner(
   const fmDirtyRef = React.useRef(frontmatterDirty);
   const onSavedRef = React.useRef(onSaved);
   const onDirtyRef = React.useRef(onDirtyChange);
+  const onEditRef = React.useRef(onEdit);
+  const flushOnUnmountRef = React.useRef(flushOnUnmount);
+  const saveRef = React.useRef<() => Promise<void>>(async () => {});
   React.useEffect(() => {
     docRef.current = doc;
     fmRef.current = frontmatter;
     fmDirtyRef.current = frontmatterDirty;
     onSavedRef.current = onSaved;
     onDirtyRef.current = onDirtyChange;
+    onEditRef.current = onEdit;
+    flushOnUnmountRef.current = flushOnUnmount;
   });
 
   const dirtyRef = React.useRef(false);
@@ -421,6 +446,7 @@ function MarkdownEditorInner(
     const updateListener = EditorView.updateListener.of((u) => {
       if (!u.docChanged) return;
       markDirty(u.state.doc.toString() !== docRef.current.body);
+      onEditRef.current?.();
     });
 
     const view = new EditorView({
@@ -471,6 +497,11 @@ function MarkdownEditorInner(
     dirtyRef.current = false;
 
     return () => {
+      // Best-effort autosave flush before teardown (opt-in). Fire-and-forget:
+      // save() reads viewRef BEFORE we destroy, so the latest text is captured.
+      if (flushOnUnmountRef.current && dirtyRef.current) {
+        void saveRef.current();
+      }
       view.destroy();
       viewRef.current = null;
     };
@@ -498,6 +529,11 @@ function MarkdownEditorInner(
     markDirty(false);
     onSavedRef.current?.();
   }, [markDirty]);
+
+  // Keep the unmount-flush path pointed at the latest save closure.
+  React.useEffect(() => {
+    saveRef.current = save;
+  }, [save]);
 
   React.useImperativeHandle(
     ref,
