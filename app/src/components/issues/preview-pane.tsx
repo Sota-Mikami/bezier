@@ -16,6 +16,7 @@ import {
   Settings2,
   TriangleAlert,
   MonitorPlay,
+  AppWindow,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,12 @@ export function PreviewPane({
         detail="「Implement with AI」で worktree を作成すると、ここに実物のプレビューが表示されます。"
       />
     );
+  }
+
+  // Tauri target: launch a REAL Tauri dev window (native APIs work) instead of an
+  // iframe (a Tauri app crashes embedded). No iframe / no dev-command form.
+  if (server.runner === "tauri") {
+    return <TauriRunnerPane server={server} />;
   }
 
   return (
@@ -179,6 +186,112 @@ export function PreviewPane({
             icon={<MonitorPlay className="size-6 text-muted-foreground" />}
             title="プレビュー未起動"
             detail="「Start」で worktree の dev server を起動し、実物を表示します。"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Status labels for the tauri runner (a separate window, not an iframe). */
+const TAURI_STATUS_LABEL: Record<PreviewStatus, string> = {
+  idle: "未起動",
+  starting: "起動中…",
+  ready: "起動済み（別ウィンドウ）",
+  error: "エラー",
+  stopped: "停止",
+};
+
+/**
+ * The Design pane for a TAURI target. The worktree's app opens in a SEPARATE
+ * real Tauri window (can't be iframed), so this shows a Launch/Stop control +
+ * status + the dev/build log (the bulk) + a note that native actions work in
+ * that window. No iframe, no dev-command form.
+ */
+function TauriRunnerPane({ server }: { server: PreviewServer }) {
+  const { status, log, error, tauriPort, config, configLoaded } = server;
+  const running = status === "starting" || status === "ready";
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Controls */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
+        <Badge variant="outline" className="gap-1.5 font-normal">
+          <span
+            className={cn(
+              "size-2 rounded-full",
+              status === "ready" && "bg-emerald-500",
+              status === "starting" && "bg-amber-500",
+              status === "error" && "bg-red-500",
+              (status === "idle" || status === "stopped") &&
+                "bg-muted-foreground",
+            )}
+          />
+          {TAURI_STATUS_LABEL[status]}
+        </Badge>
+        <code className="truncate font-mono text-[11px] text-muted-foreground">
+          Tauri{config?.packageDir ? ` @${config.packageDir}/` : ""}
+          {tauriPort ? ` · :${tauriPort}` : ""}
+        </code>
+        <div className="ml-auto flex items-center gap-1.5">
+          {running ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5"
+              onClick={() => void server.stop()}
+            >
+              <Square className="size-3.5" />
+              Stop
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="h-7 gap-1.5"
+              disabled={!configLoaded}
+              onClick={() => void server.start()}
+            >
+              <AppWindow className="size-3.5" />
+              アプリを起動
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Note: separate window + native works there. */}
+      <div className="flex shrink-0 items-start gap-2 border-b bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+        <AppWindow className="mt-0.5 size-3.5 shrink-0" />
+        <span>
+          ネイティブアプリは Web プレビューできないため、実アプリを起動して確認します（別ウィンドウ。将来は iOS / Android シミュレーター等にも対応）。フォルダを開く等のネイティブ操作もそのまま動作します。初回は起動まで時間がかかることがあります。
+        </span>
+      </div>
+
+      {/* Body: status header + the build/dev log (the bulk). */}
+      <div className="relative min-h-0 flex-1">
+        {status === "starting" ? (
+          <StartingOrError
+            spinner
+            title="アプリを起動しています…"
+            detail={tauriPort ? `http://localhost:${tauriPort}` : undefined}
+            log={log}
+          />
+        ) : status === "ready" ? (
+          <StartingOrError
+            title="別ウィンドウで起動中です。ウィンドウが見当たらない場合はログを確認してください。"
+            detail={tauriPort ? `http://localhost:${tauriPort}` : undefined}
+            log={log}
+          />
+        ) : status === "error" ? (
+          <StartingOrError
+            title={error ?? "起動に失敗しました。"}
+            log={log}
+            tone="error"
+          />
+        ) : (
+          <EmptyState
+            icon={<AppWindow className="size-6 text-muted-foreground" />}
+            title="アプリ 未起動"
+            detail="「アプリを起動」で worktree を実アプリとして起動し、ネイティブ動作を確認します。"
           />
         )}
       </div>

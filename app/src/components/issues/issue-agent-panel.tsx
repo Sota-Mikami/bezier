@@ -17,6 +17,8 @@ import dynamic from "next/dynamic";
 import {
   Loader2,
   GitBranch,
+  GitMerge,
+  ArrowDownToLine,
   RotateCcw,
   Check,
   Trash2,
@@ -62,12 +64,23 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
     termSpawn,
     termNonce,
     handleTermReady,
+    behind,
+    ahead,
+    mergeClean,
+    syncConflicts,
+    syncMain,
+    mergeToMain,
+    resolveConflictsWithAI,
     canImplement,
     handleImplement,
     handleRerun,
     handleAccept,
     handleDiscard,
   } = session;
+
+  // Merge-to-main is the guarded final step: only when the branch is fully
+  // caught up to main (behind 0) AND the dry-run says the merge is clean.
+  const canMerge = behind === 0 && mergeClean === true && !action;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -218,6 +231,109 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
             </>
           )}
         </div>
+
+        {/* Merge-safety layer (OPEN-001): behind-main visibility, Sync (resolve
+            in the isolated worktree), guarded Merge-to-main. */}
+        {ref && (
+          <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+            <div className="flex items-center gap-2">
+              {behind === null ? (
+                <Badge
+                  variant="secondary"
+                  className="gap-1 text-[10px] font-normal"
+                >
+                  <Loader2 className="size-3 animate-spin" />
+                  main との差分を確認中…
+                </Badge>
+              ) : behind === 0 ? (
+                <Badge className="gap-1 bg-emerald-600 text-[10px] font-normal text-white hover:bg-emerald-600">
+                  <Check className="size-3" />
+                  up to date
+                </Badge>
+              ) : (
+                <Badge
+                  variant="secondary"
+                  className="gap-1 text-[10px] font-normal text-amber-700 dark:text-amber-400"
+                >
+                  <TriangleAlert className="size-3" />
+                  {behind} commits behind main
+                </Badge>
+              )}
+              {ahead != null && ahead > 0 && (
+                <span className="text-[10px] text-muted-foreground">
+                  {ahead} ahead
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                disabled={!!action}
+                onClick={() => void syncMain()}
+                title="main を worktree の branch に取り込む（衝突は worktree 内で解決）"
+              >
+                {action === "sync" ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <ArrowDownToLine className="size-3.5" />
+                )}
+                Sync with main
+              </Button>
+              {/* span wrapper so the tooltip shows even while the button is
+                  disabled (disabled buttons don't emit hover events). */}
+              <span title={canMerge ? "main に merge します" : "先に Sync with main"}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={!canMerge}
+                  onClick={() => void mergeToMain()}
+                >
+                  {action === "merge" ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <GitMerge className="size-3.5" />
+                  )}
+                  Merge to main
+                </Button>
+              </span>
+            </div>
+
+            {syncConflicts.length > 0 && (
+              <div className="space-y-1.5 rounded border border-amber-500/40 bg-amber-500/10 p-2">
+                <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                  衝突 {syncConflicts.length} ファイル — 右のターミナルで解決して commit してください
+                </p>
+                <ul className="space-y-0.5">
+                  {syncConflicts.map((f) => (
+                    <li
+                      key={f}
+                      className="truncate font-mono text-[10px] text-muted-foreground"
+                      title={f}
+                    >
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                {selectedAgent?.available && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    disabled={!!action}
+                    onClick={() => resolveConflictsWithAI()}
+                  >
+                    <Sparkles className="size-3.5" />
+                    AI に解決を依頼
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {error && (
           <p className="text-xs text-destructive" role="alert">

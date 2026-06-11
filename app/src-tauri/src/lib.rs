@@ -562,6 +562,229 @@ fn git_branch_delete(repo: String, branch: String) -> Result<(), String> {
 }
 
 // ============================================================================
+// v0.5 — merge-safety layer (OPEN-001 / merge-safety-plan).
+//
+// An Issue branch is cut off `main` at Implement time; meanwhile `main` advances
+// (direct work + other Issues), so a later merge can CONFLICT. Accept only
+// commits to the branch (main untouched). These commands add: behind/ahead
+// visibility, Sync-with-main (resolve conflicts INSIDE the isolated worktree —
+// never on main), a non-destructive dry-run conflict check, and a GUARDED
+// merge-to-main. All path args are `reject_traversal`-guarded; git's stderr is
+// surfaced on failure. Structs use `rename_all = "camelCase"` to match the TS
+// bindings (src/lib/git.ts), exactly like FileEntry.
+// ============================================================================
+
+/// Run `git` with `args`, returning the raw `Output` (so callers that need the
+/// exit CODE — e.g. merge / merge-tree, where 1 means "conflict", not "error" —
+/// can branch on it). A spawn failure (git missing) is the only Err.
+fn git_output(args: &[&str]) -> Result<std::process::Output, String> {
+    std::process::Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|e| format!("failed to run git {args:?}: {e}"))
+}
+
+/// Resolve the worktree/repo's current branch name (or "HEAD" if detached).
+fn current_branch(dir: &str) -> Result<String, String> {
+    Ok(git_run(&["-C", dir, "rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string())
+}
+
+/// `git rev-list --count <range>` parsed to a u32.
+fn rev_count(dir: &str, range: &str) -> Result<u32, String> {
+    git_run(&["-C", dir, "rev-list", "--count", range])?
+        .trim()
+        .parse::<u32>()
+        .map_err(|e| format!("rev-list --count {range}: parse: {e}"))
+}
+
+/// How far the worktree's branch is behind/ahead of `base`.
+/// `behind` = commits in `base` not in the branch (work the branch is missing);
+/// `ahead`  = commits in the branch not in `base` (the branch's own work).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BehindAhead {
+    pub behind: u32,
+    pub ahead: u32,
+}
+
+/// Compute behind/ahead of the worktree's current branch vs `base` (e.g. "main").
+/// The worktree shares the main repo's refs, so `base` is reachable. An invalid
+/// `base` ref surfaces as a clear Err (rev-list fails).
+#[tauri::command]
+fn git_behind_ahead(worktree_path: String, base: String) -> Result<BehindAhead, String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    let wt = worktree_path.as_str();
+    let branch = current_branch(wt)?;
+    let behind = rev_count(wt, &format!("{branch}..{base}"))?;
+    let ahead = rev_count(wt, &format!("{base}..{branch}"))?;
+    Ok(BehindAhead { behind, ahead })
+}
+
+/// Result of Sync-with-main: clean merge (`ok`) or the conflicted file list.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncResult {
+    pub ok: bool,
+    pub conflicts: Vec<String>,
+}
+
+/// Merge `base` INTO the worktree's branch (`git -C <wt> merge <base>`), so the
+/// branch catches up to main. On a clean merge -> `ok:true`. On CONFLICT ->
+/// `ok:false` + the conflicted file list, and the worktree is LEFT in the
+/// conflicted state (NOT aborted) so the user/agent resolves it in the worktree
+/// terminal, then commits — the conflict never touches main. A non-conflict
+/// failure (e.g. local changes would be overwritten) or an invalid `base` ref
+/// surfaces as a clear Err.
+#[tauri::command]
+fn git_sync_main(worktree_path: String, base: String) -> Result<SyncResult, String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    let wt = worktree_path.as_str();
+    // Validate `base` is a real ref up front (clear Err otherwise).
+    git_run(&["-C", wt, "rev-parse", "--verify", "--quiet", &base])
+        .map_err(|_| format!("base '{base}' is not a valid ref"))?;
+
+    let out = git_output(&["-C", wt, "merge", "--no-edit", &base])?;
+    if out.status.success() {
+        return Ok(SyncResult {
+            ok: true,
+            conflicts: Vec::new(),
+        });
+    }
+
+    // Merge failed: a conflict leaves unmerged (diff-filter=U) entries. If there
+    // are none, it failed for another reason (surface git's message).
+    let unmerged = git_run(&["-C", wt, "diff", "--name-only", "--diff-filter=U"])?;
+    let conflicts: Vec<String> = unmerged
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
+    if conflicts.is_empty() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        return Err(format!(
+            "git merge {base} failed: {}",
+            format!("{stderr}{stdout}").trim()
+        ));
+    }
+    // Conflicted on purpose — resolve in the worktree, do NOT abort.
+    Ok(SyncResult {
+        ok: false,
+        conflicts,
+    })
+}
+
+/// Result of the dry-run conflict check.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictCheck {
+    pub clean: bool,
+    pub files: Vec<String>,
+}
+
+/// DRY-RUN: would merging `base` and the worktree's branch conflict? Uses
+/// `git merge-tree --write-tree` (git >= 2.38) which computes the merge IN MEMORY
+/// — nothing on disk changes. Exit 0 = clean, 1 = conflict (parse the file list),
+/// anything else = error (surfaced). `--name-only` makes the conflicted-file
+/// section a bare filename per line.
+#[tauri::command]
+fn git_merge_conflict_check(worktree_path: String, base: String) -> Result<ConflictCheck, String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    let wt = worktree_path.as_str();
+    let branch = current_branch(wt)?;
+    let out = git_output(&[
+        "-C",
+        wt,
+        "merge-tree",
+        "--write-tree",
+        "--name-only",
+        &branch,
+        &base,
+    ])?;
+    match out.status.code() {
+        Some(0) => Ok(ConflictCheck {
+            clean: true,
+            files: Vec::new(),
+        }),
+        Some(1) => {
+            // Output: <tree-OID>\n<conflicted filenames...>\n\n<info messages>.
+            // Skip the OID line, then take filenames until the blank separator.
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let mut lines = stdout.lines();
+            let _oid = lines.next();
+            let files: Vec<String> = lines
+                .take_while(|l| !l.trim().is_empty())
+                .map(String::from)
+                .collect();
+            Ok(ConflictCheck {
+                clean: false,
+                files,
+            })
+        }
+        _ => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            Err(format!("git merge-tree failed: {}", stderr.trim()))
+        }
+    }
+}
+
+/// GUARDED merge of `branch` INTO the MAIN repo's current branch (the explicit,
+/// final step on top of Accept). In the main repo working tree, verify:
+///   (a) the working tree is clean (`status --porcelain` empty), and
+///   (b) `branch` is not behind base AND merges cleanly (dry-run),
+/// then `git merge <branch>`. If a guard fails, return a clear Err telling the
+/// caller to Sync first / clean the tree — nothing is forced.
+#[tauri::command]
+fn git_merge_to_main(repo_path: String, branch: String) -> Result<String, String> {
+    reject_traversal(Path::new(&repo_path))?;
+    let repo = repo_path.as_str();
+    // Validate the branch ref first.
+    git_run(&["-C", repo, "rev-parse", "--verify", "--quiet", &branch])
+        .map_err(|_| format!("branch '{branch}' is not a valid ref"))?;
+
+    // Guard (a): the main working tree must be clean.
+    let status = git_run(&["-C", repo, "status", "--porcelain"])?;
+    if !status.trim().is_empty() {
+        return Err("working tree not clean — commit or stash changes on main first".to_string());
+    }
+
+    // base = the branch we are merging INTO (the repo's current branch, e.g. main).
+    let base = current_branch(repo)?;
+
+    // Guard (b1): branch must not be behind base (else: Sync first).
+    let behind = rev_count(repo, &format!("{branch}..{base}"))?;
+    if behind > 0 {
+        return Err(format!(
+            "branch is {behind} behind {base} — Sync with main first"
+        ));
+    }
+
+    // Guard (b2): the merge must be conflict-free (dry-run, touches nothing).
+    let check = git_output(&[
+        "-C",
+        repo,
+        "merge-tree",
+        "--write-tree",
+        "--name-only",
+        &base,
+        &branch,
+    ])?;
+    if check.status.code() != Some(0) {
+        return Err(format!(
+            "branch conflicts with {base} — Sync with main first"
+        ));
+    }
+
+    // Guards passed: merge into base. With behind=0 this fast-forwards (or is a
+    // no-op "Already up to date"); never forced.
+    let merged = git_run(&["-C", repo, "merge", "--no-edit", &branch])?;
+    Ok(merged.trim().to_string())
+}
+
+// ============================================================================
 // v0.5 slice 2.5 — preview readiness probe.
 //
 // `http_ping(url)` is a tiny TCP+HTTP reachability check used to poll a worktree
@@ -752,6 +975,10 @@ pub fn run() {
             git_commit_all,
             git_worktree_remove,
             git_branch_delete,
+            git_behind_ahead,
+            git_sync_main,
+            git_merge_conflict_check,
+            git_merge_to_main,
             http_ping,
             symlink,
             clone_dir,

@@ -78,6 +78,88 @@ export function gitBranchDelete(repo: string, branch: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Merge-safety layer (OPEN-001) — behind/ahead, Sync-with-main, dry-run
+// conflict check, guarded merge-to-main. Thin wrappers over the Rust commands;
+// Tauri maps the camelCase arg keys to snake_case params (worktreePath ->
+// worktree_path, repoPath -> repo_path).
+// ---------------------------------------------------------------------------
+
+/** How far the worktree's branch is behind/ahead of `base`. */
+export interface BehindAhead {
+  /** commits in base not in the branch (work the branch is missing). */
+  behind: number;
+  /** commits in the branch not in base (the branch's own work). */
+  ahead: number;
+}
+
+/**
+ * Behind/ahead of the worktree's current branch vs `base` (default caller passes
+ * "main"). -> invoke("git_behind_ahead", { worktreePath, base })
+ */
+export function gitBehindAhead(
+  worktreePath: string,
+  base: string,
+): Promise<BehindAhead> {
+  return invoke<BehindAhead>("git_behind_ahead", { worktreePath, base });
+}
+
+/** Result of Sync-with-main. */
+export interface SyncResult {
+  /** true = clean merge; false = conflicted (worktree left conflicted). */
+  ok: boolean;
+  /** conflicted file paths when `ok` is false. */
+  conflicts: string[];
+}
+
+/**
+ * Merge `base` INTO the worktree's branch. On conflict the worktree is LEFT
+ * conflicted (resolve in the worktree terminal, then commit — main untouched).
+ * -> invoke("git_sync_main", { worktreePath, base })
+ */
+export function gitSyncMain(
+  worktreePath: string,
+  base: string,
+): Promise<SyncResult> {
+  return invoke<SyncResult>("git_sync_main", { worktreePath, base });
+}
+
+/** Result of the dry-run conflict check. */
+export interface ConflictCheck {
+  /** true = merging base into the branch would NOT conflict. */
+  clean: boolean;
+  /** conflicted file paths when `clean` is false. */
+  files: string[];
+}
+
+/**
+ * DRY-RUN: would merging `base` and the worktree's branch conflict? Touches
+ * nothing on disk (git merge-tree --write-tree).
+ * -> invoke("git_merge_conflict_check", { worktreePath, base })
+ */
+export function gitMergeConflictCheck(
+  worktreePath: string,
+  base: string,
+): Promise<ConflictCheck> {
+  return invoke<ConflictCheck>("git_merge_conflict_check", {
+    worktreePath,
+    base,
+  });
+}
+
+/**
+ * GUARDED merge of `branch` into the MAIN repo's current branch. Rejects (clear
+ * Err) when the working tree is dirty or the branch is behind/conflicts — the
+ * caller must Sync first. Resolves to git's merge output on success.
+ * -> invoke("git_merge_to_main", { repoPath, branch })
+ */
+export function gitMergeToMain(
+  repoPath: string,
+  branch: string,
+): Promise<string> {
+  return invoke<string>("git_merge_to_main", { repoPath, branch });
+}
+
+// ---------------------------------------------------------------------------
 // Diff parsing (presentation helper, used by the Changes view)
 // ---------------------------------------------------------------------------
 

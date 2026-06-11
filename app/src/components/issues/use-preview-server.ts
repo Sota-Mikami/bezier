@@ -26,15 +26,20 @@ import {
   readPreviewConfig,
   writePreviewConfig,
   detectDev,
+  detectRunner,
   defaultPort,
+  tauriDevPort,
   buildDevCommand,
+  buildTauriDevCommand,
   previewUrl,
   httpPing,
   packageCwd,
   ensureWorktreeNodeModules,
+  ensureWorktreeTauriTarget,
   type PreviewConfig,
   type Framework,
   type DevDetect,
+  type RunnerKind,
 } from "@/lib/preview";
 
 export type PreviewStatus = "idle" | "starting" | "ready" | "error" | "stopped";
@@ -43,8 +48,23 @@ const LOG_CAP = 20_000;
 const POLL_MS = 800;
 const READY_TIMEOUT_MS = 90_000;
 
+// Strip ANSI escape sequences (color + cursor control like `\x1b[32m`, `\x1b[0K`)
+// from dev-server / Rust-build output. The log pane renders plain text, so raw
+// escapes would otherwise show as garbage (`⌐[1m…`). Matches CSI sequences.
+const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]/g;
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, "");
+}
+
 export interface PreviewServer {
   status: PreviewStatus;
+  /**
+   * Which runner this worktree uses: "web" (dev server -> iframe) or "tauri"
+   * (launch a real Tauri dev window — no iframe). Drives the Design pane UI.
+   */
+  runner: RunnerKind;
+  /** For the tauri runner: the dev port the worktree window is launched on. */
+  tauriPort: number | null;
   /** Resolved config (saved, or detected default). Null until loaded. */
   config: PreviewConfig | null;
   /** package.json-derived framework hint (fallback for the port flag). */
@@ -72,6 +92,8 @@ export function usePreviewServer(
   worktreePath: string | null,
 ): PreviewServer {
   const [status, setStatus] = React.useState<PreviewStatus>("idle");
+  const [runner, setRunner] = React.useState<RunnerKind>("web");
+  const [tauriPort, setTauriPort] = React.useState<number | null>(null);
   const [config, setConfig] = React.useState<PreviewConfig | null>(null);
   const [framework, setFramework] = React.useState<Framework>(null);
   const [scriptsDev, setScriptsDev] = React.useState<string | null>(null);
@@ -83,6 +105,10 @@ export function usePreviewServer(
   const ptyIdRef = React.useRef<string | null>(null);
   const pollRef = React.useRef<number | null>(null);
   const unlistenRef = React.useRef<UnlistenFn[]>([]);
+  // Detected runner + (for tauri) the worktree-relative Tauri crate dir, read in
+  // start(). Kept in a ref so start()'s identity doesn't churn on detection.
+  const runnerRef = React.useRef<RunnerKind>("web");
+  const srcTauriRelRef = React.useRef<string | null>(null);
 
   // Load saved config + detect package.json defaults when a worktree appears.
   // setState only ever runs in the async continuation (no synchronous effect
@@ -104,6 +130,20 @@ export function usePreviewServer(
       if (cancelled) return;
       setScriptsDev(detect.scriptsDev);
       setFramework(detect.framework);
+
+      // Runner detection (slice 2.7): web (iframe) vs tauri (real dev window).
+      // A saved `runner` field overrides detection. Runs after detectDev because
+      // it needs the resolved packageDir to find <packageDir>/src-tauri.
+      const rd = await detectRunner(worktreePath, detect.packageDir).catch(() => ({
+        runner: "web" as RunnerKind,
+        srcTauriRel: null,
+      }));
+      if (cancelled) return;
+      const resolvedRunner: RunnerKind = saved?.runner ?? rd.runner;
+      runnerRef.current = resolvedRunner;
+      srcTauriRelRef.current = rd.srcTauriRel;
+      setRunner(resolvedRunner);
+      setTauriPort(resolvedRunner === "tauri" ? tauriDevPort(root) : null);
       // Auto-config from package.json detection; a saved config overrides
       // per-field, but EACH empty field falls back to detection. So a stale
       // config (e.g. `{devCommand:"",...}` written before detection existed) or a
@@ -166,7 +206,10 @@ export function usePreviewServer(
     async (override?: PreviewConfig) => {
       if (!worktreePath) return;
       const cfg = override ?? config;
-      if (!cfg || !cfg.devCommand.trim()) {
+      const isTauri = runnerRef.current === "tauri";
+      // The web runner needs a dev command; the tauri runner builds its own
+      // (`npm run tauri dev …`), so it doesn't.
+      if (!cfg || (!isTauri && !cfg.devCommand.trim())) {
         setStatus("error");
         setError(
           "dev コマンドが未設定です。設定欄でコマンドを入力して保存してください。",
@@ -186,7 +229,7 @@ export function usePreviewServer(
       setUrl(null);
       setStatus("starting");
 
-      // A fresh worktree has no node_modules (gitignored) — symlink it from the
+      // A fresh worktree has no node_modules (gitignored) — clone it from the
       // main repo before launching, else `npm run dev` fails on missing deps.
       try {
         await ensureWorktreeNodeModules(root, worktreePath, cfg.packageDir);
@@ -198,9 +241,30 @@ export function usePreviewServer(
         return;
       }
 
-      // Run the dev server in the package dir (root or a subdir like "app").
+      // The tauri runner ALSO clones the Rust build cache (src-tauri/target) so
+      // `tauri dev` builds incrementally, and launches on a dedicated port via a
+      // --config override (the worktree's window, distinct from the main app).
+      let command: string;
+      let launchPort: number;
+      if (isTauri) {
+        const rel = srcTauriRelRef.current;
+        if (rel) {
+          const res = await ensureWorktreeTauriTarget(root, worktreePath, rel);
+          if (!res.cloned && res.note) {
+            setLog((l) => `${l}[continuum] ${res.note}\n`);
+          }
+        }
+        launchPort = tauriDevPort(root);
+        setTauriPort(launchPort);
+        command = buildTauriDevCommand(launchPort);
+      } else {
+        launchPort = cfg.port;
+        command = buildDevCommand(cfg, framework);
+      }
+
+      // Run in the package dir (root or a subdir like "app") — where package.json
+      // (the dev / tauri scripts) and, for tauri, src-tauri live.
       const cwd = packageCwd(worktreePath, cfg.packageDir);
-      const command = buildDevCommand(cfg, framework);
       let id: string;
       try {
         id = await ptySpawn({
@@ -221,7 +285,7 @@ export function usePreviewServer(
         await onPtyData((p) => {
           if (p.id !== id) return;
           setLog((l) => {
-            const next = l + p.chunk;
+            const next = l + stripAnsi(p.chunk);
             return next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next;
           });
         }),
@@ -238,7 +302,12 @@ export function usePreviewServer(
         }),
       );
 
-      const target = previewUrl(cfg.port);
+      // Both runners poll the dev-server port. web -> point the iframe at it once
+      // it responds. tauri -> the inner Next dev server (beforeDevCommand) is up,
+      // so the Tauri window is now compiling/opening; flag "ready" (running) and
+      // never set an iframe url (PreviewPane renders the tauri view instead). The
+      // first Rust build keeps streaming into the log after this.
+      const target = previewUrl(launchPort);
       const deadline = Date.now() + READY_TIMEOUT_MS;
       pollRef.current = window.setInterval(() => {
         // Superseded by a newer start / a stop -> abandon this poll.
@@ -252,7 +321,7 @@ export function usePreviewServer(
             if (ptyIdRef.current !== id) return;
             if (up) {
               clearTimers();
-              setUrl(target);
+              if (!isTauri) setUrl(target);
               setStatus("ready");
             } else if (Date.now() > deadline) {
               clearTimers();
@@ -299,6 +368,8 @@ export function usePreviewServer(
 
   return {
     status,
+    runner,
+    tauriPort,
     config,
     framework,
     scriptsDev,

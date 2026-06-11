@@ -20,6 +20,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readFile, writeFile } from "@/lib/ipc";
 
+/**
+ * Which preview runner a repo uses (slice 2.7).
+ *  - "web":   dev server -> iframe (the original path).
+ *  - "tauri": launch the worktree as a REAL Tauri dev window (native APIs work);
+ *             NOT an iframe (a Tauri app crashes in the iframe — `invoke` is
+ *             undefined, cross-origin blocks mocking, mocked native is inert).
+ */
+export type RunnerKind = "web" | "tauri";
+
 /** Persisted, repo-level preview config (<root>/.continuum/config.json). */
 export interface PreviewConfig {
   /** Shell command to start the dev server (e.g. "npm run dev"). */
@@ -31,6 +40,11 @@ export interface PreviewConfig {
    * "" means the root itself; "app" means the dev server lives in <root>/app.
    */
   packageDir: string;
+  /**
+   * Runner override (slice 2.7). Absent -> auto-detected (web vs tauri). Set
+   * (e.g. by hand-editing config.json) to force a runner regardless of detection.
+   */
+  runner?: RunnerKind;
 }
 
 /** Frameworks we know how to pass a port to. */
@@ -93,6 +107,10 @@ export async function readPreviewConfig(
           typeof data.packageDir === "string"
             ? normalizeRelDir(data.packageDir)
             : "",
+        // runner override was added in slice 2.7; only honor valid values.
+        ...(data.runner === "web" || data.runner === "tauri"
+          ? { runner: data.runner }
+          : {}),
       };
     }
   } catch {
@@ -174,6 +192,98 @@ export function defaultPort(seed: string): number {
   return 4100 + (h % 80);
 }
 
+// ============================================================================
+// slice 2.7 — Tauri runner detection + launch plumbing.
+//
+// A Tauri app can't be previewed in an iframe (window.__TAURI_INTERNALS__ is
+// undefined, cross-origin blocks mocking, mocked native is inert). The faithful
+// preview is to launch the worktree as a REAL Tauri dev window, where native
+// APIs actually work. This block detects the tauri target and builds the launch
+// command (a port-override so the worktree's instance doesn't collide with the
+// main app's 3210).
+// ============================================================================
+
+/** True if `<dir>/<file>` is readable (cheap existence probe via read_file). */
+async function fileExists(dir: string, file: string): Promise<boolean> {
+  try {
+    await readFile(`${stripTrailingSlash(dir)}/${file}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** What runner detection found about the worktree. */
+export interface RunnerDetect {
+  runner: RunnerKind;
+  /**
+   * Path of the Tauri crate dir RELATIVE to the worktree root (the dir that
+   * holds tauri.conf.json + the Rust build `target`), or null for web. For
+   * continuum this is "app/src-tauri"; for a root-level Tauri app, "src-tauri".
+   */
+  srcTauriRel: string | null;
+}
+
+/**
+ * Detect whether the worktree is a Tauri app. A repo is "tauri" when a
+ * `src-tauri/tauri.conf.json` exists either at the repo root OR inside the
+ * detected `packageDir` (continuum: the web app + Tauri crate both live under
+ * `app/`, so the config is `app/src-tauri/tauri.conf.json`). Returns the runner
+ * and, for tauri, the worktree-relative Tauri crate dir. Never throws.
+ */
+export async function detectRunner(
+  worktreePath: string,
+  packageDir: string,
+): Promise<RunnerDetect> {
+  const pkg = normalizeRelDir(packageDir);
+  // Probe the packageDir-nested location first (continuum's layout), then root.
+  const candidates: string[] = [];
+  if (pkg) candidates.push(`${pkg}/src-tauri`);
+  candidates.push("src-tauri");
+
+  for (const rel of candidates) {
+    if (await fileExists(packageCwd(worktreePath, rel), "tauri.conf.json")) {
+      return { runner: "tauri", srcTauriRel: rel };
+    }
+  }
+  return { runner: "web", srcTauriRel: null };
+}
+
+/**
+ * A deterministic, repo-stable dev port for the Tauri runner in [3300, 3399].
+ * Deliberately distinct from 3210 (the main app's hardcoded dev port) and the
+ * web-preview range [4100, 4179], so a worktree's Tauri instance never collides
+ * with the running app or a web preview.
+ */
+export function tauriDevPort(seed: string): number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return 3300 + (h % 100);
+}
+
+/**
+ * Build the shell command that launches the worktree as a real Tauri dev window
+ * on `port`. continuum's tauri.conf.json HARDCODES `beforeDevCommand:
+ * "npm run dev -- -p 3210"` / `devUrl: "http://localhost:3210"`, which would
+ * collide with the main app — so we pass a `--config` JSON override (Tauri v2
+ * merges it) that re-points both at `port`. The `--` makes npm forward
+ * `--config …` to `tauri dev`. Run with cwd = the package dir (where the `tauri`
+ * npm script + src-tauri live).
+ */
+export function buildTauriDevCommand(port: number): string {
+  const override = JSON.stringify({
+    build: {
+      beforeDevCommand: `npm run dev -- -p ${port}`,
+      devUrl: `http://localhost:${port}`,
+    },
+  });
+  // `override` is JSON: double-quotes only, never single-quotes -> safe to wrap
+  // in single quotes for /bin/sh.
+  return `npm run tauri dev -- --config '${override}'`;
+}
+
 /**
  * Build the shell command to launch. For a known framework we append the port
  * flag (`-p` for next, `--port` for vite); package-runner wrappers (npm/pnpm/
@@ -246,4 +356,53 @@ export async function ensureWorktreeNodeModules(
   const dst = `${packageCwd(worktreePath, packageDir)}/node_modules`;
   const src = `${packageCwd(repoRoot, packageDir)}/node_modules`;
   await cloneDir(src, dst);
+}
+
+/** Outcome of ensuring the worktree's Rust build cache. */
+export interface TargetCloneResult {
+  /** True if the worktree now has a cloned `target` (incremental build). */
+  cloned: boolean;
+  /**
+   * Set when NOT cloned: the reason (e.g. the main repo has no `target` yet, so
+   * the first build is from scratch). Surfaced in the launch log, NOT an error.
+   */
+  note?: string;
+}
+
+/**
+ * Ensure the worktree's Tauri crate has a real `target/` (the Rust build cache)
+ * so `tauri dev` builds INCREMENTALLY instead of from scratch. We CLONE (APFS
+ * copy-on-write) the main repo's `<srcTauriRel>/target` — it is huge (GBs), and
+ * clonefile makes that near-instant + near-zero disk while letting cargo reuse
+ * it. Idempotent (clone_dir no-ops on a real dir). If the main repo has no
+ * `target` yet (never built), this is NOT an error — the first build is just
+ * slow; we report that via `note` so the UI can surface it.
+ *
+ *   src = <repo>/<srcTauriRel>/target
+ *   dst = <worktree>/<srcTauriRel>/target
+ */
+export async function ensureWorktreeTauriTarget(
+  repoRoot: string,
+  worktreePath: string,
+  srcTauriRel: string,
+): Promise<TargetCloneResult> {
+  const rel = normalizeRelDir(srcTauriRel);
+  const src = `${packageCwd(repoRoot, rel)}/target`;
+  const dst = `${packageCwd(worktreePath, rel)}/target`;
+  try {
+    await cloneDir(src, dst);
+    return { cloned: true };
+  } catch (e) {
+    // clone_dir rejects when `src` is missing (repo never built) — degrade to a
+    // slow first build rather than blocking the launch.
+    return {
+      cloned: false,
+      note:
+        e instanceof Error && /not found/i.test(e.message)
+          ? "Rust ビルドキャッシュ (src-tauri/target) が本体リポジトリに無いため、初回ビルドはフルビルドになります（数分かかることがあります）。"
+          : `Rust ビルドキャッシュを clone できませんでした: ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+    };
+  }
 }
