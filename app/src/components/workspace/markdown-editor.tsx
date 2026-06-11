@@ -72,7 +72,6 @@ export interface MarkdownEditorProps {
 /**
  * Re-emit a frontmatter block from structured fields. Only used when the user
  * edited frontmatter; otherwise the original raw block is preserved byte-for-byte.
- * Mirrors emitFrontmatter() in plate-editor.tsx (kept identical on purpose).
  */
 function emitFrontmatter(fm: Frontmatter | undefined): string {
   const data: Record<string, unknown> = {};

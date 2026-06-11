@@ -3,10 +3,9 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
-  Inbox,
-  SquareKanban,
-  Boxes,
-  FolderTree,
+  CircleDot,
+  ScrollText,
+  FolderGit2,
   ChevronsUpDown,
   Settings,
 } from "lucide-react";
@@ -21,21 +20,20 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarMenuBadge,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { repos } from "@/lib/data";
 
+// Improvement-loop axis (要件 §1, Concept A): Issues / Decisions / Repo.
+// Issues is the spine (slice 1). Repo is the existing IDE workspace.
+// (Product returns at slice 3.)
 const nav = [
-  { key: "inbox", label: "Inbox", icon: Inbox, href: "/inbox", unread: "2" },
-  { key: "issues", label: "Design Issues", icon: SquareKanban, href: "/", count: "6" },
-  { key: "library", label: "Components", icon: Boxes, href: "/library", count: "230" },
-  { key: "workspace", label: "Workspace", icon: FolderTree, href: "/workspace" },
+  { key: "issues", label: "Issues", icon: CircleDot, href: "/issues" },
+  { key: "decisions", label: "Decisions", icon: ScrollText, href: "/decisions" },
+  { key: "repo", label: "Repo", icon: FolderGit2, href: "/workspace" },
 ];
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const isIssues = pathname === "/" || pathname.startsWith("/issues");
 
   return (
     <Sidebar collapsible="icon">
@@ -63,7 +61,11 @@ export function AppSidebar() {
           <SidebarGroupLabel>ワークスペース</SidebarGroupLabel>
           <SidebarMenu>
             {nav.map((item) => {
-              const active = item.key === "issues" ? isIssues : pathname === item.href;
+              const active =
+                item.href === "/workspace"
+                  ? pathname.startsWith("/workspace")
+                  : pathname === item.href ||
+                    pathname.startsWith(`${item.href}/`);
               return (
                 <SidebarMenuItem key={item.key}>
                   <SidebarMenuButton
@@ -73,40 +75,10 @@ export function AppSidebar() {
                   >
                     <item.icon />
                     <span>{item.label}</span>
-                    {item.count && (
-                      <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                        {item.count}
-                      </span>
-                    )}
                   </SidebarMenuButton>
-                  {item.unread && <SidebarMenuBadge>{item.unread}</SidebarMenuBadge>}
                 </SidebarMenuItem>
               );
             })}
-          </SidebarMenu>
-        </SidebarGroup>
-
-        <SidebarGroup className="mt-2">
-          <SidebarGroupLabel>接続済みリポジトリ</SidebarGroupLabel>
-          <SidebarMenu>
-            {repos.map((r) => (
-              <SidebarMenuItem key={r.key}>
-                <SidebarMenuButton size="lg" tooltip={`${r.owner}/${r.name}`}>
-                  <span className="flex aspect-square size-8 items-center justify-center rounded-md border bg-muted text-[11px] font-semibold">
-                    {r.owner[0].toUpperCase()}
-                  </span>
-                  <div className="grid flex-1 leading-tight">
-                    <span className="flex items-center gap-1.5 text-sm font-medium">
-                      <span className="size-1.5 rounded-full bg-foreground/45" />
-                      {r.owner}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {r.name} · {r.components} 部品
-                    </span>
-                  </div>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

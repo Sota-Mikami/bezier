@@ -417,6 +417,150 @@ fn is_executable(p: &Path) -> bool {
     }
 }
 
+// ============================================================================
+// v0.5 slice 2 — git worktree / diff commands (the implementation loop).
+//
+// Thin shells over the `git` CLI via std::process::Command (simplest + robust;
+// no libgit2 build dependency). Every path argument is checked with
+// `reject_traversal` before being handed to git. Each command returns
+// `Result<T, String>` with git's stderr surfaced on failure so the TS layer can
+// show a clear message. Mirrored by src/lib/git.ts (Tauri maps the camelCase JS
+// arg keys to these snake_case params automatically).
+// ============================================================================
+
+/// Run `git` with `args`, returning stdout on success or an Err string that
+/// includes stderr (and any stdout) on failure. Used by the commands below.
+fn git_run(args: &[&str]) -> Result<String, String> {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|e| format!("failed to run git {args:?}: {e}"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let detail = format!("{stderr}{stdout}");
+        return Err(format!(
+            "git {} failed: {}",
+            args.join(" "),
+            detail.trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// True if `path` is inside a git work tree.
+#[tauri::command]
+fn git_is_repo(path: String) -> Result<bool, String> {
+    reject_traversal(Path::new(&path))?;
+    let out = std::process::Command::new("git")
+        .args(["-C", &path, "rev-parse", "--is-inside-work-tree"])
+        .output()
+        .map_err(|e| format!("git_is_repo {path}: {e}"))?;
+    // A non-repo dir exits non-zero; treat that as `false`, not an error.
+    Ok(out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "true")
+}
+
+/// Create `branch` off the repo's current HEAD and add a worktree at
+/// `worktree_path`. If `branch` already exists, attach it to the new worktree
+/// instead of failing. A pre-existing `worktree_path` is surfaced as an Err.
+#[tauri::command]
+fn git_worktree_add(repo: String, branch: String, worktree_path: String) -> Result<(), String> {
+    reject_traversal(Path::new(&repo))?;
+    reject_traversal(Path::new(&worktree_path))?;
+
+    // Fast path: create a fresh branch off HEAD and check it out in the worktree.
+    let out = std::process::Command::new("git")
+        .args([
+            "-C",
+            &repo,
+            "worktree",
+            "add",
+            "-b",
+            &branch,
+            &worktree_path,
+            "HEAD",
+        ])
+        .output()
+        .map_err(|e| format!("git_worktree_add {repo}: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    // Branch already exists -> attach it (the worktree path must still be free).
+    if stderr.contains("already exists") && stderr.contains("branch named") {
+        let out2 = std::process::Command::new("git")
+            .args(["-C", &repo, "worktree", "add", &worktree_path, &branch])
+            .output()
+            .map_err(|e| format!("git_worktree_add(attach) {repo}: {e}"))?;
+        if out2.status.success() {
+            return Ok(());
+        }
+        return Err(format!(
+            "git worktree add (existing branch {branch}) failed: {}",
+            String::from_utf8_lossy(&out2.stderr).trim()
+        ));
+    }
+    Err(format!("git worktree add failed: {}", stderr.trim()))
+}
+
+/// Diff of uncommitted changes in `worktree_path` (what the agent touched).
+/// Untracked files are first marked intent-to-add (`add -A -N`) so they appear
+/// in the diff as additions, matching what an Accept will commit.
+#[tauri::command]
+fn git_diff(worktree_path: String) -> Result<String, String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    // Intent-to-add untracked files so `git diff` includes them. Best-effort:
+    // a failure here (e.g. nothing to add) must not abort the diff.
+    let _ = std::process::Command::new("git")
+        .args(["-C", &worktree_path, "add", "-A", "-N"])
+        .output();
+    git_run(&["-C", &worktree_path, "diff"])
+}
+
+/// Porcelain status of `worktree_path` (changed-file list, machine-stable).
+#[tauri::command]
+fn git_status(worktree_path: String) -> Result<String, String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    git_run(&["-C", &worktree_path, "status", "--porcelain"])
+}
+
+/// Stage everything and commit in `worktree_path`. Returns the new commit SHA.
+/// A "nothing to commit" condition surfaces as an Err (the caller decides).
+#[tauri::command]
+fn git_commit_all(worktree_path: String, message: String) -> Result<String, String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    git_run(&["-C", &worktree_path, "add", "-A"])?;
+    // `-m` with an empty message is rejected by git; guard with a fallback.
+    let msg = if message.trim().is_empty() {
+        "continuum: implement issue"
+    } else {
+        message.as_str()
+    };
+    git_run(&["-C", &worktree_path, "commit", "-m", msg])?;
+    let sha = git_run(&["-C", &worktree_path, "rev-parse", "HEAD"])?;
+    Ok(sha.trim().to_string())
+}
+
+/// Remove the worktree at `worktree_path` (force-discarding its changes).
+#[tauri::command]
+fn git_worktree_remove(repo: String, worktree_path: String) -> Result<(), String> {
+    reject_traversal(Path::new(&repo))?;
+    reject_traversal(Path::new(&worktree_path))?;
+    git_run(&["-C", &repo, "worktree", "remove", "--force", &worktree_path])?;
+    Ok(())
+}
+
+/// Delete `branch` from `repo` (force). Used by Discard after the worktree is
+/// removed. Idempotent-ish: a missing branch surfaces as an Err the caller may
+/// choose to ignore.
+#[tauri::command]
+fn git_branch_delete(repo: String, branch: String) -> Result<(), String> {
+    reject_traversal(Path::new(&repo))?;
+    git_run(&["-C", &repo, "branch", "-D", &branch])?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -431,6 +575,13 @@ pub fn run() {
             pty_resize,
             pty_kill,
             command_exists,
+            git_is_repo,
+            git_worktree_add,
+            git_diff,
+            git_status,
+            git_commit_all,
+            git_worktree_remove,
+            git_branch_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

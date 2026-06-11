@@ -20,7 +20,6 @@ export interface OpenDoc {
   rawFrontmatter: string | null;
   frontmatter: Frontmatter;
   body: string;
-  editable: "plate" | "raw";
 }
 
 /** List a directory's immediate children. -> invoke("list_dir", { path }) */

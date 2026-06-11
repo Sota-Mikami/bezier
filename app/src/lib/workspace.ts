@@ -8,7 +8,7 @@ import {
   type FileEntry,
   type OpenDoc,
 } from "@/lib/ipc";
-import { splitFrontmatter, classify } from "@/lib/markdown";
+import { splitFrontmatter } from "@/lib/markdown";
 
 export type { FileEntry, OpenDoc };
 
@@ -37,8 +37,9 @@ export async function listTree(path: string): Promise<FileEntry[]> {
 }
 
 /**
- * Read a file and assemble the frozen OpenDoc shape:
- * readFile -> splitFrontmatter (byte-preserving raw block + typed data) -> classify body.
+ * Read a file and assemble the OpenDoc shape:
+ * readFile -> splitFrontmatter (byte-preserving raw block + typed data).
+ * Every markdown doc is edited by the CodeMirror MarkdownEditor (DEC-010).
  */
 export async function readDoc(path: string): Promise<OpenDoc> {
   const text = await readFile(path);
@@ -50,7 +51,6 @@ export async function readDoc(path: string): Promise<OpenDoc> {
     rawFrontmatter,
     frontmatter: data,
     body,
-    editable: classify(body),
   };
 }
 

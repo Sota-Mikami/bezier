@@ -30,7 +30,6 @@ import {
   MousePointerClick,
   Plus,
   X,
-  Pencil,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -39,7 +38,8 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { FileTree } from "@/components/workspace/file-tree";
-import { openFolder, readDoc, type OpenDoc } from "@/lib/workspace";
+import { readDoc, type OpenDoc } from "@/lib/workspace";
+import { useWorkspaceRoot } from "@/lib/workspace-root";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type {
   MarkdownEditorHandle,
@@ -64,14 +64,6 @@ import {
 import type { CanvasBoardProps } from "@/components/workspace/canvas-board";
 import ScreenGallery from "@/components/workspace/screen-gallery";
 import AddScreen from "@/components/workspace/add-screen";
-// v0.4 element editing. ElementInspector is a controlled panel (useState only,
-// no DOM at load) so it is SSG-safe and statically imported. EditableFrameHandle
-// and the bridge types are erased at compile time (import type). The write-back
-// pipeline (lib/onlook-edit -> vendored Babel) is heavy and Tauri-only, so it is
-// dynamically imported at call time inside the apply/open-source handlers.
-import ElementInspector from "@/components/workspace/element-inspector";
-import type { EditableFrameHandle } from "@/components/workspace/editable-frame";
-import type { SelectedElement, StyleEdit } from "@/lib/preview-bridge";
 
 // MarkdownEditor (CodeMirror 6) is client-only (touches `document` at module
 // load). Load it lazily and disable SSR so the CodeMirror imports never run on
@@ -128,7 +120,9 @@ type WorkspaceView = "editor" | "canvas";
 type CanvasMode = "board" | "gallery";
 
 export default function WorkspacePage() {
-  const [rootPath, setRootPath] = React.useState<string | null>(null);
+  // The opened folder is shared app-wide (Issues / Decisions operate on the same
+  // root) via the WorkspaceRootProvider; the workspace just reads + opens it.
+  const { root: rootPath, openRoot } = useWorkspaceRoot();
   const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
   // Bumped after a save so the editor remounts and re-reads from disk, making
   // the on-disk content the new clean baseline.
@@ -227,19 +221,9 @@ export default function WorkspacePage() {
     [persistScreens],
   );
 
-  // v0.4: "open source" from an editable preview (double-click an element) jumps
-  // to the resolved source file in the Editor view. The path may live outside
-  // the opened workspace folder (the react-repo's repoPath), so it is fed
-  // straight to the Editor (the FileTree simply won't highlight it).
-  const handleOpenFile = React.useCallback((absPath: string) => {
-    setSelectedPath(absPath);
-    setView("editor");
-  }, []);
-
   async function handleOpenFolder() {
-    const picked = await openFolder();
+    const picked = await openRoot();
     if (picked) {
-      setRootPath(picked);
       setSelectedPath(null);
       // New root => the previous folder's screens are stale; clear immediately
       // (the load effect will repopulate from the new root's SoR).
@@ -292,7 +276,7 @@ export default function WorkspacePage() {
         <PanelsTopLeft className="size-4 text-muted-foreground" />
         <span className="text-sm font-medium">Workspace</span>
 
-        {/* View toggle: Editor (file tree + Plate/YAML + terminal) vs Canvas
+        {/* View toggle: Editor (file tree + Markdown/YAML + terminal) vs Canvas
             (react-flow board / gallery of live screen frames). */}
         <div className="ml-3 flex items-center rounded-md border p-0.5">
           <Button
@@ -407,7 +391,6 @@ export default function WorkspacePage() {
                 onAdd={handleScreenAdd}
                 onMove={handleScreenMove}
                 onRemove={handleScreenRemove}
-                onOpenFile={handleOpenFile}
               />
             )}
           </div>
@@ -461,11 +444,6 @@ export default function WorkspacePage() {
  * to <root>/.continuum/screens.json. CanvasBoard is the dynamic({ssr:false})
  * wrapper declared at module top.
  */
-type InspectorStatus = {
-  kind: "idle" | "saving" | "saved" | "error";
-  message?: string;
-};
-
 function CanvasView({
   rootPath,
   screens,
@@ -478,7 +456,6 @@ function CanvasView({
   onAdd,
   onMove,
   onRemove,
-  onOpenFile,
 }: {
   rootPath: string | null;
   screens: Screen[];
@@ -491,129 +468,7 @@ function CanvasView({
   onAdd: (s: Screen) => void;
   onMove: (id: string, x: number, y: number) => void;
   onRemove: (id: string) => void;
-  onOpenFile: (absPath: string) => void;
 }) {
-  // --- v0.4 element editing (canvas-local; not persisted) -------------------
-  // `editMode` swaps react-repo frames for editable previews. `selected` is the
-  // element clicked inside one of those previews + the screen it came from.
-  // `frameHandles` maps screenId -> the EditableFrame imperative handle so we can
-  // push live style previews / highlights without threading a ref through
-  // react-flow's node tree.
-  const [editMode, setEditMode] = React.useState(false);
-  const [selected, setSelected] = React.useState<{
-    screenId: string;
-    element: SelectedElement;
-  } | null>(null);
-  const [writeStatus, setWriteStatus] = React.useState<InspectorStatus>({
-    kind: "idle",
-  });
-  const frameHandles = React.useRef<Map<string, EditableFrameHandle>>(new Map());
-
-  const registerFrameHandle = React.useCallback(
-    (screenId: string, handle: EditableFrameHandle | null) => {
-      if (handle) frameHandles.current.set(screenId, handle);
-      else frameHandles.current.delete(screenId);
-    },
-    [],
-  );
-
-  // Enabling Edit also enables Interact (elements must receive clicks). Leaving
-  // Edit clears the current selection + any highlight in the previews.
-  const toggleEdit = React.useCallback(() => {
-    setEditMode((prev) => {
-      const next = !prev;
-      if (next) {
-        onInteractiveChange(true);
-      } else {
-        for (const h of frameHandles.current.values()) h.highlight(null);
-        setSelected(null);
-        setWriteStatus({ kind: "idle" });
-      }
-      return next;
-    });
-  }, [onInteractiveChange]);
-
-  const handleElementSelect = React.useCallback(
-    (screenId: string, element: SelectedElement) => {
-      setSelected({ screenId, element });
-      setWriteStatus({ kind: "idle" });
-      frameHandles.current.get(screenId)?.highlight(element.domId);
-    },
-    [],
-  );
-
-  // Double-click an element -> resolve its oid to a source file and open it in
-  // the Editor. Needs the repo to be instrumented (sidecar oid-index).
-  const handleOpenSource = React.useCallback(
-    async (screenId: string, oid: string | null) => {
-      if (!oid) return;
-      const screen = screens.find((s) => s.id === screenId);
-      if (!screen || screen.source.type !== "react-repo") return;
-      const repoPath = screen.source.repoPath;
-      try {
-        const { loadOidIndex } = await import("@/lib/onlook-edit");
-        const index = await loadOidIndex(repoPath);
-        const entry = index.entries[oid];
-        if (!entry) return;
-        const root = repoPath.replace(/\/+$/, "");
-        const file = entry.file.replace(/^\/+/, "");
-        onOpenFile(`${root}/${file}`);
-      } catch {
-        /* index missing / unreadable — nothing to open */
-      }
-    },
-    [screens, onOpenFile],
-  );
-
-  // Apply a class/style edit: (1) live preview into the iframe, then (2) write
-  // back to source via the Onlook-style AST pipeline (Tauri + vendored Babel,
-  // dynamically imported so it stays out of the initial bundle).
-  const handleApply = React.useCallback(
-    async (edit: StyleEdit) => {
-      if (!selected) return;
-      const screen = screens.find((s) => s.id === selected.screenId);
-      if (!screen || screen.source.type !== "react-repo") return;
-
-      // (1) Instant visual feedback in the preview, even if the element has no oid.
-      frameHandles.current
-        .get(selected.screenId)
-        ?.applyStylePreview(selected.element.domId, edit.className, edit.override);
-
-      // (2) Source write-back requires an oid (instrumented element).
-      if (selected.element.oid == null) {
-        setWriteStatus({
-          kind: "error",
-          message:
-            "Previewed only — element has no data-oid. Instrument the repo to write back.",
-        });
-        return;
-      }
-
-      setWriteStatus({ kind: "saving" });
-      try {
-        const { applyEdit } = await import("@/lib/onlook-edit");
-        const res = await applyEdit({
-          repoPath: screen.source.repoPath,
-          oid: selected.element.oid,
-          edit,
-        });
-        setWriteStatus({
-          kind: "saved",
-          message: res.changed ? `Saved to ${res.file}` : "No change to write",
-        });
-      } catch (err) {
-        setWriteStatus({
-          kind: "error",
-          message: err instanceof Error ? err.message : String(err),
-        });
-      }
-    },
-    [selected, screens],
-  );
-
-  const hasReactRepo = screens.some((s) => s.source.type === "react-repo");
-  const showInspector = editMode && mode === "board";
-
   if (!rootPath) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -668,27 +523,6 @@ function CanvasView({
           {interactive ? "Interacting" : "Interact"}
         </Button>
 
-        {/* Edit toggle (v0.4): react-repo frames become editable previews. */}
-        <Button
-          variant={editMode ? "secondary" : "ghost"}
-          size="sm"
-          className="h-7 gap-1.5"
-          disabled={mode !== "board" || !hasReactRepo}
-          onClick={toggleEdit}
-          title={
-            !hasReactRepo
-              ? "Add a react-repo screen to edit elements"
-              : mode !== "board"
-                ? "Element editing is available in Board mode"
-                : editMode
-                  ? "Editing: click an element in a react-repo preview"
-                  : "Enable element editing for react-repo screens"
-          }
-        >
-          <Pencil className="size-3.5" />
-          {editMode ? "Editing" : "Edit"}
-        </Button>
-
         <span className="text-xs text-muted-foreground">
           {screens.length} screen{screens.length === 1 ? "" : "s"}
         </span>
@@ -715,8 +549,7 @@ function CanvasView({
         </div>
       )}
 
-      {/* Canvas body: board (react-flow) or gallery (scaled live frames). When
-          editing, an Element inspector docks to the right of the board. */}
+      {/* Canvas body: board (react-flow) or gallery (scaled live frames). */}
       <div className="flex min-h-0 flex-1">
         <div className="relative min-h-0 flex-1">
           {mode === "board" ? (
@@ -725,10 +558,6 @@ function CanvasView({
               interactive={interactive}
               onMove={onMove}
               onRemove={onRemove}
-              editMode={editMode}
-              onElementSelect={handleElementSelect}
-              onOpenSource={handleOpenSource}
-              registerFrameHandle={registerFrameHandle}
             />
           ) : (
             <ScrollArea className="h-full">
@@ -736,21 +565,6 @@ function CanvasView({
             </ScrollArea>
           )}
         </div>
-
-        {showInspector && (
-          <aside className="flex w-80 shrink-0 flex-col border-l bg-sidebar/40">
-            <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
-              Element inspector
-            </div>
-            <div className="min-h-0 flex-1">
-              <ElementInspector
-                selected={selected?.element ?? null}
-                onApply={handleApply}
-                status={writeStatus}
-              />
-            </div>
-          </aside>
-        )}
       </div>
     </div>
   );
@@ -842,9 +656,9 @@ function Editor({
         <span className="truncate font-mono text-[13px]" title={selectedPath}>
           {selectedPath}
         </span>
-        {doc && (
+        {doc && doc.ext && (
           <span className="rounded-sm border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-            {isYaml ? "yaml" : doc.editable}
+            {doc.ext}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">

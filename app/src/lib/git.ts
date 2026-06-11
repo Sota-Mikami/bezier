@@ -1,0 +1,136 @@
+// FROZEN CONTRACT (v0.5 slice 2) — git worktree / diff bindings.
+//
+// Thin wrappers over the Rust git commands (src-tauri/src/lib.rs), invoked the
+// same way as src/lib/ipc.ts. Tauri maps these camelCase JS arg keys to the
+// Rust commands' snake_case params automatically (e.g. worktreePath ->
+// worktree_path), so the key spellings below are part of the contract.
+//
+// The "implementation loop" uses these to: create a branch + worktree off the
+// repo HEAD, let an agent implement in that worktree, read the uncommitted diff,
+// then either commit it on the branch (Accept) or remove the worktree+branch
+// (Discard). Every command rejects path-traversal on the Rust side.
+
+import { invoke } from "@tauri-apps/api/core";
+
+/** True if `path` is inside a git work tree. -> invoke("git_is_repo", { path }) */
+export function gitIsRepo(path: string): Promise<boolean> {
+  return invoke<boolean>("git_is_repo", { path });
+}
+
+/**
+ * Create `branch` off the repo's current HEAD and add a worktree at
+ * `worktreePath`. Existing branch is attached; an existing worktree path errors.
+ * -> invoke("git_worktree_add", { repo, branch, worktreePath })
+ */
+export function gitWorktreeAdd(
+  repo: string,
+  branch: string,
+  worktreePath: string,
+): Promise<void> {
+  return invoke<void>("git_worktree_add", { repo, branch, worktreePath });
+}
+
+/**
+ * Uncommitted diff of `worktreePath` (the agent's work, untracked files
+ * included). -> invoke("git_diff", { worktreePath })
+ */
+export function gitDiff(worktreePath: string): Promise<string> {
+  return invoke<string>("git_diff", { worktreePath });
+}
+
+/**
+ * Porcelain status of `worktreePath` (changed-file list).
+ * -> invoke("git_status", { worktreePath })
+ */
+export function gitStatus(worktreePath: string): Promise<string> {
+  return invoke<string>("git_status", { worktreePath });
+}
+
+/**
+ * Stage all + commit in `worktreePath`. Resolves to the new commit SHA. Rejects
+ * with git's stderr (e.g. "nothing to commit") on failure.
+ * -> invoke("git_commit_all", { worktreePath, message })
+ */
+export function gitCommitAll(
+  worktreePath: string,
+  message: string,
+): Promise<string> {
+  return invoke<string>("git_commit_all", { worktreePath, message });
+}
+
+/**
+ * Remove the worktree at `worktreePath` (force, discarding its changes).
+ * -> invoke("git_worktree_remove", { repo, worktreePath })
+ */
+export function gitWorktreeRemove(
+  repo: string,
+  worktreePath: string,
+): Promise<void> {
+  return invoke<void>("git_worktree_remove", { repo, worktreePath });
+}
+
+/**
+ * Force-delete `branch` from `repo` (used by Discard after worktree removal).
+ * -> invoke("git_branch_delete", { repo, branch })
+ */
+export function gitBranchDelete(repo: string, branch: string): Promise<void> {
+  return invoke<void>("git_branch_delete", { repo, branch });
+}
+
+// ---------------------------------------------------------------------------
+// Diff parsing (presentation helper, used by the Changes view)
+// ---------------------------------------------------------------------------
+
+/** One line of a rendered unified diff, classified for colouring. */
+export interface DiffLine {
+  kind: "add" | "del" | "hunk" | "meta" | "context";
+  text: string;
+}
+
+/**
+ * Classify each line of a `git diff` text for display. Pure/strings-only so it
+ * stays SSG-safe and testable. `+`/`-` are additions/deletions, `@@` hunks,
+ * `diff`/`index`/`+++`/`---`/`new file`/etc. are metadata.
+ */
+export function parseDiff(diff: string): DiffLine[] {
+  if (!diff) return [];
+  return diff.split("\n").map((text): DiffLine => {
+    if (text.startsWith("@@")) return { kind: "hunk", text };
+    if (
+      text.startsWith("diff ") ||
+      text.startsWith("index ") ||
+      text.startsWith("+++") ||
+      text.startsWith("---") ||
+      text.startsWith("new file") ||
+      text.startsWith("deleted file") ||
+      text.startsWith("rename ") ||
+      text.startsWith("similarity ") ||
+      text.startsWith("old mode") ||
+      text.startsWith("new mode") ||
+      text.startsWith("\\ No newline")
+    ) {
+      return { kind: "meta", text };
+    }
+    if (text.startsWith("+")) return { kind: "add", text };
+    if (text.startsWith("-")) return { kind: "del", text };
+    return { kind: "context", text };
+  });
+}
+
+/**
+ * Parse `git status --porcelain` output into a flat list of changed paths.
+ * Each line is `XY <path>` (or `XY <old> -> <new>` for renames — we keep the new
+ * path). Quoted paths (spaces / unicode) are unquoted best-effort.
+ */
+export function changedPathsFromStatus(status: string): string[] {
+  return status
+    .split("\n")
+    .map((l) => l.replace(/\s+$/, ""))
+    .filter(Boolean)
+    .map((l) => {
+      const rest = l.slice(3); // drop the 2 status chars + separating space
+      const arrow = rest.indexOf(" -> ");
+      const path = arrow >= 0 ? rest.slice(arrow + 4) : rest;
+      return path.replace(/^"(.*)"$/, "$1");
+    });
+}
