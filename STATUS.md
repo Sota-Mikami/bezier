@@ -1,8 +1,32 @@
-<!-- 最終更新: 2026-06-08 / v0.1〜v0.4 ビルド完了・dogfood 前で停止 -->
-# continuum — 現在地（2026-06-08 / ▶ v0.1〜v0.4 built, dogfood pending）
+<!-- 最終更新: 2026-06-11 / DEC-007/008 確定・Onlook廃止→Annotation転換・B監査済 -->
+# continuum — 現在地（2026-06-11 / ▶ DEC-007/008 確定, dogfood pending）
 
-> ⭐ **再開時はまず `playbook/operations/2026-06-08_session-handoff.md` を読む**（v0.1〜v0.4 の全状況・停止地点・dogfood 手順・既知バグ）。
-> 要点: v0.1〜v0.4 を Workflow で自律ビルド・全 build green 独立検証・commit 済み（最新 `09eecf9` + ポート/リダイレクト修正）。ただし **一度も人手で実起動していない（build green ≠ 実働）**。dev ポートは衝突回避で **3210** に変更済み。次は **dogfood**（`cd app && npm run tauri dev`）。
+> ⭐ **再開時はまず `playbook/strategy/2026-06-11_coevolution-positioning-and-repo-sor-model.md` を読む**（共進化コア価値・repo-as-SoR データモデル・B監査・v0.5作業リスト）。次に `playbook/operations/2026-06-08_session-handoff.md`（v0.1〜v0.4 実装の全状況）。
+
+## ▶ 2026-06-11 セッション（DEC-007 / DEC-008）
+- **DEC-007 Onlook 廃止 → 完全 LLM 駆動 + Annotation 入力**: GUI 直接編集をやめ、UI 変更は LLM 経由。入力 = 要素ピック注釈（agentation 流）＋ペン注釈（マルチモーダル）。`vendor/onlook/` 他は除去対象。AST 書き戻し（最大の技術負債）を捨てる。
+- **DEC-008 repo-as-SoR データモデル**: 正本＝repo の docs/（`docs/specs/`＋`docs/decisions/` ADR・第一級）/ `.continuum/`＝機械machinery（非正本）。worktree-per-change で**決定とコードを同 commit**。drift harness で docs を生かす。traceability（spec↔screen↔annotation↔decision）。
+- **コア価値**: 実行がコモディティ化する世界で、デザイナー&PM の**意図・判断・決定記憶**を握る層。機械継ぎ目=オープンプロトコル / 価値 ∝ ループ回転速度 / 楔=エンジニア中心agentが二級扱いするデザイナー&PM面＋ベンダー横断。
+- **B（実機監査済）**: `tsc` EXIT 0 / `next dev` `/workspace` 200・Ready 402ms = **build-green 実証**（memory の "build green≠実働" を一段 de-risk）。Rust commands = fs+pty のみ（**git/worktree 皆無**）。既存再利用基盤4つ（ingest/doc編集/ターミナル委譲/Canvas）は健在。
+- **残ゲート**: Tauri ネイティブ窓の目視 dogfood（CEO の人間ゲート・機械不可）。**次は着工前に一度 `cd app && npm run tauri dev`**。
+- v0.5 最小筋: Onlook除去 → docs/+AGENTS.md init → 要素ピック注釈 → 注釈→handoff→worktree→merge の git機構（Rustにgit command）→ 最小 drift check。
+
+## ▶ 2026-06-11 追補（DEC-009 / IA・Issue モデル要件定義）
+- 現状プロダクト（IDE風）への違和感を起点に「メニューから決める」要件定義を実施。**要件doc = `product/specs/2026-06-11_ia-and-issue-model.md`**。
+- **メニュー確定（Concept A）**: Product（実画面Board=ホーム）/ Issues（spine・Spec内包）/ Decisions / Repo ＋ Agent常駐ドロワー。Specsはtop navに出さない。
+- **原則**: P1 一人Designer+PdM第一 / P2 repo-output=エンジニア協業無料(エンジニア用機能を作らない) / P3 SoR adapter(repo既定・Notion後日) / P4 Issue spine(Improvements→Issues改名・注釈は道具に降格) / P5 非stepper=フォルダ規約presence-driven(在れば表示/+で作る)。
+- **Issue=フォルダ（F1/F2/F3/G1'/G2 確定）**: 採番=**ULID** / **issue.md別持ち** / **design必ずフォルダ**。durable=`docs/issues/<ulid>-<slug>/{issue.md,spec.md,design/,decision.md}`は**実コードと同じPR経由でmainへ**（起票で直push禁止）。ephemeral=`.continuum/`(drafts/status/注釈/worktree)は**gitignore local**(status は main に持たない)。branch規約`issue/<ulid>-slug`。詳細=thread(左)+artifact slots(右)。**CTO懸念(main直書き)対応で改訂・DEC-008を精緻化**。
+- **Issueモデル要件=✅一周完了**（doc §3.2〜3.7）: フォルダ規約 / artifact slot中身(issue.md frontmatter/spec軽量/design薄/decision自動下書き+代替案) / 注釈UX(要素ピック+ペン・必ずIssue属・Onlook selection再利用・ライブiframe前提) / status×worktreeライフサイクル(draft→in-progress→merged・昇格点=着手でbranch切る・worktree 1issue1個)。
+- **次フェーズ=実装段取り**: (a)dogfoodで現app不具合を合流 → (b)どの画面から作り変えるか(Product Board/Issue詳細/注釈)の順序 → v0.5実装プラン。据え置き=チーム協業・Notion・Inbox。
+
+## ⏳ Parking（CEO 依頼・editor 改善が落ち着いたら一緒に）
+- **GitHub 専用 repo 化**: continuum をちゃんと育てるため GitHub に dedicated repo を作って管理したい（CEO 2026-06-11）。段取り=「editor改善一段落→未commit分(render-kit/CM6 editor/CM deps)をまとめてcommit→`.gitignore`整備(.continuum=ローカル作業ストアを除外)→GitHub repo作成→ローカルgit履歴ごとpush」。**可視性=private開始で確定（CEO 2026-06-11）**→ 育てて公開できる段階で別途対応。残要決定=repo名(`continuum`?)/owner(Sota-Mikami個人?)のみ。
+
+## ▶ 2026-06-11 dogfood 知見 & DEC-010（エディタ載せ替え）
+- **dogfood#1（実機 tauri dev）**: markdownが flat 表示のバグ発見→**修正済**(`plate-render-kit.tsx` 新規16描画プラグイン・tsc/roundtrip/eslint green・markdown.ts未変更・未commit)。
+- **DEC-010**: その上で CEO が Obsidian 体験を要望→**エディタを Plate → CodeMirror 6 Live Preview に載せ替え決定**(DEC-006 の editor 部分を supersede)。理由=「カーソル当てたら生記法が出る」はテキスト+デコレーション方式=CM6 でしか不可。**副次=round-trip機構(markdown.ts FROZEN/mdToPlate/plateToMd/classify/plate-render-kit)を退役でき SoR(=md)に素直に一致**。テーブル/code blockのlive描画が最難。**次=CM6 Live Preview の POC**(plate-render-kit のスタイル判断を CM デコへ移植)。
+
+> 要点（〜v0.4）: v0.1〜v0.4 を Workflow で自律ビルド・全 build green 独立検証・commit 済み（最新 `07d04e1`）。**一度も人手で実起動していない（build green ≠ 実働）**。dev ポートは **3210**。Onlook=v0.4 は DEC-007 で廃止確定。
 
 
 > ▶ **2026-06-08 再開（DEC-005）**。賭ける層を engine → **レイヤC（プロダクト意思決定の SoR + ベンダー横断オーケストレーション）** に移し、**自分用ツールとして全部入りで作り切る**方針（dogfood-first）。

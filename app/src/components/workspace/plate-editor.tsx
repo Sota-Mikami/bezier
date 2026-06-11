@@ -20,6 +20,7 @@ import type { OpenDoc } from "@/lib/ipc";
 import { writeFile } from "@/lib/ipc";
 import type { Frontmatter } from "@/lib/frontmatter";
 import { mdToPlate, plateToMd } from "@/lib/markdown";
+import { renderKit } from "@/components/workspace/plate-render-kit";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -88,6 +89,10 @@ function PlateEditorInner(
         MarkdownPlugin.configure({
           options: { remarkPlugins: [remarkGfm] },
         }),
+        // Additive render-only plugins: attach React components to the node
+        // types mdToPlate already emits (headings/table/quote/code/list/marks).
+        // Serialization is owned by markdown.ts, so these do not affect saving.
+        ...renderKit,
       ],
       value: initialValue,
     },
@@ -213,7 +218,9 @@ function PlateEditorInner(
         spellCheck={false}
         placeholder="Start writing…"
         className={cn(
-          "min-h-[60vh] w-full px-4 py-3 text-sm leading-relaxed outline-none [&_h1]:mt-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:text-lg [&_h3]:font-semibold [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_li]:my-0.5 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6",
+          // Element/leaf styling now lives in plate-render-kit.tsx (real
+          // <h1>/<table>/<blockquote>/… elements). Keep only base layout here.
+          "min-h-[60vh] w-full px-4 py-3 text-sm leading-relaxed outline-none",
           className,
         )}
         data-dirty={bodyDirty || undefined}

@@ -4,13 +4,14 @@
 //
 // Left: "Open folder" button + <FileTree>. Right: the editor for the selected
 // file, routed by extension:
-//   .md / .mdx -> <PlateEditor> (body) + <FrontmatterPanel> (frontmatter)
+//   .md / .mdx -> <MarkdownEditor> (body) + <FrontmatterPanel> (frontmatter)
 //   .yaml      -> <QaTable>
 //
-// PlateEditor touches the DOM (platejs) so it is loaded via
-// next/dynamic(..., { ssr:false }). QATable / FrontmatterPanel are SSR-safe and
-// imported statically. Save is wired through each editor's imperative handle;
-// a clean (un-edited) save writes the ORIGINAL bytes back -> zero diff.
+// MarkdownEditor is a CodeMirror 6 "Live Preview" editor (DEC-010) — it touches
+// the DOM, so it is loaded via next/dynamic(..., { ssr:false }). QATable /
+// FrontmatterPanel are SSR-safe and imported statically. Save is wired through
+// each editor's imperative handle; a clean (un-edited) save writes the ORIGINAL
+// bytes back -> zero diff.
 
 import * as React from "react";
 import dynamic from "next/dynamic";
@@ -41,9 +42,9 @@ import { FileTree } from "@/components/workspace/file-tree";
 import { openFolder, readDoc, type OpenDoc } from "@/lib/workspace";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type {
-  PlateEditorHandle,
-  PlateEditorProps,
-} from "@/components/workspace/plate-editor";
+  MarkdownEditorHandle,
+  MarkdownEditorProps,
+} from "@/components/workspace/markdown-editor";
 import FrontmatterPanel from "@/components/workspace/frontmatter-panel";
 import QaTable, {
   type QATableHandle,
@@ -72,12 +73,13 @@ import ElementInspector from "@/components/workspace/element-inspector";
 import type { EditableFrameHandle } from "@/components/workspace/editable-frame";
 import type { SelectedElement, StyleEdit } from "@/lib/preview-bridge";
 
-// Plate is client-only (touches `document` at module load). Load it lazily and
-// disable SSR so the platejs imports never run on the server. The Next loadable
-// wrapper spreads all props (incl. `ref`, React 19) into the lazy component, so
-// the forwardRef handle still reaches us through the dynamic boundary.
-const PlateEditor = dynamic(
-  () => import("@/components/workspace/plate-editor"),
+// MarkdownEditor (CodeMirror 6) is client-only (touches `document` at module
+// load). Load it lazily and disable SSR so the CodeMirror imports never run on
+// the server. The Next loadable wrapper spreads all props (incl. `ref`, React
+// 19) into the lazy component, so the forwardRef handle still reaches us through
+// the dynamic boundary.
+const MarkdownEditor = dynamic(
+  () => import("@/components/workspace/markdown-editor"),
   {
     ssr: false,
     loading: () => (
@@ -88,7 +90,7 @@ const PlateEditor = dynamic(
     ),
   },
 ) as React.ForwardRefExoticComponent<
-  PlateEditorProps & React.RefAttributes<PlateEditorHandle>
+  MarkdownEditorProps & React.RefAttributes<MarkdownEditorHandle>
 >;
 
 // The embedded terminal (xterm) touches the DOM and imports xterm CSS, so it
@@ -773,13 +775,13 @@ function Editor({
   const [loading, setLoading] = React.useState(() => !!selectedPath);
   const [saving, setSaving] = React.useState(false);
 
-  // Dirty flags. PlateEditor owns body+frontmatter on save, so for .md we feed
-  // it the current frontmatter draft and a frontmatterDirty flag.
+  // Dirty flags. MarkdownEditor owns body+frontmatter on save, so for .md we
+  // feed it the current frontmatter draft and a frontmatterDirty flag.
   const [bodyDirty, setBodyDirty] = React.useState(false);
   const [fmDirty, setFmDirty] = React.useState(false);
   const [fmDraft, setFmDraft] = React.useState<Frontmatter>({});
 
-  const plateRef = React.useRef<PlateEditorHandle>(null);
+  const mdRef = React.useRef<MarkdownEditorHandle>(null);
   const qaRef = React.useRef<QATableHandle>(null);
 
   // Load the selected document. This component is remounted (via key) whenever
@@ -816,7 +818,7 @@ function Editor({
     setError(null);
     try {
       if (isYaml) await qaRef.current?.save();
-      else await plateRef.current?.save();
+      else await mdRef.current?.save();
       // Re-read (via remount) so the on-disk content becomes the new baseline.
       onReload();
     } catch (err) {
@@ -889,16 +891,16 @@ function Editor({
             </ScrollArea>
           ) : (
             <div className="flex h-full min-h-0">
-              {/* Body editor */}
-              <ScrollArea className="min-w-0 flex-1">
-                <PlateEditor
-                  ref={plateRef}
+              {/* Body editor — CodeMirror scrolls itself, so no ScrollArea. */}
+              <div className="min-h-0 min-w-0 flex-1">
+                <MarkdownEditor
+                  ref={mdRef}
                   doc={doc}
                   frontmatter={fmDraft}
                   frontmatterDirty={fmDirty}
                   onDirtyChange={setBodyDirty}
                 />
-              </ScrollArea>
+              </div>
               {/* Frontmatter side panel */}
               <aside className="w-72 shrink-0 overflow-y-auto border-l bg-sidebar/40">
                 <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
