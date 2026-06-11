@@ -8,7 +8,6 @@ import {
   Boxes,
   FolderTree,
   ChevronsUpDown,
-  Settings,
 } from "lucide-react";
 
 import {
@@ -113,12 +112,6 @@ export function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton tooltip="設定">
-              <Settings />
-              <span>設定</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg">
               <span className="flex aspect-square size-8 items-center justify-center rounded-full bg-muted text-xs font-semibold">
