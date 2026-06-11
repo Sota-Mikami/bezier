@@ -19,8 +19,8 @@
 - **Issueモデル要件=✅一周完了**（doc §3.2〜3.7）: フォルダ規約 / artifact slot中身(issue.md frontmatter/spec軽量/design薄/decision自動下書き+代替案) / 注釈UX(要素ピック+ペン・必ずIssue属・Onlook selection再利用・ライブiframe前提) / status×worktreeライフサイクル(draft→in-progress→merged・昇格点=着手でbranch切る・worktree 1issue1個)。
 - **次フェーズ=実装段取り**: (a)dogfoodで現app不具合を合流 → (b)どの画面から作り変えるか(Product Board/Issue詳細/注釈)の順序 → v0.5実装プラン。据え置き=チーム協業・Notion・Inbox。
 
-## ⏳ Parking（CEO 依頼・editor 改善が落ち着いたら一緒に）
-- **GitHub 専用 repo 化**: continuum をちゃんと育てるため GitHub に dedicated repo を作って管理したい（CEO 2026-06-11）。段取り=「editor改善一段落→未commit分(render-kit/CM6 editor/CM deps)をまとめてcommit→`.gitignore`整備(.continuum=ローカル作業ストアを除外)→GitHub repo作成→ローカルgit履歴ごとpush」。**可視性=private開始で確定（CEO 2026-06-11）**→ 育てて公開できる段階で別途対応。残要決定=repo名(`continuum`?)/owner(Sota-Mikami個人?)のみ。
+## ✅ GitHub repo 化（完了 2026-06-11）
+- **`Sota-Mikami/continuum`（private）作成・全履歴 push 済**（commit `058dad7` = CM6 editor + 2026-06-11 decisions）。origin = https://github.com/Sota-Mikami/continuum 。`.gitignore` に `.continuum/`(ローカル作業ストア)追加済。公開は core が固まった段階で別途対応（CEO 方針）。今後は通常の git/PR 運用。
 
 ## ▶ 2026-06-11 dogfood 知見 & DEC-010（エディタ載せ替え）
 - **dogfood#1（実機 tauri dev）**: markdownが flat 表示のバグ発見→**修正済**(`plate-render-kit.tsx` 新規16描画プラグイン・tsc/roundtrip/eslint green・markdown.ts未変更・未commit)。
