@@ -18,7 +18,8 @@ import {
   Check,
   Tag,
   ChevronDown,
-  Hammer,
+  FileText,
+  MonitorPlay,
 } from "lucide-react";
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -63,11 +64,12 @@ const STATUS_BADGE: Record<
   merged: { label: "merged", variant: "outline" },
 };
 
-// DEC-011: Design slot removed; Decision is auto-generated (not a "+ Add"
-// target). Spec is the one manually-created slot.
+// DEC-011/012: the Issue detail surfaces two artifact tabs — Spec (the spec.md
+// CM editor) and Design (the worktree iframe Preview + Diff + implement loop).
+// Decision is NOT shown here: it is auto-drafted on Accept and only surfaced on
+// the /decisions page. The list-row chip only advertises Spec presence.
 const SLOT_META: { key: IssueSlot; label: string }[] = [
   { key: "spec", label: "Spec" },
-  { key: "decision", label: "Decision" },
 ];
 
 function fmtDate(iso: string): string {
@@ -316,15 +318,16 @@ function IssueList({ root }: { root: string }) {
 // detail
 // ---------------------------------------------------------------------------
 
-type RightView = { kind: "slot"; slot: IssueSlot } | { kind: "implement" };
+type DetailTab = "spec" | "design";
 
 function IssueDetail({ root, id }: { root: string; id: string }) {
   const [issue, setIssue] = React.useState<Issue | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [notFound, setNotFound] = React.useState(false);
-  // Right pane shows either an artifact slot editor or the Implementation panel.
-  const [rightView, setRightView] = React.useState<RightView | null>(null);
-  const [pendingSlot, setPendingSlot] = React.useState<IssueSlot | null>(null);
+  // Right pane has two artifact tabs: Spec (CM editor) and Design (iframe
+  // Preview + Diff + implement loop). Default to Spec.
+  const [tab, setTab] = React.useState<DetailTab>("spec");
+  const [creatingSpec, setCreatingSpec] = React.useState(false);
 
   // Load on mount (keyed by id at the call site, so this is a fresh mount per
   // issue). setState only ever runs in the async continuation, never in the
@@ -357,37 +360,23 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
     [issue, root],
   );
 
-  const handleSlot = React.useCallback(
-    async (slot: IssueSlot) => {
-      if (!issue) return;
-      if (issue.slots[slot]) {
-        setRightView({ kind: "slot", slot });
-        return;
-      }
-      setPendingSlot(slot);
-      try {
-        await createSlot(root, issue, slot);
-        setIssue((prev) =>
-          prev ? { ...prev, slots: { ...prev.slots, [slot]: true } } : prev,
-        );
-        setRightView({ kind: "slot", slot });
-      } finally {
-        setPendingSlot(null);
-      }
-    },
-    [issue, root],
-  );
+  // Create spec.md on demand (the one hand-authored slot).
+  const ensureSpec = React.useCallback(async () => {
+    if (!issue || issue.slots.spec || creatingSpec) return;
+    setCreatingSpec(true);
+    try {
+      await createSlot(root, issue, "spec");
+      setIssue((prev) =>
+        prev ? { ...prev, slots: { ...prev.slots, spec: true } } : prev,
+      );
+    } finally {
+      setCreatingSpec(false);
+    }
+  }, [issue, root, creatingSpec]);
 
-  // Status changes from the Implementation panel keep the header badge in sync.
+  // Status changes from the Design panel keep the header badge in sync.
   const handleStatusChange = React.useCallback((status: IssueStatus) => {
     setIssue((prev) => (prev ? { ...prev, status } : prev));
-  }, []);
-
-  // After Accept drafts decision.md, reveal the Decision tab.
-  const handleDecisionDrafted = React.useCallback(() => {
-    setIssue((prev) =>
-      prev ? { ...prev, slots: { ...prev.slots, decision: true } } : prev,
-    );
   }, []);
 
   if (loading) {
@@ -459,85 +448,59 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
           </ScrollArea>
         </section>
 
-        {/* right: artifact slots + implementation */}
+        {/* right: artifact tabs — Spec (CM editor) | Design (preview + loop) */}
         <section className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
-            {/* Spec — the one manually-created slot (Add / open). */}
-            {(() => {
-              const present = issue.slots.spec;
-              const active =
-                rightView?.kind === "slot" && rightView.slot === "spec";
-              const busy = pendingSlot === "spec";
-              return (
-                <Button
-                  variant={active ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-8 gap-1.5"
-                  disabled={busy}
-                  onClick={() => void handleSlot("spec")}
-                >
-                  {busy ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : present ? (
-                    <Check className="size-3.5" />
-                  ) : (
-                    <Plus className="size-3.5" />
-                  )}
-                  {present ? "Spec" : "Add Spec"}
-                </Button>
-              );
-            })()}
-
-            {/* Decision — present-only (auto-generated on Accept; DEC-011). */}
-            {issue.slots.decision && (
-              <Button
-                variant={
-                  rightView?.kind === "slot" && rightView.slot === "decision"
-                    ? "secondary"
-                    : "ghost"
-                }
-                size="sm"
-                className="h-8 gap-1.5"
-                onClick={() => void handleSlot("decision")}
-              >
-                <Check className="size-3.5" />
-                Decision
-              </Button>
-            )}
-
-            {/* Implementation — branch/worktree/diff/accept loop. */}
             <Button
-              variant={rightView?.kind === "implement" ? "secondary" : "ghost"}
+              variant={tab === "spec" ? "secondary" : "ghost"}
               size="sm"
-              className="ml-auto h-8 gap-1.5"
-              onClick={() => setRightView({ kind: "implement" })}
+              className="h-8 gap-1.5"
+              onClick={() => setTab("spec")}
             >
-              <Hammer className="size-3.5" />
-              Implementation
+              <FileText className="size-3.5" />
+              Spec
+            </Button>
+            <Button
+              variant={tab === "design" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-8 gap-1.5"
+              onClick={() => setTab("design")}
+            >
+              <MonitorPlay className="size-3.5" />
+              Design
             </Button>
           </div>
 
           <div className="min-h-0 flex-1">
-            {rightView?.kind === "implement" ? (
+            {tab === "spec" ? (
+              issue.slots.spec ? (
+                <SlotEditor path={slotPath(issue, "spec")} label="Spec" />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
+                  <FileText className="size-6" />
+                  <div>まだ Spec がありません。</div>
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={creatingSpec}
+                    onClick={() => void ensureSpec()}
+                  >
+                    {creatingSpec ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="size-3.5" />
+                    )}
+                    Add Spec
+                  </Button>
+                </div>
+              )
+            ) : (
               <ImplementPanel
                 key={issue.id}
                 root={root}
                 issue={issue}
                 onStatusChange={handleStatusChange}
-                onDecisionDrafted={handleDecisionDrafted}
               />
-            ) : rightView?.kind === "slot" && issue.slots[rightView.slot] ? (
-              <SlotEditor
-                path={slotPath(issue, rightView.slot)}
-                label={SLOT_META.find((s) => s.key === rightView.slot)?.label}
-              />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                <div>Spec を書いて、Implementation で AI に実装させましょう。</div>
-                <div className="text-xs">
-                  上のボタンで Spec を作成 → Implementation で branch を切ります。
-                </div>
-              </div>
             )}
           </div>
         </section>

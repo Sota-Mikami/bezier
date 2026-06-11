@@ -10,7 +10,7 @@
 // parsed/emitted via the `yaml` package directly so fields beyond the typed
 // Frontmatter shape (id / labels / screens) survive round-trips.
 
-import { listDir, readFile, writeFile } from "@/lib/ipc";
+import { listDir, readFile, writeFile, appDataDir } from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
@@ -367,7 +367,12 @@ export async function listDecisions(root: string): Promise<DecisionEntry[]> {
 export interface WorktreeRef {
   /** branch name (issue/<ulid>-<slug>). */
   branch: string;
-  /** Absolute worktree path (<root>/.continuum/worktrees/<ulid>). */
+  /**
+   * Absolute worktree path. Since slice 2.5.1 this lives OUTSIDE the repo, under
+   * <appData>/worktrees/<repo-id>/<ulid> (see worktreeDir). Older refs may point
+   * inside the repo (<root>/.continuum/worktrees/<ulid>); both are honored on
+   * resume — the stored path is the source of truth for diff/commit/remove.
+   */
   path: string;
   /** SHA the branch was created off (best-effort; may be empty). */
   baseSHA: string;
@@ -378,9 +383,41 @@ export function branchName(issue: Pick<Issue, "id" | "slug">): string {
   return `issue/${issue.id}-${issue.slug || "untitled"}`;
 }
 
-/** Absolute worktree path for an issue: <root>/.continuum/worktrees/<ulid>. */
-export function worktreeDir(root: string, issue: Pick<Issue, "id">): string {
-  return `${stripTrailingSlash(root)}/.continuum/worktrees/${issue.id}`;
+/**
+ * Short, stable, filesystem-safe id for a repo, derived from its absolute path.
+ * `<basename>-<8-hex hash>` keeps worktree dirs human-readable while avoiding
+ * collisions between same-named repos in different locations.
+ */
+function repoId(repoRoot: string): string {
+  const root = stripTrailingSlash(repoRoot);
+  const base =
+    (root.split("/").pop() || "repo").replace(/[^A-Za-z0-9._-]/g, "_") || "repo";
+  // FNV-1a 32-bit over the full path — deterministic, no crypto needed.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < root.length; i++) {
+    h ^= root.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${base}-${(h >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+/**
+ * Absolute worktree path for an issue, OUTSIDE the repo:
+ * <appData>/worktrees/<repo-id>/<ulid>.
+ *
+ * A worktree nested inside the repo (the old <root>/.continuum/worktrees/...)
+ * breaks workspace-root inference: Next.js/Turbopack and package managers walk
+ * UP and find the PARENT repo's lockfile/node_modules, then refuse to compile
+ * the nested copy ("files outside of the project directory will not be
+ * compiled"). Hosting the worktree externally gives it a single, unambiguous
+ * root (its own lockfile + the symlinked node_modules from the main repo).
+ */
+export async function worktreeDir(
+  repoRoot: string,
+  issue: Pick<Issue, "id">,
+): Promise<string> {
+  const base = stripTrailingSlash(await appDataDir());
+  return `${base}/worktrees/${repoId(repoRoot)}/${issue.id}`;
 }
 
 function worktreeRefPath(issue: Pick<Issue, "dir">): string {
@@ -438,13 +475,18 @@ export async function clearWorktreeRef(
 /**
  * Build the agent handoff: issue.md + spec.md + an instruction to implement the
  * spec inside the given worktree. Written to <root>/.continuum/handoff/<id>.md
- * (outside the worktree so it never shows up in the diff). Returns its path.
+ * (outside the worktree so it never shows up in the diff) for the record, and
+ * the same text is returned as `content` so the caller can pass it directly as
+ * the agent's prompt argument (the agent runs in the external worktree and may
+ * not be able to read a file in the main repo, and arg-passing is more reliable
+ * than typing into the TUI after a delay).
  */
 export async function buildImplementHandoff(
   root: string,
   issue: Issue,
   worktreePath: string,
-): Promise<string> {
+  opts?: { followUp?: boolean },
+): Promise<{ path: string; content: string }> {
   let issueMd: string;
   try {
     issueMd = await readFile(`${issue.dir}/issue.md`);
@@ -458,12 +500,25 @@ export async function buildImplementHandoff(
     specMd = "(spec.md がありません)";
   }
   const outPath = `${stripTrailingSlash(root)}/.continuum/handoff/${issue.id}.md`;
+  // On a re-run the worktree already holds the previous iteration's changes; ask
+  // the agent to adjust them to the updated spec rather than start over (DEC-012
+  // review↔refine cycle).
+  const intro = opts?.followUp
+    ? [
+        `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
+        "これは **追記の再実装依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
+        "**ゼロからやり直さず**、更新後の Issue / Spec に合わせて既存の変更を調整・拡張してください。",
+        "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+      ]
+    : [
+        `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
+        "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
+        "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+      ];
   const content = [
     `# 実装ハンドオフ — ${issue.title}`,
     "",
-    `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-    "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
-    "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+    ...intro,
     "",
     "---",
     "",
@@ -477,7 +532,7 @@ export async function buildImplementHandoff(
     "",
   ].join("\n");
   await writeFile(outPath, content);
-  return outPath;
+  return { path: outPath, content };
 }
 
 /** Extract the body text under a `## <heading>` section of a markdown doc. */

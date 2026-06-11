@@ -37,6 +37,15 @@ export function writeFile(path: string, contents: string): Promise<void> {
   return invoke<void>("write_file", { path, contents });
 }
 
+/**
+ * The continuum app-data directory (created if absent). Worktrees are hosted
+ * here, OUTSIDE the user's repo, so workspace-root inference (Next.js/Turbopack)
+ * doesn't trip over the parent repo's lockfile. -> invoke("app_data_dir")
+ */
+export function appDataDir(): Promise<string> {
+  return invoke<string>("app_data_dir");
+}
+
 /** Open a native folder picker. Returns the chosen path, or null if cancelled. */
 export async function pickFolder(): Promise<string | null> {
   const selected = await open({ directory: true, multiple: false });

@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 /// Mirrors the TS `FileEntry` (src/lib/ipc.ts) EXACTLY.
 /// `rename_all = "camelCase"` makes `is_dir` serialize as `isDir` over IPC.
@@ -561,6 +561,176 @@ fn git_branch_delete(repo: String, branch: String) -> Result<(), String> {
     Ok(())
 }
 
+// ============================================================================
+// v0.5 slice 2.5 — preview readiness probe.
+//
+// `http_ping(url)` is a tiny TCP+HTTP reachability check used to poll a worktree
+// dev server until it is serving, before pointing an iframe at it. The webview
+// cannot reliably fetch a cross-origin http://localhost:<port> (CSP / opaque
+// responses), so readiness is detected here instead: connect with a short
+// timeout, send a minimal GET, and report whether the server wrote any bytes
+// back. Pure std::net — no extra crates. Never errors on an unreachable target
+// (returns Ok(false)); a malformed URL also yields Ok(false).
+// ============================================================================
+
+#[tauri::command]
+fn http_ping(url: String) -> Result<bool, String> {
+    use std::io::{Read, Write};
+    use std::net::{TcpStream, ToSocketAddrs};
+    use std::time::Duration;
+
+    // Parse `http(s)://host[:port]/path` without a URL crate (we only ever build
+    // these ourselves as http://localhost:<port>/, but parse defensively).
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(&url);
+    let slash = rest.find('/').unwrap_or(rest.len());
+    let authority = &rest[..slash];
+    let path = if slash < rest.len() { &rest[slash..] } else { "/" };
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((h, p)) => match p.parse::<u16>() {
+            Ok(port) => (h.to_string(), port),
+            Err(_) => return Ok(false),
+        },
+        None => (authority.to_string(), 80),
+    };
+    if host.is_empty() {
+        return Ok(false);
+    }
+
+    let timeout = Duration::from_millis(700);
+    let mut addrs = match (host.as_str(), port).to_socket_addrs() {
+        Ok(a) => a,
+        Err(_) => return Ok(false),
+    };
+    let addr = match addrs.next() {
+        Some(a) => a,
+        None => return Ok(false),
+    };
+    let mut stream = match TcpStream::connect_timeout(&addr, timeout) {
+        Ok(s) => s,
+        Err(_) => return Ok(false),
+    };
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    let req = format!("GET {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(req.as_bytes()).is_err() {
+        return Ok(false);
+    }
+    let mut buf = [0u8; 16];
+    match stream.read(&mut buf) {
+        Ok(n) if n > 0 => Ok(true),
+        _ => Ok(false),
+    }
+}
+
+// ============================================================================
+// v0.5 slice 2.5.1 — node_modules symlink for worktree previews.
+//
+// A fresh git worktree omits node_modules (gitignored), so the worktree dev
+// server can't `npm run dev`. Rather than `npm install` per worktree (slow,
+// duplicated), we symlink the worktree's node_modules to the MAIN repo's
+// installed one. Unix-only (the app targets macOS); both paths are
+// `..`-guarded like every other path command.
+// ============================================================================
+
+/// Create a symlink at `link_path` pointing to `target`.
+/// - No-op success if `link_path` already exists (any entry, incl. a symlink).
+/// - Clear Err if `target` does not exist (the main repo has no node_modules).
+#[tauri::command]
+fn symlink(target: String, link_path: String) -> Result<(), String> {
+    let target_p = Path::new(&target);
+    let link_p = Path::new(&link_path);
+    reject_traversal(target_p)?;
+    reject_traversal(link_p)?;
+
+    // symlink_metadata does NOT follow the link, so an existing (even broken)
+    // symlink or real entry is detected and treated as a no-op.
+    if link_p.symlink_metadata().is_ok() {
+        return Ok(());
+    }
+    if !target_p.exists() {
+        return Err(format!(
+            "node_modules not found in the main repo — run `npm install` there first ({})",
+            target_p.display()
+        ));
+    }
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target_p, link_p)
+            .map_err(|e| format!("symlink {target} -> {link_path}: {e}"))
+    }
+    #[cfg(not(unix))]
+    {
+        Err("symlink is only supported on unix platforms".to_string())
+    }
+}
+
+/// Clone a directory tree from `src` to `dst` using APFS copy-on-write
+/// (`cp -c -R`), producing a REAL directory (not a symlink). Next.js/Turbopack
+/// reject a `node_modules` SYMLINK that points outside the (worktree) project
+/// root, so a fresh worktree gets a clonefile COPY of the main repo's
+/// node_modules instead — near-instant + near-zero disk on APFS (copy-on-write).
+/// - No-op success if `dst` already exists as a real directory/file.
+/// - If `dst` is a prior (now-invalid) symlink, it is removed first, then cloned.
+/// - Clear Err if `src` does not exist.
+#[tauri::command]
+fn clone_dir(src: String, dst: String) -> Result<(), String> {
+    let src_p = Path::new(&src);
+    let dst_p = Path::new(&dst);
+    reject_traversal(src_p)?;
+    reject_traversal(dst_p)?;
+
+    if let Ok(meta) = dst_p.symlink_metadata() {
+        if meta.file_type().is_symlink() {
+            // Remove a prior symlink (e.g. the Turbopack-rejected node_modules link).
+            std::fs::remove_file(dst_p)
+                .map_err(|e| format!("remove existing symlink {dst}: {e}"))?;
+        } else {
+            // A real directory/file is already there — leave it untouched.
+            return Ok(());
+        }
+    }
+
+    if !src_p.exists() {
+        return Err(format!(
+            "source not found — run `npm install` in the main repo first ({})",
+            src_p.display()
+        ));
+    }
+
+    let status = std::process::Command::new("cp")
+        .args(["-c", "-R", &src, &dst])
+        .status()
+        .map_err(|e| format!("cp -c -R {src} -> {dst}: {e}"))?;
+    if !status.success() {
+        return Err(format!("cp -c -R failed ({src} -> {dst})"));
+    }
+    Ok(())
+}
+
+/// The continuum app-data directory (e.g. ~/Library/Application Support/
+/// com.continuum.app on macOS). Created if absent. Used to host git worktrees
+/// OUTSIDE the user's repo — a worktree nested inside the repo makes tools that
+/// infer their workspace root by walking up (Next.js/Turbopack, package
+/// managers) find the PARENT repo's lockfile/node_modules and refuse to compile
+/// the nested copy. An external location gives each worktree a single,
+/// unambiguous root.
+#[tauri::command]
+fn app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("app_data_dir create {}: {e}", dir.display()))?;
+    }
+    Ok(dir.to_string_lossy().into_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -582,6 +752,10 @@ pub fn run() {
             git_commit_all,
             git_worktree_remove,
             git_branch_delete,
+            http_ping,
+            symlink,
+            clone_dir,
+            app_data_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

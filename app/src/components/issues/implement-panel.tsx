@@ -1,28 +1,34 @@
 "use client";
 
-// Issue "Implementation" panel (v0.5 slice 2 — the implementation loop).
+// Issue "Design" tab (v0.5 slice 2 + 2.5 — the implementation + review loop).
 //
 // From a spec'd Issue: create a branch + worktree off the repo HEAD, launch a
 // CLI agent (claude/codex) inside that worktree (embedded TerminalPane, cwd =
-// worktree), show the uncommitted git diff, then Accept (commit on the branch +
-// auto-draft decision.md) or Discard (remove worktree + branch, status -> open).
+// worktree), then review the result two ways — a live iframe Preview of the
+// worktree dev server (slice 2.5) and the text Diff (slice 2) — and iterate:
+// edit the Spec, Re-run AI (re-prompt the same worktree with a follow-up
+// handoff), Preview/Diff again, then Accept (commit on the branch + auto-draft
+// decision.md) or Discard (remove worktree + branch, status -> open).
 //
-// We do NOT auto-merge to main (DEC-008/G1'): Accept leaves the commit on the
-// branch for a PR. The embedded terminal reuses the v0.2 TerminalPane; it is
-// loaded via next/dynamic({ssr:false}) because xterm touches the DOM and the app
-// builds with output:"export".
+// The controls are a CYCLE, not a stepper (DEC-012): Implement/Re-run · Preview
+// · Diff · Accept · Discard are available together once a worktree exists; status
+// stays in-progress across iterations. We do NOT auto-merge to main (DEC-008/
+// G1'). The dev-server pty lives in usePreviewServer (parent-owned) so it
+// survives the Preview⇆Diff toggle and is killed on Discard / unmount.
 
 import * as React from "react";
 import dynamic from "next/dynamic";
 import {
   Loader2,
   GitBranch,
-  Play,
   RotateCw,
+  RotateCcw,
   Check,
   Trash2,
   TriangleAlert,
   Sparkles,
+  MonitorPlay,
+  FileDiff,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -56,6 +62,8 @@ import {
 import { detectAgents, type AgentTool } from "@/lib/agents";
 import { ptyWrite } from "@/lib/pty";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
+import { usePreviewServer } from "./use-preview-server";
+import { PreviewPane } from "./preview-pane";
 
 // xterm-backed terminal — client-only (DOM + CSS), like /workspace.
 const TerminalPane = dynamic(
@@ -75,22 +83,20 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-type Action = "implement" | "launch" | "accept" | "discard" | null;
+type Action = "implement" | "rerun" | "accept" | "discard" | null;
+type ReviewTab = "preview" | "diff";
 
 interface ImplementPanelProps {
   root: string;
   issue: Issue;
   /** Bubble status changes up so the header badge stays in sync. */
   onStatusChange: (status: IssueStatus) => void;
-  /** Called after Accept drafts decision.md so the Decision tab can appear. */
-  onDecisionDrafted: () => void;
 }
 
 export function ImplementPanel({
   root,
   issue,
   onStatusChange,
-  onDecisionDrafted,
 }: ImplementPanelProps) {
   const [gitRepo, setGitRepo] = React.useState<boolean | null>(null);
   const [ref, setRef] = React.useState<WorktreeRef | null>(null);
@@ -105,6 +111,13 @@ export function ImplementPanel({
   const [diff, setDiff] = React.useState("");
   const [statusText, setStatusText] = React.useState("");
   const [diffLoading, setDiffLoading] = React.useState(false);
+
+  // Design defaults to the visual iframe (Preview); Diff is the secondary view.
+  const [reviewTab, setReviewTab] = React.useState<ReviewTab>("preview");
+
+  // Dev-server lifecycle (the Preview). Parent-owned so it survives the
+  // Preview⇆Diff toggle and can be stopped on Discard.
+  const preview = usePreviewServer(root, ref?.path ?? null);
 
   // Embedded terminal (one at a time). termCwd/termSpawn/termNonce mirror the
   // /workspace pattern; pendingInput is written once the pty is ready.
@@ -172,10 +185,15 @@ export function ImplementPanel({
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
 
   const launchAgent = React.useCallback(
-    (agent: AgentTool, cwd: string, initialInput: string) => {
-      pendingInputRef.current = initialInput;
+    (agent: AgentTool, cwd: string, prompt: string) => {
+      // Pass the handoff text as the agent's positional prompt arg
+      // (`claude "<prompt>"` starts an interactive session seeded with it). This
+      // is reliable + visible, unlike typing into the TUI after a fixed delay
+      // (which raced the TUI's input loop and got dropped), and it avoids the
+      // agent needing to read a handoff file that lives in the main repo while it
+      // runs in the external worktree.
       setTermCwd(cwd);
-      setTermSpawn({ cmd: agent.bin, args: [] });
+      setTermSpawn({ cmd: agent.bin, args: [prompt] });
       setTermMounted(true);
       setTermNonce((n) => n + 1);
     },
@@ -201,24 +219,21 @@ export function ImplementPanel({
     }, 800);
   }, []);
 
-  const refreshDiff = React.useCallback(
-    async (worktreePath: string) => {
-      setDiffLoading(true);
-      try {
-        const [d, s] = await Promise.all([
-          gitDiff(worktreePath),
-          gitStatus(worktreePath),
-        ]);
-        setDiff(d);
-        setStatusText(s);
-      } catch (e) {
-        setError(errMsg(e));
-      } finally {
-        setDiffLoading(false);
-      }
-    },
-    [],
-  );
+  const refreshDiff = React.useCallback(async (worktreePath: string) => {
+    setDiffLoading(true);
+    try {
+      const [d, s] = await Promise.all([
+        gitDiff(worktreePath),
+        gitStatus(worktreePath),
+      ]);
+      setDiff(d);
+      setStatusText(s);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setDiffLoading(false);
+    }
+  }, []);
 
   async function handleImplement() {
     if (!gitRepo || !issue.slots.spec || action) return;
@@ -231,15 +246,15 @@ export function ImplementPanel({
     setInfo(null);
     try {
       const branch = branchName(issue);
-      const wt = worktreeDir(root, issue);
+      const wt = await worktreeDir(root, issue);
       await gitWorktreeAdd(root, branch, wt);
       const newRef: WorktreeRef = { branch, path: wt, baseSHA: "" };
       await writeWorktreeRef(issue, newRef);
       await updateIssueMeta(root, issue, { status: "in-progress" });
       onStatusChange("in-progress");
-      const handoff = await buildImplementHandoff(root, issue, wt);
+      const { content } = await buildImplementHandoff(root, issue, wt);
       setRef(newRef);
-      launchAgent(selectedAgent, wt, `Please read ${handoff} and implement.\n`);
+      launchAgent(selectedAgent, wt, content);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -247,17 +262,22 @@ export function ImplementPanel({
     }
   }
 
-  async function handleLaunchAgent() {
+  // Re-run AI on the SAME worktree with a follow-up handoff built from the
+  // (possibly edited) issue.md + spec.md (DEC-012 review↔refine cycle).
+  async function handleRerun() {
     if (!ref || action) return;
     if (!selectedAgent?.available) {
       setError("利用可能なエージェント (claude / codex) が見つかりません。");
       return;
     }
-    setAction("launch");
+    setAction("rerun");
     setError(null);
+    setInfo(null);
     try {
-      const handoff = await buildImplementHandoff(root, issue, ref.path);
-      launchAgent(selectedAgent, ref.path, `Please read ${handoff} and implement.\n`);
+      const { content } = await buildImplementHandoff(root, issue, ref.path, {
+        followUp: true,
+      });
+      launchAgent(selectedAgent, ref.path, content);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -286,9 +306,8 @@ export function ImplementPanel({
       });
       await updateIssueMeta(root, issue, { status: "merged" });
       onStatusChange("merged");
-      onDecisionDrafted();
       setInfo(
-        `commit ${sha.slice(0, 9)} を ${ref.branch} に作成し、decision.md を生成しました。`,
+        `commit ${sha.slice(0, 9)} を ${ref.branch} に作成し、decision.md を生成しました（Decisions に表示されます）。`,
       );
       await refreshDiff(ref.path);
     } catch (e) {
@@ -311,7 +330,9 @@ export function ImplementPanel({
     setError(null);
     setInfo(null);
     try {
-      // Unmount the terminal first so the pty releases the worktree.
+      // Stop the dev server + unmount the terminal first so nothing holds the
+      // worktree open while git removes it.
+      await preview.stop();
       teardownTerminal();
       await gitWorktreeRemove(root, ref.path);
       await gitBranchDelete(root, ref.branch).catch(() => {
@@ -408,7 +429,7 @@ export function ImplementPanel({
           </div>
         </div>
 
-        {/* Action buttons */}
+        {/* Action buttons — a cycle once a worktree exists (DEC-012). */}
         <div className="flex flex-wrap items-center gap-2">
           {!ref ? (
             <Button
@@ -431,15 +452,15 @@ export function ImplementPanel({
                 variant="outline"
                 className="gap-1.5"
                 disabled={!selectedAgent?.available || !!action}
-                onClick={() => void handleLaunchAgent()}
-                title="エージェントを worktree でもう一度起動"
+                onClick={() => void handleRerun()}
+                title="編集後の Spec で同じ worktree に再実装させる"
               >
-                {action === "launch" ? (
+                {action === "rerun" ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
-                  <Play className="size-3.5" />
+                  <RotateCcw className="size-3.5" />
                 )}
-                Launch agent
+                Re-run AI
               </Button>
               <Button
                 size="sm"
@@ -494,33 +515,66 @@ export function ImplementPanel({
         </div>
       )}
 
-      {/* Changes (diff) */}
+      {/* Review — Preview (iframe) ⇆ Diff (text) */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
-          <span className="text-xs font-medium">Changes</span>
+        <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
           <Button
             size="sm"
-            variant="ghost"
+            variant={reviewTab === "preview" ? "secondary" : "ghost"}
             className="h-7 gap-1.5"
-            disabled={!ref || diffLoading}
-            onClick={() => ref && void refreshDiff(ref.path)}
+            onClick={() => setReviewTab("preview")}
           >
-            {diffLoading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RotateCw className="size-3.5" />
-            )}
-            Refresh
+            <MonitorPlay className="size-3.5" />
+            Preview
           </Button>
+          <Button
+            size="sm"
+            variant={reviewTab === "diff" ? "secondary" : "ghost"}
+            className="h-7 gap-1.5"
+            onClick={() => setReviewTab("diff")}
+          >
+            <FileDiff className="size-3.5" />
+            Diff
+          </Button>
+          {reviewTab === "diff" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto h-7 gap-1.5"
+              disabled={!ref || diffLoading}
+              onClick={() => ref && void refreshDiff(ref.path)}
+            >
+              {diffLoading ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <RotateCw className="size-3.5" />
+              )}
+              Refresh
+            </Button>
+          )}
         </div>
-        <ScrollArea className="min-h-0 flex-1">
-          <DiffView
-            diff={diff}
-            statusText={statusText}
-            loading={diffLoading}
-            hasRef={!!ref}
-          />
-        </ScrollArea>
+
+        {/* Both panes stay mounted (hidden toggling) so the iframe + diff scroll
+            survive switching tabs. */}
+        <div className="relative min-h-0 flex-1">
+          <div
+            className={cn("absolute inset-0", reviewTab !== "preview" && "hidden")}
+          >
+            <PreviewPane server={preview} hasRef={!!ref} />
+          </div>
+          <div
+            className={cn("absolute inset-0", reviewTab !== "diff" && "hidden")}
+          >
+            <ScrollArea className="h-full">
+              <DiffView
+                diff={diff}
+                statusText={statusText}
+                loading={diffLoading}
+                hasRef={!!ref}
+              />
+            </ScrollArea>
+          </div>
+        </div>
       </div>
     </div>
   );

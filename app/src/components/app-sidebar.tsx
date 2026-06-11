@@ -7,6 +7,8 @@ import {
   ScrollText,
   FolderGit2,
   ChevronsUpDown,
+  Check,
+  FolderOpen,
   Settings,
 } from "lucide-react";
 
@@ -22,6 +24,15 @@ import {
   SidebarMenuButton,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { useWorkspaceRoot, repoName } from "@/lib/workspace-root";
+import { cn } from "@/lib/utils";
 
 // Improvement-loop axis (要件 §1, Concept A): Issues / Decisions / Repo.
 // Issues is the spine (slice 1). Repo is the existing IDE workspace.
@@ -34,6 +45,7 @@ const nav = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { rootName, root, recents, openRoot, switchTo } = useWorkspaceRoot();
 
   return (
     <Sidebar collapsible="icon">
@@ -46,11 +58,7 @@ export function AppSidebar() {
               </div>
               <div className="grid flex-1 text-left leading-tight">
                 <span className="truncate text-sm font-semibold">continuum</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  三上奏太 · Personal
-                </span>
               </div>
-              <ChevronsUpDown className="size-4 text-muted-foreground" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -91,19 +99,59 @@ export function AppSidebar() {
               <span>設定</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg">
-              <span className="flex aspect-square size-8 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                奏
-              </span>
-              <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate text-sm font-medium">三上奏太</span>
-                <span className="truncate text-xs text-muted-foreground">CEO</span>
-              </div>
-              <ChevronsUpDown className="size-4 text-muted-foreground" />
-            </SidebarMenuButton>
-          </SidebarMenuItem>
         </SidebarMenu>
+
+        {/* Repo switcher (Obsidian vault-style): the whole row is clickable;
+            clicking opens a dropdown of recently-used repos (frequency order,
+            current one checked) + "Open folder…" to add/switch to a new one. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            title={root ?? "Open a repo"}
+            className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md p-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
+          >
+            <span className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+              <FolderGit2 className="size-4" />
+            </span>
+            <div className="grid min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:hidden">
+              <span className="truncate text-sm font-medium">
+                {rootName ?? "Open a repo…"}
+              </span>
+              {root && (
+                <span className="truncate text-xs text-muted-foreground">
+                  {root}
+                </span>
+              )}
+            </div>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="min-w-56">
+            {recents.map((r) => (
+              <DropdownMenuItem
+                key={r.path}
+                onClick={() => switchTo(r.path)}
+                className="cursor-pointer gap-2 px-2 py-1.5 transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <Check
+                  className={cn(
+                    "size-4",
+                    r.path === root ? "opacity-100" : "opacity-0",
+                  )}
+                />
+                <span className="truncate" title={r.path}>
+                  {repoName(r.path)}
+                </span>
+              </DropdownMenuItem>
+            ))}
+            {recents.length > 0 && <DropdownMenuSeparator />}
+            <DropdownMenuItem
+              onClick={() => void openRoot()}
+              className="cursor-pointer gap-2 px-2 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <FolderOpen className="size-4" />
+              Open folder…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SidebarFooter>
 
       <SidebarRail />

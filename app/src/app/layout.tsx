@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/app-sidebar";
 import { WorkspaceRootProvider } from "@/lib/workspace-root";
+import { ReloadShortcut } from "@/components/reload-shortcut";
 
 // next/font/google fetches font files at build time, which fails on offline /
 // static-export builds. Use a system font stack via CSS variables instead.
@@ -37,6 +38,7 @@ export default function RootLayout({
     >
       <body className="min-h-full font-sans">
         <TooltipProvider delay={0}>
+          <ReloadShortcut />
           <WorkspaceRootProvider>
             <SidebarProvider>
               <AppSidebar />
