@@ -206,6 +206,24 @@ export default function TerminalPane({
       const pid = id;
       ptyId = pid;
 
+      // Shift+Enter inserts a newline instead of submitting (DEC-036). xterm
+      // sends \r for both plain and Shift+Enter, so the agent TUI can't tell
+      // them apart and Shift+Enter would submit. Intercept it and send \n (a
+      // literal newline in the input buffer; plain Enter still sends \r = submit).
+      term.attachCustomKeyEventHandler((ev) => {
+        if (
+          ev.type === "keydown" &&
+          ev.key === "Enter" &&
+          ev.shiftKey &&
+          !ev.ctrlKey &&
+          !ev.metaKey
+        ) {
+          ptyWrite(pid, "\n").catch(() => {});
+          return false; // prevent xterm's default \r
+        }
+        return true;
+      });
+
       // Keystrokes / paste -> pty stdin.
       term.onData((d) => {
         ptyWrite(pid, d).catch(() => {});
