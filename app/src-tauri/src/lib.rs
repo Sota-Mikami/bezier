@@ -264,6 +264,12 @@ pub struct PtySpawnOpts {
     /// reattachable. When set, the session survives the terminal unmounting.
     #[serde(default)]
     pub key: Option<String>,
+    /// Optional path to the agent's hook-events file. The agent (Claude) is
+    /// launched with Stop/Notification hooks that append a byte here when its
+    /// turn ends / it asks for input; growth ⇒ the agent is awaiting the user
+    /// (deterministic "waiting" detection, not an idle heuristic).
+    #[serde(default)]
+    pub events_path: Option<String>,
 }
 
 /// One live pty-backed session, held in tauri-managed state keyed by pty id.
@@ -287,6 +293,21 @@ pub struct Session {
     /// Rolling capture of the pty output (capped), replayed on reattach so the
     /// returning terminal shows what happened while it was detached.
     pub backlog: std::sync::Arc<Mutex<String>>,
+    /// Last time the child produced output. Drives the "waiting for input"
+    /// heuristic (alive but quiet for a while ⇒ probably awaiting the user).
+    pub last_activity: std::sync::Arc<Mutex<std::time::Instant>>,
+    /// Set by the reader thread on EOF: Some(exit_code) once the child exits.
+    /// The session lingers in the map so the Agent Inbox can show done/error
+    /// until acknowledged (Re-run / Discard / dismiss removes it).
+    pub exited: std::sync::Arc<Mutex<Option<i32>>>,
+    /// True once a Stop/Notification hook fired (the agent is awaiting the user)
+    /// and not yet cleared by user input. Cleared in pty_write.
+    pub awaiting: std::sync::Arc<Mutex<bool>>,
+    /// Path to the hook-events file watched for growth (see PtySpawnOpts).
+    pub events_path: Option<String>,
+    /// The events file length already consumed (baseline = its length at spawn,
+    /// so only post-spawn hook writes count toward "awaiting").
+    pub events_seen_len: std::sync::Arc<Mutex<u64>>,
 }
 
 /// Payload for the `pty://data` event. camelCase to match the frozen TS
@@ -336,6 +357,21 @@ fn pty_spawn(
         .openpty(size)
         .map_err(|e| format!("pty_spawn openpty: {e}"))?;
 
+    // Prepare the hook-events file: ensure its parent dir exists (so the agent's
+    // `>> file` hook works) and record its current length as the baseline, so
+    // only hook writes that happen AFTER this spawn count toward "awaiting".
+    let events_seen_len = std::sync::Arc::new(Mutex::new(0u64));
+    if let Some(ep) = &opts.events_path {
+        let p = Path::new(ep);
+        if let Some(parent) = p.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let len = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        if let Ok(mut s) = events_seen_len.lock() {
+            *s = len;
+        }
+    }
+
     let mut builder = CommandBuilder::new(&opts.cmd);
     builder.args(&opts.args);
     builder.cwd(&opts.cwd);
@@ -381,11 +417,15 @@ fn pty_spawn(
 
     let id = uuid::Uuid::new_v4().to_string();
     let backlog = std::sync::Arc::new(Mutex::new(String::new()));
+    let last_activity = std::sync::Arc::new(Mutex::new(std::time::Instant::now()));
+    let exited = std::sync::Arc::new(Mutex::new(None::<i32>));
 
     // Reader thread: stream output as `pty://data`, then `pty://exit` on EOF.
     let app_handle = app.clone();
     let thread_id = id.clone();
     let backlog_w = backlog.clone();
+    let activity_w = last_activity.clone();
+    let exited_w = exited.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         // Carry buffer for an INCOMPLETE multi-byte UTF-8 sequence at the end of
@@ -394,7 +434,12 @@ fn pty_spawn(
         let mut carry: Vec<u8> = Vec::new();
         let emit_app = app_handle.clone();
         let emit_tid = thread_id.clone();
+        let activity_emit = activity_w.clone();
         let emit_chunk = move |chunk: String| {
+            // Mark activity (drives the "waiting for input" idle heuristic).
+            if let Ok(mut t) = activity_emit.lock() {
+                *t = std::time::Instant::now();
+            }
             // Append to the rolling backlog (capped to the last ~256KB, trimmed on
             // a char boundary) for replay when a terminal reattaches.
             if let Ok(mut b) = backlog_w.lock() {
@@ -469,6 +514,12 @@ fn pty_spawn(
             emit_chunk(String::from_utf8_lossy(&carry).into_owned());
         }
         let code = child.wait().ok().map(|status| status.exit_code() as i32);
+        // Record the exit so the Agent Inbox can show done/error for a persistent
+        // session that ended on its own (the session lingers in the map until
+        // Re-run / Discard / dismiss).
+        if let Ok(mut e) = exited_w.lock() {
+            *e = Some(code.unwrap_or(-1));
+        }
         let _ = app_handle.emit(
             "pty://exit",
             PtyExitPayload {
@@ -484,6 +535,11 @@ fn pty_spawn(
         killer,
         key: opts.key.clone(),
         backlog,
+        last_activity,
+        exited,
+        awaiting: std::sync::Arc::new(Mutex::new(false)),
+        events_path: opts.events_path.clone(),
+        events_seen_len,
     };
     state
         .sessions
@@ -558,6 +614,92 @@ fn pty_active_keys(state: tauri::State<'_, PtyState>) -> Result<Vec<String>, Str
         .collect())
 }
 
+/// Per-agent status for the Agent Inbox (DEC-028). One entry per keyed session:
+/// `state` is "running" (recent output), "waiting" (alive but quiet — likely
+/// awaiting input), "done" (exited 0) or "error" (exited non-zero). `idleMs` is
+/// how long since the last output.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentStatus {
+    key: String,
+    state: String,
+    idle_ms: u64,
+    exit_code: Option<i32>,
+}
+
+/// Snapshot of every keyed agent's status. "waiting" is DETERMINISTIC: it is set
+/// when the agent's Stop/Notification hook appended to its events file (its turn
+/// ended / it asked for input) and stays until the user types (pty_write clears
+/// it) — no idle heuristic.
+#[tauri::command]
+fn pty_statuses(state: tauri::State<'_, PtyState>) -> Result<Vec<AgentStatus>, String> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|e| format!("pty_statuses lock: {e}"))?;
+    let mut out = Vec::new();
+    for s in sessions.values() {
+        let Some(key) = s.key.clone() else { continue };
+        let exit_code = s.exited.lock().ok().and_then(|e| *e);
+        let idle_ms = s
+            .last_activity
+            .lock()
+            .ok()
+            .map(|t| t.elapsed().as_millis() as u64)
+            .unwrap_or(0);
+
+        // Deterministic "awaiting": did a hook append to the events file since we
+        // last looked? If so latch awaiting=true (cleared on user input).
+        if let Some(ep) = &s.events_path {
+            let len = fs::metadata(ep).map(|m| m.len()).unwrap_or(0);
+            let mut seen = s.events_seen_len.lock().unwrap_or_else(|p| p.into_inner());
+            if len > *seen {
+                *seen = len;
+                if let Ok(mut a) = s.awaiting.lock() {
+                    *a = true;
+                }
+            }
+        }
+        let awaiting = s.awaiting.lock().map(|a| *a).unwrap_or(false);
+
+        let st = match exit_code {
+            Some(0) => "done",
+            Some(_) => "error",
+            None if awaiting => "waiting",
+            None => "running",
+        };
+        out.push(AgentStatus {
+            key,
+            state: st.to_string(),
+            idle_ms,
+            exit_code,
+        });
+    }
+    Ok(out)
+}
+
+/// Remove an EXITED session for `key` from the map (acknowledge a done/error
+/// agent in the inbox). No-op if the session is still alive.
+#[tauri::command]
+fn pty_dismiss(state: tauri::State<'_, PtyState>, key: String) -> Result<(), String> {
+    let mut sessions = state
+        .sessions
+        .lock()
+        .map_err(|e| format!("pty_dismiss lock: {e}"))?;
+    let ids: Vec<String> = sessions
+        .iter()
+        .filter(|(_, s)| {
+            s.key.as_deref() == Some(key.as_str())
+                && s.exited.lock().ok().map(|e| e.is_some()).unwrap_or(false)
+        })
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in ids {
+        sessions.remove(&id);
+    }
+    Ok(())
+}
+
 /// Write raw input to the pty's stdin.
 #[tauri::command]
 fn pty_write(state: tauri::State<'_, PtyState>, id: String, data: String) -> Result<(), String> {
@@ -568,6 +710,18 @@ fn pty_write(state: tauri::State<'_, PtyState>, id: String, data: String) -> Res
     let session = sessions
         .get_mut(&id)
         .ok_or_else(|| format!("pty_write: no session {id}"))?;
+    // The user is responding → the agent is no longer awaiting them. Also advance
+    // the events baseline so the hook write that triggered this turn's "waiting"
+    // doesn't immediately re-trigger.
+    if let Ok(mut a) = session.awaiting.lock() {
+        *a = false;
+    }
+    if let Some(ep) = &session.events_path {
+        let len = fs::metadata(ep).map(|m| m.len()).unwrap_or(0);
+        if let Ok(mut seen) = session.events_seen_len.lock() {
+            *seen = len;
+        }
+    }
     session
         .writer
         .write_all(data.as_bytes())
@@ -1209,6 +1363,26 @@ fn gh_pr_create(
     ))
 }
 
+/// The state of the PR for `branch` ("OPEN" / "MERGED" / "CLOSED"), or "" when
+/// there is no PR / gh is unavailable. Used to auto-mark an issue "done" once its
+/// PR is merged on the platform (DEC-027). Best-effort: never errors.
+#[tauri::command]
+fn gh_pr_state(repo_path: String, branch: String) -> Result<String, String> {
+    if reject_traversal(Path::new(&repo_path)).is_err() {
+        return Ok(String::new());
+    }
+    let out = std::process::Command::new("gh")
+        .args(["pr", "view", &branch, "--json", "state", "-q", ".state"])
+        .current_dir(&repo_path)
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        }
+        _ => Ok(String::new()),
+    }
+}
+
 // ============================================================================
 // v0.5 slice 2.5 — preview readiness probe.
 //
@@ -1398,6 +1572,8 @@ pub fn run() {
             pty_backlog,
             pty_kill_key,
             pty_active_keys,
+            pty_statuses,
+            pty_dismiss,
             command_exists,
             resolve_command,
             git_is_repo,
@@ -1414,6 +1590,7 @@ pub fn run() {
             git_remote_url,
             git_push,
             gh_pr_create,
+            gh_pr_state,
             http_ping,
             symlink,
             clone_dir,

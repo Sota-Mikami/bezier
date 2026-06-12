@@ -51,10 +51,18 @@ import {
   gitRemoteUrl,
   gitPush,
   ghPrCreate,
+  ghPrState,
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
-import { ptyWrite, commandExists, ptyLookup, ptyKillKey } from "@/lib/pty";
+import {
+  ptyWrite,
+  commandExists,
+  ptyLookup,
+  ptyKillKey,
+  ptyStatuses,
+  agentHookSettings,
+} from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
 
@@ -103,6 +111,10 @@ export interface ImplementSession {
   termNonce: number;
   /** Stable key for the persistent agent pty (the issue id). */
   termKey: string;
+  /** Path to the agent's hook-events file (deterministic waiting, DEC-028). */
+  termEventsPath: string;
+  /** A background agent (pty) is currently running for this issue (DEC-027). */
+  running: boolean;
   handleTermReady: (id: string) => void;
   handleTermExit: (code: number | null) => void;
 
@@ -150,6 +162,10 @@ export function useImplementSession(
   issue: Issue,
   onStatusChange: (status: IssueStatus) => void,
 ): ImplementSession {
+  // The agent's hook-events file: Claude appends here (Stop/Notification hooks)
+  // when it awaits the user; the backend watches it for "waiting" (DEC-028).
+  const eventsPath = `${root.replace(/\/+$/, "")}/.continuum/agent-events/${issue.id}`;
+
   const [gitRepo, setGitRepo] = React.useState<boolean | null>(null);
   const [ref, setRef] = React.useState<WorktreeRef | null>(null);
   const [agents, setAgents] = React.useState<AgentTool[]>([]);
@@ -272,6 +288,45 @@ export function useImplementSession(
     };
   }, [root, issue, loadBehind]);
 
+  // Live "running" signal for the derived state (DEC-027): the agent session is
+  // ALIVE (running or waiting for input) — not a lingering exited one. Uses
+  // pty_statuses so a finished agent (which stays in the map for the inbox)
+  // doesn't keep the badge green.
+  const [running, setRunning] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const all = await ptyStatuses().catch(() => []);
+      if (cancelled) return;
+      const mine = all.find((s) => s.key === issue.id);
+      setRunning(mine?.state === "running" || mine?.state === "waiting");
+    };
+    void tick();
+    const h = window.setInterval(() => void tick(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(h);
+    };
+  }, [issue.id]);
+
+  // Auto-"done" (DEC-027): once this issue's PR is MERGED on the platform, mark
+  // it merged. Best-effort, checked when a PR link is present.
+  const refPrUrl = ref?.prUrl ?? null;
+  const refBranch = ref?.branch ?? null;
+  React.useEffect(() => {
+    if (!refPrUrl || !refBranch) return;
+    let cancelled = false;
+    (async () => {
+      const state = await ghPrState(root, refBranch).catch(() => "");
+      if (cancelled || state !== "MERGED") return;
+      await updateIssueMeta(root, issue, { status: "merged" }).catch(() => {});
+      onStatusChange("merged");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refPrUrl, refBranch, root, issue, onStatusChange]);
+
   // Detect installed agents once.
   React.useEffect(() => {
     let cancelled = false;
@@ -390,6 +445,9 @@ export function useImplementSession(
       if (opts.prompt) args.push(opts.prompt);
       if (isClaude) {
         if (opts.resume) args.push("--continue");
+        // Wire Stop/Notification hooks → the events file, for deterministic
+        // "agent is awaiting you" detection (DEC-028, replacing the idle guess).
+        args.push("--settings", agentHookSettings(eventsPath));
         args.push("--add-dir", issue.dir);
       }
       // Any launch counts as "the agent has been started for this issue", so the
@@ -402,7 +460,7 @@ export function useImplementSession(
       setTermMounted(true);
       setTermNonce((n) => n + 1);
     },
-    [issue.dir],
+    [issue.dir, eventsPath],
   );
 
   // Build a fresh seed handoff and launch it on an existing worktree. Used by the
@@ -854,6 +912,8 @@ export function useImplementSession(
     termSpawn,
     termNonce,
     termKey: issue.id,
+    termEventsPath: eventsPath,
+    running,
     handleTermReady,
     handleTermExit,
     thread,

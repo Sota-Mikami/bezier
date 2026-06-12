@@ -22,9 +22,48 @@ import { splitFrontmatter } from "@/lib/markdown";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
 
+// Persisted lifecycle marker, auto-maintained (no manual editing, DEC-027):
+// open (no work) → in-progress (worktree exists) → merged (landed on main). The
+// user-facing state is DERIVED from this + live facts (see deriveState).
 export type IssueStatus = "open" | "in-progress" | "merged";
 
 export const ISSUE_STATUSES: IssueStatus[] = ["open", "in-progress", "merged"];
+
+/**
+ * The DERIVED, user-facing state (DEC-027). Computed from facts — never set by
+ * hand — so it can't drift: a running agent, an open PR, a merge all show
+ * through automatically.
+ */
+export type DerivedState = "idea" | "running" | "draft" | "review" | "done";
+
+/** Derive the user-facing state from the persisted status + live facts. */
+export function deriveState(opts: {
+  status: IssueStatus;
+  /** A background agent (pty) is currently running for this issue. */
+  running: boolean;
+  /** A PR has been opened (worktree ref has a prUrl). */
+  hasPr: boolean;
+  /** A worktree exists (work has started) — defaults from status when unknown. */
+  hasWorktree?: boolean;
+}): DerivedState {
+  if (opts.status === "merged") return "done";
+  if (opts.running) return "running";
+  if (opts.hasPr) return "review";
+  const started = opts.hasWorktree ?? opts.status === "in-progress";
+  return started ? "draft" : "idea";
+}
+
+/** JA label + a tone token for each derived state (UI badge / sidebar). */
+export const DERIVED_STATE_META: Record<
+  DerivedState,
+  { label: string; tone: "muted" | "running" | "draft" | "review" | "done" }
+> = {
+  idea: { label: "未着手", tone: "muted" },
+  running: { label: "実行中", tone: "running" },
+  draft: { label: "下書き", tone: "draft" },
+  review: { label: "レビュー中", tone: "review" },
+  done: { label: "完了", tone: "done" },
+};
 
 // DEC-011: the Design slot is removed (design intent lives in the Spec; the
 // output is the PR/code diff itself). DEC-014/A: decision.md is removed too —

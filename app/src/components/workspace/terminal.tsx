@@ -43,6 +43,8 @@ export interface TerminalPaneProps {
    * RUNNING (the agent keeps working in the background) rather than killing it.
    */
   sessionKey?: string;
+  /** Path to the agent's hook-events file (for deterministic "waiting"). */
+  eventsPath?: string;
   className?: string;
 }
 
@@ -64,6 +66,7 @@ export default function TerminalPane({
   onReady,
   onExit,
   sessionKey,
+  eventsPath,
   className,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -170,6 +173,7 @@ export default function TerminalPane({
             cols,
             rows,
             key: sessionKey,
+            eventsPath,
           });
         } catch (err) {
           if (!disposed && term) {

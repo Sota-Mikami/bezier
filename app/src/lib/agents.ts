@@ -21,23 +21,31 @@ export interface AgentTool {
   bin: string;
   /** Whether `bin` resolved on PATH at detection time. */
   available: boolean;
+  /**
+   * Shown in the picker but not yet launchable (e.g. Codex lacks the hook-based
+   * "waiting" detection that the Agent Inbox relies on, DEC-029). Rendered as a
+   * disabled "coming soon" entry, never selected.
+   */
+  comingSoon?: boolean;
 }
 
-/** The agents we know how to launch, in display order. */
+/** The agents we know about, in display order. */
 const KNOWN_AGENTS: ReadonlyArray<Omit<AgentTool, "available">> = [
   { id: "claude", name: "Claude Code", bin: "claude" },
-  { id: "codex", name: "Codex", bin: "codex" },
+  { id: "codex", name: "Codex", bin: "codex", comingSoon: true },
 ];
 
 /**
  * Resolve each known agent to its preferred absolute binary and report
  * availability. `bin` is set to that absolute path (so the pty launches a real
  * CLI install, not an app-bundled shim that bridges sessions) and falls back to
- * the bare name. The picker should show only entries with `available === true`.
+ * the bare name. A `comingSoon` agent is never marked available (shown but not
+ * launchable). The picker should only let `available === true` entries be picked.
  */
 export async function detectAgents(): Promise<AgentTool[]> {
   return Promise.all(
     KNOWN_AGENTS.map(async (a) => {
+      if (a.comingSoon) return { ...a, available: false };
       const resolved = await resolveCommand(a.bin).catch(() => "");
       return { ...a, bin: resolved || a.bin, available: resolved.length > 0 };
     }),

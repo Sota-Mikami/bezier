@@ -15,7 +15,6 @@ import {
   ArrowLeft,
   Loader2,
   Check,
-  ChevronDown,
   FileText,
   MonitorPlay,
   Trash2,
@@ -23,12 +22,6 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
 import { useWorkspaceRoot } from "@/lib/workspace-root";
@@ -39,9 +32,11 @@ import {
   trashIssue,
   TRASH_TTL_DAYS,
   slotPath,
-  ISSUE_STATUSES,
+  deriveState,
+  DERIVED_STATE_META,
   type Issue,
   type IssueStatus,
+  type DerivedState,
   type ThreadEvent,
   type ThreadEventType,
 } from "@/lib/issues";
@@ -65,15 +60,6 @@ const PULSE_MS = 3000;
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-const STATUS_BADGE: Record<
-  IssueStatus,
-  { label: string; variant: "default" | "secondary" | "outline" }
-> = {
-  open: { label: "open", variant: "secondary" },
-  "in-progress": { label: "in-progress", variant: "default" },
-  merged: { label: "merged", variant: "outline" },
-};
 
 function fmtDate(iso: string): string {
   if (!iso) return "—";
@@ -345,7 +331,7 @@ function IssueWorkbench({
   }, []);
 
   const patchMeta = React.useCallback(
-    async (patch: { title?: string; status?: IssueStatus }) => {
+    async (patch: { title?: string }) => {
       await updateIssueMeta(root, issue, patch);
       setIssue((prev) => (prev ? { ...prev, ...patch } : prev));
     },
@@ -454,9 +440,13 @@ function IssueWorkbench({
           onCommit={(t) => void patchMeta({ title: t })}
         />
         <div className="ml-auto flex items-center gap-2">
-          <StatusDropdown
-            status={issue.status}
-            onChange={(s) => void patchMeta({ status: s })}
+          <StateBadge
+            state={deriveState({
+              status: issue.status,
+              running: session.running,
+              hasPr: !!session.ref?.prUrl,
+              hasWorktree: !!session.ref,
+            })}
           />
           <button
             type="button"
@@ -642,45 +632,42 @@ function TitleEditor({
   );
 }
 
-function StatusDropdown({
-  status,
-  onChange,
-}: {
-  status: IssueStatus;
-  onChange: (s: IssueStatus) => void;
-}) {
-  const badge = STATUS_BADGE[status];
+// Read-only derived state badge (DEC-027): computed from facts (status / running
+// / PR), never set by hand.
+function StateBadge({ state }: { state: DerivedState }) {
+  const meta = DERIVED_STATE_META[state];
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button variant="outline" size="sm" className="h-8 gap-1.5">
-            <span
-              className={cn(
-                "size-2 rounded-full",
-                status === "open" && "bg-muted-foreground",
-                status === "in-progress" && "bg-primary",
-                status === "merged" && "bg-foreground",
-              )}
-            />
-            {badge.label}
-            <ChevronDown className="size-3.5 text-muted-foreground" />
-          </Button>
-        }
-      />
-      <DropdownMenuContent align="end">
-        {ISSUE_STATUSES.map((s) => (
-          <DropdownMenuItem key={s} onClick={() => onChange(s)}>
-            <Check
-              className={cn(
-                "size-3.5",
-                s === status ? "opacity-100" : "opacity-0",
-              )}
-            />
-            {STATUS_BADGE[s].label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <span
+      className={cn(
+        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
+        meta.tone === "muted" && "text-muted-foreground",
+        meta.tone === "running" &&
+          "border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
+        meta.tone === "draft" && "text-foreground/80",
+        meta.tone === "review" &&
+          "border-sky-500/30 text-sky-600 dark:text-sky-400",
+        meta.tone === "done" &&
+          "border-foreground/20 text-foreground",
+      )}
+    >
+      {state === "running" ? (
+        <span className="relative flex size-2 items-center justify-center">
+          <span className="absolute inline-flex size-2 animate-ping rounded-full bg-emerald-500/70" />
+          <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+        </span>
+      ) : state === "done" ? (
+        <Check className="size-3.5" />
+      ) : (
+        <span
+          className={cn(
+            "size-2 rounded-full",
+            meta.tone === "muted" && "bg-muted-foreground",
+            meta.tone === "draft" && "bg-primary",
+            meta.tone === "review" && "bg-sky-500",
+          )}
+        />
+      )}
+      {meta.label}
+    </span>
   );
 }

@@ -5,6 +5,50 @@ CEO が承認・決定した不可逆な事項を記録する。**二度聞か�
 
 ---
 
+## DEC-028 (2026-06-12) — Agent Inbox（要対応キュー）＋通知。並行Agentの「司令塔」
+
+> CEO とのキャッチアップ（IDE/Agentオーケストレータ観点）で、A=「並行Agentの司令塔UX」を最優先と合意。並行Agent(DEC-026)を入れたが「どのAgentが今self を必要としているか」が分からない=残り半分。
+
+- **Agentの状態を Rust 側で常時トラッキング**（terminal detach 中も reader thread が動くのでバックエンドが正）: `Session` に `last_activity`（出力ごとに更新）＋ `exited`（EOF で exit code 記録、session は map に残す）。
+- **`pty_statuses(waitingAfterMs)`**: keyed Agent ごとに `running`（最近出力）/ `waiting`（生存だが idle ≥ 閾値=入力待ち推定）/ `done`(exit0) / `error`(exit≠0)。`pty_dismiss(key)` で exited を ack 除去。
+- **Agent Inbox（サイドバー上部）**: waiting/done/error の Agent を集約表示（タイトル＋状態、idle 降順）。クリックでその issue へジャンプ（repo 切替込み）、done/error は ✕ で dismiss。running は inbox に出さない（self を必要としない）。
+- **per-issue ドット拡張**: running=緑パルス / waiting=琥珀パルス / done=✓緑 / error=✕赤。
+- **通知**: needs-attention へ遷移した瞬間（かつ現在開いている issue でない）に Web Notification（best-effort、権限を遅延要求）。新規プラグイン無し。
+- ~~**waiting 閾値=8s**~~ → DEC-029 で**廃止**（CEO「8秒は急かしすぎ・明確に判定できないの？」）。Claude の Stop/Notification hook で決定論的に検知する方式へ。
+- DEC-027 の badge `running` も `pty_statuses`(running|waiting) ベースに変更（lingering exited を緑にしない）。
+
+---
+
+## DEC-029 (2026-06-12) — waiting 検知を idle ヒューリスティック → Claude hooks で決定論化
+
+> CEO:「8秒沈黙判定は急かしすぎ。明確に判定できないの？ cmux はちゃんと Agent からのアクション待ちの時に通知できている」。正しい。cmux は Claude Code の hooks で検知している（env に `CMUX_CLAUDE_HOOK_CMUX_BIN` があったのが証拠）。
+
+- **実機検証**: `claude --settings '{"hooks":{"Stop":[...],"Notification":[...]}}' -p ...` で **Stop hook が発火し events ファイルに追記される**ことを確認（`--settings` は file/JSON 文字列を受ける、hooks は Stop/Notification/SubagentStop 対応）。
+- **方式**: claude 起動時に `--settings` で **Stop/Notification hooks** を注入し、`<root>/.continuum/agent-events/<issueId>` に1バイト append させる（`agentHookSettings()` が JSON 生成）。
+  - **waiting = events ファイルが spawn 後に増えた（hook 発火＝ターン終了/入力要求）**。idle 時間は一切見ない。
+  - **解除 = user が pty に入力した瞬間**（`pty_write` で awaiting=false ＋ events baseline 更新）。
+  - baseline は **spawn 時の events ファイル長**（Rust `pty_spawn`）。前 session の残りで誤発火しない。親ディレクトリも spawn 時に作成。
+- **Rust**: `Session` に `awaiting` / `events_path` / `events_seen_len`。`pty_statuses` から `waiting_after_ms` 引数を撤去し hook ベース判定に。`PtySpawnOpts.events_path` 追加。
+- **JS**: `agentHookSettings(path)`、`PtySpawnOpts.eventsPath`、`ptyStatuses()`(引数なし)。terminal→use-implement-session→agent-panel に `eventsPath` を配線。`WAITING_AFTER_MS` 撤去。
+- **限界**: hooks は claude 専用。codex 等 hook 非対応 agent は waiting を出さない（done/error は exit で出る）。8s 誤検知が無くなるので体験は改善。
+- B（visual review / Figma comment 風）= `playbook/ideas-backlog.md` に着手予定で記録。C/D も同ファイルに idea として保存。
+
+---
+
+## DEC-027 (2026-06-12) — status は手動廃止 → 事実から派生する読み取り専用バッジ
+
+> CEO:「status 本当に必要？ 少なくとも手動はやめたい。IDE/Agent オーケストレーションツールだと普通どう設計する？」。整理: 課題管理系(Linear/Jira)は手動＋他人への進捗共有が主目的、Agent オーケストレータ(Cursor/Zenbu)は明示 status を持たず作業の事実から派生。continuum はソロ×Agent並行なので後者が素直。CEO 選択=「派生バッジ」。
+
+- **手動ドロップダウン廃止**（StatusDropdown / STATUS_BADGE / ISSUE_STATUSES UI を撤去）。
+- **派生状態 `deriveState`**（issues.ts）: 事実から計算。`done`(merged) > `running`(agent pty 走行) > `review`(PR あり) > `draft`(worktree あり) > `idea`(なし)。`DERIVED_STATE_META` でラベル＋トーン。
+- **読み取り専用バッジ**（detail ヘッダ `StateBadge`）: 未着手/実行中(緑パルス)/下書き/レビュー中/完了(✓)。手で触れない。
+- **自動遷移は既存の事実で駆動**: Implement/Start→worktree(=作業中), Open PR→prUrl(=レビュー中), running は pty ポーリング, merge は下記。
+- **自動「完了」検知**: Rust `gh_pr_state(branch)` を新設。detail を開いた時 PR が `MERGED` なら status=merged に自動更新（Open PR→GitHub で merge したら勝手に完了になる）。`Merge to main`(ローカル)も従来どおり merged。
+- **サイドバー**: 実行中=緑パルス● / 完了=✓ / それ以外=status ドット（per-issue の prUrl は読まないので review は draft 表示）。
+- 内部の persisted `IssueStatus`(open/in-progress/merged) は自動メンテのキャッシュとして残置（手動編集経路は撤去）。
+
+---
+
 ## DEC-026 (2026-06-12) — 並行エージェント: issue を離れても agent は走り続け、戻ったら再アタッチ
 
 > CEO:「離れてどんどんいろんな Issue について話せるようにしてほしい」。現状は issue を離れると `IssueDetail` unmount → terminal unmount → `ptyKill` で agent が即死していた。
