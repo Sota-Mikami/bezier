@@ -20,6 +20,8 @@ import {
   RotateCcw,
   Loader2,
   Check,
+  Bell,
+  X,
 } from "lucide-react";
 
 import {
@@ -41,7 +43,13 @@ import {
 } from "@/lib/issues";
 import { purgeTrashed } from "@/lib/issue-actions";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
-import { ptyActiveKeys } from "@/lib/pty";
+import {
+  ptyStatuses,
+  ptyDismiss,
+  WAITING_AFTER_MS,
+  type AgentStatus,
+  type AgentState,
+} from "@/lib/pty";
 import { cn } from "@/lib/utils";
 
 /** How many issues a repo toggle shows before "もっと見る". */
@@ -71,25 +79,48 @@ export function AppSidebar() {
     Record<string, TrashMeta[]>
   >({});
   const [showAll, setShowAll] = React.useState<Set<string>>(new Set());
-  const [activeKeys, setActiveKeys] = React.useState<Set<string>>(new Set());
+  const [statusByKey, setStatusByKey] = React.useState<Map<string, AgentStatus>>(
+    new Map(),
+  );
   const [creating, setCreating] = React.useState(false);
   const loadingIssues = React.useRef<Set<string>>(new Set());
+  // Last seen "needs attention?" per key, to fire a notification only on the
+  // transition INTO needs-attention (not every poll).
+  const prevAttentionRef = React.useRef<Map<string, boolean>>(new Map());
 
-  // Poll which issues have a live background agent (a running pty) for the
-  // "running" dots — agents now survive navigating away (DEC-026).
+  // Poll every agent's status (running / waiting / done / error) — the Agent
+  // Inbox + the per-issue dots. Agents survive navigation (DEC-026), so this is
+  // the single source of "what needs me" (DEC-028). Notify on the transition
+  // into needs-attention for an issue that isn't the one currently open.
   React.useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      const keys = await ptyActiveKeys().catch(() => [] as string[]);
-      if (!cancelled) setActiveKeys(new Set(keys));
+      const list = await ptyStatuses(WAITING_AFTER_MS).catch(
+        () => [] as AgentStatus[],
+      );
+      if (cancelled) return;
+      const map = new Map(list.map((s) => [s.key, s]));
+      setStatusByKey(map);
+
+      const prev = prevAttentionRef.current;
+      const next = new Map<string, boolean>();
+      for (const s of list) {
+        const needs =
+          s.state === "waiting" || s.state === "done" || s.state === "error";
+        next.set(s.key, needs);
+        if (needs && !prev.get(s.key) && s.key !== selectedId) {
+          notifyAttention(s);
+        }
+      }
+      prevAttentionRef.current = next;
     };
     void tick();
-    const h = window.setInterval(() => void tick(), 3000);
+    const h = window.setInterval(() => void tick(), 2500);
     return () => {
       cancelled = true;
       window.clearInterval(h);
     };
-  }, []);
+  }, [selectedId]);
 
   const loadIssues = React.useCallback(async (path: string) => {
     if (loadingIssues.current.has(path)) return;
@@ -253,6 +284,57 @@ export function AppSidebar() {
     [q],
   );
 
+  // Flat id → { title, repoPath } index across all loaded repos, to resolve an
+  // agent status (keyed by issue id) to a displayable row + a target repo.
+  const issueIndex = React.useMemo(() => {
+    const idx = new Map<string, { title: string; repoPath: string }>();
+    for (const [repoPath, list] of Object.entries(issuesByRepo)) {
+      for (const issue of list)
+        idx.set(issue.id, { title: issue.title, repoPath });
+    }
+    return idx;
+  }, [issuesByRepo]);
+
+  // Agent Inbox (DEC-028): agents that need me — waiting / done / error — newest
+  // (most idle) first. running agents are NOT in the inbox (they don't need me).
+  const inbox = React.useMemo(() => {
+    const rows = [...statusByKey.values()].filter(
+      (s) => s.state === "waiting" || s.state === "done" || s.state === "error",
+    );
+    rows.sort((a, b) => b.idleMs - a.idleMs);
+    return rows;
+  }, [statusByKey]);
+
+  // If the inbox references an issue we haven't loaded yet (e.g. after restart),
+  // load every recent repo's issues so we can show titles. Deferred off the sync
+  // effect path (loadIssues setStates).
+  React.useEffect(() => {
+    const unresolved = inbox.some((s) => !issueIndex.has(s.key));
+    if (!unresolved) return;
+    const t = window.setTimeout(() => {
+      for (const r of recents) if (!(r.path in issuesByRepo)) void loadIssues(r.path);
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [inbox, issueIndex, recents, issuesByRepo, loadIssues]);
+
+  const selectInboxIssue = React.useCallback(
+    (key: string) => {
+      const meta = issueIndex.get(key);
+      if (meta && meta.repoPath !== root) switchTo(meta.repoPath);
+      router.push(`/issues?issue=${encodeURIComponent(key)}`);
+    },
+    [issueIndex, root, switchTo, router],
+  );
+
+  const dismissAgent = React.useCallback(async (key: string) => {
+    await ptyDismiss(key).catch(() => {});
+    setStatusByKey((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
   // Flatten all repos' trash, newest-deleted first, for the cross-repo view.
   const trashRows: TrashRow[] = React.useMemo(() => {
     const rows: TrashRow[] = [];
@@ -330,29 +412,42 @@ export function AppSidebar() {
             onRestore={handleRestore}
             onPurge={handlePurge}
           />
-        ) : recents.length === 0 ? (
-          <p className="px-3 py-6 text-xs text-muted-foreground">
-            リポジトリがありません。下の「フォルダを開く」から追加してください。
-          </p>
         ) : (
-          recents.map((r) => (
-            <RepoGroup
-              key={r.path}
-              path={r.path}
-              active={r.path === root}
-              open={expanded.has(r.path) || searching}
-              forceOpen={searching}
-              issues={issuesByRepo[r.path]}
-              query={q}
-              matches={matches}
-              showAll={showAll.has(r.path)}
-              selectedId={selectedId}
-              activeKeys={activeKeys}
-              onToggle={() => toggleRepo(r.path)}
-              onSelectIssue={(id) => selectIssue(r.path, id)}
-              onShowAll={() => setShowAll((p) => new Set(p).add(r.path))}
-            />
-          ))
+          <>
+            {inbox.length > 0 && (
+              <AgentInbox
+                rows={inbox}
+                index={issueIndex}
+                selectedId={selectedId}
+                onSelect={selectInboxIssue}
+                onDismiss={(k) => void dismissAgent(k)}
+              />
+            )}
+            {recents.length === 0 ? (
+              <p className="px-3 py-6 text-xs text-muted-foreground">
+                リポジトリがありません。下の「フォルダを開く」から追加してください。
+              </p>
+            ) : (
+              recents.map((r) => (
+                <RepoGroup
+                  key={r.path}
+                  path={r.path}
+                  active={r.path === root}
+                  open={expanded.has(r.path) || searching}
+                  forceOpen={searching}
+                  issues={issuesByRepo[r.path]}
+                  query={q}
+                  matches={matches}
+                  showAll={showAll.has(r.path)}
+                  selectedId={selectedId}
+                  statusByKey={statusByKey}
+                  onToggle={() => toggleRepo(r.path)}
+                  onSelectIssue={(id) => selectIssue(r.path, id)}
+                  onShowAll={() => setShowAll((p) => new Set(p).add(r.path))}
+                />
+              ))
+            )}
+          </>
         )}
       </SidebarContent>
 
@@ -396,7 +491,7 @@ function RepoGroup({
   matches,
   showAll,
   selectedId,
-  activeKeys,
+  statusByKey,
   onToggle,
   onSelectIssue,
   onShowAll,
@@ -410,7 +505,7 @@ function RepoGroup({
   matches: (i: Issue) => boolean;
   showAll: boolean;
   selectedId: string | null;
-  activeKeys: Set<string>;
+  statusByKey: Map<string, AgentStatus>;
   onToggle: () => void;
   onSelectIssue: (id: string) => void;
   onShowAll: () => void;
@@ -461,7 +556,9 @@ function RepoGroup({
             </p>
           ) : (
             <>
-              {shown.map((issue) => (
+              {shown.map((issue) => {
+                const agent = statusByKey.get(issue.id)?.state;
+                return (
                 <button
                   key={issue.id}
                   type="button"
@@ -473,16 +570,13 @@ function RepoGroup({
                       : "text-foreground/80",
                   )}
                   title={
-                    activeKeys.has(issue.id)
-                      ? `${issue.title || "(無題)"}（エージェント実行中）`
+                    agent
+                      ? `${issue.title || "(無題)"}（${AGENT_STATE_LABEL[agent]}）`
                       : issue.title || "(無題)"
                   }
                 >
-                  {activeKeys.has(issue.id) ? (
-                    <span className="relative flex size-3 shrink-0 items-center justify-center">
-                      <span className="absolute inline-flex size-2 animate-ping rounded-full bg-emerald-500/70" />
-                      <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-                    </span>
+                  {agent ? (
+                    <AgentDot state={agent} />
                   ) : issue.status === "merged" ? (
                     <Check className="size-3 shrink-0 text-foreground" />
                   ) : (
@@ -497,7 +591,8 @@ function RepoGroup({
                   )}
                   <span className="truncate">{issue.title || "(無題)"}</span>
                 </button>
-              ))}
+                );
+              })}
               {more > 0 && (
                 <button
                   type="button"
@@ -513,6 +608,133 @@ function RepoGroup({
       )}
     </div>
   );
+}
+
+// --- Agent Inbox (DEC-028) -------------------------------------------------
+
+const AGENT_STATE_LABEL: Record<AgentState, string> = {
+  running: "実行中",
+  waiting: "応答待ち",
+  done: "完了",
+  error: "エラー",
+};
+
+// The small status dot used in issue rows + inbox: a pulsing ring for live
+// states (running green / waiting amber), a check for done, an x for error.
+function AgentDot({ state }: { state: AgentState }) {
+  if (state === "done") {
+    return <Check className="size-3 shrink-0 text-emerald-500" />;
+  }
+  if (state === "error") {
+    return <X className="size-3 shrink-0 text-destructive" />;
+  }
+  const color = state === "waiting" ? "amber" : "emerald";
+  return (
+    <span className="relative flex size-3 shrink-0 items-center justify-center">
+      <span
+        className={cn(
+          "absolute inline-flex size-2 animate-ping rounded-full",
+          color === "amber" ? "bg-amber-500/70" : "bg-emerald-500/70",
+        )}
+      />
+      <span
+        className={cn(
+          "relative inline-flex size-1.5 rounded-full",
+          color === "amber" ? "bg-amber-500" : "bg-emerald-500",
+        )}
+      />
+    </span>
+  );
+}
+
+// The "what needs me" queue: agents that are waiting / done / errored. Clicking
+// jumps to the issue; dismiss (✕) acknowledges a finished agent.
+function AgentInbox({
+  rows,
+  index,
+  selectedId,
+  onSelect,
+  onDismiss,
+}: {
+  rows: AgentStatus[];
+  index: Map<string, { title: string; repoPath: string }>;
+  selectedId: string | null;
+  onSelect: (key: string) => void;
+  onDismiss: (key: string) => void;
+}) {
+  return (
+    <div className="mb-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-1">
+      <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px] font-semibold text-muted-foreground">
+        <Bell className="size-3.5 text-amber-500" />
+        要対応のエージェント
+        <span className="ml-auto">{rows.length}</span>
+      </div>
+      {rows.map((s) => {
+        const meta = index.get(s.key);
+        return (
+          <div
+            key={s.key}
+            className="group/inbox flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-sidebar-accent"
+          >
+            <button
+              type="button"
+              onClick={() => onSelect(s.key)}
+              className={cn(
+                "flex min-w-0 flex-1 items-center gap-2 text-left text-xs",
+                s.key === selectedId && "font-medium",
+              )}
+              title={meta?.title || s.key}
+            >
+              <AgentDot state={s.state} />
+              <span className="truncate">{meta?.title || "(無題)"}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {AGENT_STATE_LABEL[s.state]}
+              </span>
+            </button>
+            {(s.state === "done" || s.state === "error") && (
+              <button
+                type="button"
+                title="閉じる"
+                aria-label="閉じる"
+                onClick={() => onDismiss(s.key)}
+                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-foreground group-hover/inbox:opacity-100"
+              >
+                <X className="size-3" />
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Best-effort OS/web notification when an agent enters a needs-attention state
+// for an issue you're not currently viewing. Requests permission lazily.
+function notifyAttention(s: AgentStatus): void {
+  try {
+    if (typeof Notification === "undefined") return;
+    const body =
+      s.state === "waiting"
+        ? "エージェントが応答待ちです"
+        : s.state === "error"
+          ? "エージェントがエラーで停止しました"
+          : "エージェントが完了しました";
+    const fire = () => {
+      try {
+        new Notification("continuum", { body });
+      } catch {
+        /* notifications unavailable */
+      }
+    };
+    if (Notification.permission === "granted") fire();
+    else if (Notification.permission !== "denied")
+      void Notification.requestPermission().then((p) => {
+        if (p === "granted") fire();
+      });
+  } catch {
+    /* no Notification API */
+  }
 }
 
 // Cross-repo trash list (DEC-022). Each row shows the issue title + its repo, the

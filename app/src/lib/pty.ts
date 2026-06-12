@@ -105,6 +105,38 @@ export function ptyActiveKeys(): Promise<string[]> {
 }
 
 /**
+ * Idle threshold (ms): an alive agent quiet for this long is reported as
+ * "waiting" (likely awaiting input). Claude streams status while working, so a
+ * gap this long usually means it stopped at a prompt / finished a turn.
+ */
+export const WAITING_AFTER_MS = 8000;
+
+/** Per-agent status for the Agent Inbox (DEC-028). */
+export type AgentState = "running" | "waiting" | "done" | "error";
+export interface AgentStatus {
+  /** The issue id. */
+  key: string;
+  state: AgentState;
+  /** Milliseconds since the agent last produced output. */
+  idleMs: number;
+  /** Exit code when state is done/error, else null. */
+  exitCode: number | null;
+}
+
+/**
+ * Snapshot of every keyed agent's status. `waitingAfterMs` is the idle threshold
+ * above which an alive-but-quiet agent is reported as "waiting" (awaiting input).
+ */
+export function ptyStatuses(waitingAfterMs: number): Promise<AgentStatus[]> {
+  return invoke<AgentStatus[]>("pty_statuses", { waitingAfterMs });
+}
+
+/** Acknowledge/remove an EXITED agent for this key from the inbox. */
+export function ptyDismiss(key: string): Promise<void> {
+  return invoke<void>("pty_dismiss", { key });
+}
+
+/**
  * Subscribe to pty output. The callback fires for ALL ptys; filter on `id`.
  * Returns an UnlistenFn — call it on unmount to detach.
  */

@@ -55,7 +55,14 @@ import {
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
-import { ptyWrite, commandExists, ptyLookup, ptyKillKey } from "@/lib/pty";
+import {
+  ptyWrite,
+  commandExists,
+  ptyLookup,
+  ptyKillKey,
+  ptyStatuses,
+  WAITING_AFTER_MS,
+} from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
 
@@ -275,14 +282,18 @@ export function useImplementSession(
     };
   }, [root, issue, loadBehind]);
 
-  // Live "running" signal for the derived state (DEC-027): poll whether a
-  // background agent pty is alive for this issue.
+  // Live "running" signal for the derived state (DEC-027): the agent session is
+  // ALIVE (running or waiting for input) — not a lingering exited one. Uses
+  // pty_statuses so a finished agent (which stays in the map for the inbox)
+  // doesn't keep the badge green.
   const [running, setRunning] = React.useState(false);
   React.useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      const live = await ptyLookup(issue.id).catch(() => null);
-      if (!cancelled) setRunning(!!live);
+      const all = await ptyStatuses(WAITING_AFTER_MS).catch(() => []);
+      if (cancelled) return;
+      const mine = all.find((s) => s.key === issue.id);
+      setRunning(mine?.state === "running" || mine?.state === "waiting");
     };
     void tick();
     const h = window.setInterval(() => void tick(), 3000);
