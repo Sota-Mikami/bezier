@@ -47,19 +47,6 @@ export interface Issue {
   slots: IssueSlots;
 }
 
-export interface DecisionEntry {
-  issueId: string;
-  issueTitle: string;
-  /** Absolute path to the decision.md file. */
-  path: string;
-  /** Decision title (first heading, falling back to the issue title). */
-  title: string;
-  /** frontmatter `decided` (may be empty). */
-  decided: string;
-  /** frontmatter `status` (accepted | superseded | ""). */
-  status: string;
-}
-
 // ---------------------------------------------------------------------------
 // Path helpers
 // ---------------------------------------------------------------------------
@@ -318,42 +305,6 @@ export async function createSlot(
   }
   await writeFile(path, SLOT_TEMPLATES[slot](issue));
   return path;
-}
-
-// ---------------------------------------------------------------------------
-// Decisions aggregation
-// ---------------------------------------------------------------------------
-
-function firstHeading(body: string): string | null {
-  const m = /^#{1,6}\s+(.+?)\s*$/m.exec(body);
-  return m ? m[1].trim() : null;
-}
-
-/** Aggregate every issue's decision.md into a flat, newest-first list. */
-export async function listDecisions(root: string): Promise<DecisionEntry[]> {
-  const issues = await listIssues(root);
-  const out: DecisionEntry[] = [];
-  for (const issue of issues) {
-    if (!issue.slots.decision) continue;
-    const path = slotPath(issue, "decision");
-    let text: string;
-    try {
-      text = await readFile(path);
-    } catch {
-      continue;
-    }
-    const { rawFrontmatter, body } = splitFrontmatter(text);
-    const fm = parseFm(rawFrontmatter);
-    out.push({
-      issueId: issue.id,
-      issueTitle: issue.title,
-      path,
-      title: firstHeading(body) ?? issue.title,
-      decided: asString(fm.decided) ?? "",
-      status: asString(fm.status) ?? "",
-    });
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
