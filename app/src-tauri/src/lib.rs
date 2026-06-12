@@ -329,6 +329,23 @@ fn pty_spawn(
     builder.args(&opts.args);
     builder.cwd(&opts.cwd);
 
+    // Strip env vars that make a spawned agent (Claude / Codex) believe it is a
+    // NESTED child session. When continuum is launched from inside a cmux or
+    // Claude-Code terminal, CLAUDECODE / CLAUDE_CODE_* / CMUX_* / AI_AGENT are
+    // inherited; the agent then "bridges" its session to the parent instead of
+    // writing a local transcript — which breaks `claude --continue` (no local
+    // session/context to resume from). Removing them makes the agent a normal
+    // top-level session that persists locally and resumes correctly.
+    for (key, _) in std::env::vars() {
+        if key == "CLAUDECODE"
+            || key == "AI_AGENT"
+            || key.starts_with("CLAUDE_CODE_")
+            || key.starts_with("CMUX_")
+        {
+            builder.env_remove(&key);
+        }
+    }
+
     // Spawn the child against the slave side of the pty.
     let mut child = pair
         .slave
