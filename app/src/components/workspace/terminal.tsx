@@ -223,8 +223,13 @@ export default function TerminalPane({
         if (ev.isComposing || ev.keyCode === 229) return false;
         const isEnter = ev.key === "Enter" || ev.keyCode === 13;
         if (isEnter && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
+          // preventDefault stops the browser inserting a newline into xterm's
+          // hidden textarea (returning false alone does NOT preventDefault), then
+          // send ESC+CR — Claude Code reads that as a newline (its own
+          // /terminal-setup uses the same sequence).
+          ev.preventDefault();
           ptyWrite(pid, "\x1b\r").catch(() => {});
-          return false; // prevent xterm's default \r
+          return false; // also stop xterm's default \r
         }
         return true;
       });
