@@ -39,44 +39,23 @@ import { cn } from "@/lib/utils";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
 import { useWorkspaceRoot } from "@/lib/workspace-root";
 import {
-  listIssues,
-  createIssue,
   readIssue,
   createSlot,
   updateIssueMeta,
   trashIssue,
-  listTrash,
-  restoreFromTrash,
-  removeTrashEntry,
-  expiredTrash,
   TRASH_TTL_DAYS,
   slotPath,
   ISSUE_STATUSES,
   type Issue,
   type IssueStatus,
-  type IssueSlot,
   type ThreadEvent,
   type ThreadEventType,
-  type TrashMeta,
 } from "@/lib/issues";
 import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignReview } from "@/components/issues/design-review";
 import { useImplementSession } from "@/components/issues/use-implement-session";
-import { gitStatus, gitWorktreeRemove, gitBranchDelete } from "@/lib/git";
-
-// Permanently remove a TRASHED issue: tear down its git worktree/branch (kept
-// alive while trashed so restore is clean) then delete the trash folders. git
-// teardown is best-effort — a missing worktree/branch must not block removal.
-async function purgeTrashed(root: string, meta: TrashMeta): Promise<void> {
-  if (meta.worktreePath) {
-    await gitWorktreeRemove(root, meta.worktreePath).catch(() => {});
-  }
-  if (meta.branch) {
-    await gitBranchDelete(root, meta.branch).catch(() => {});
-  }
-  await removeTrashEntry(root, meta);
-}
+import { gitStatus } from "@/lib/git";
 
 // Live change visualization (DEC-012 §7).
 // How often we poll the worktree's git status to detect the agent writing CODE
@@ -101,14 +80,6 @@ const STATUS_BADGE: Record<
   "in-progress": { label: "in-progress", variant: "default" },
   merged: { label: "merged", variant: "outline" },
 };
-
-// DEC-011/012: the Issue detail surfaces two artifact tabs — Spec (the spec.md
-// CM editor) and Design (the worktree iframe Preview + Diff + implement loop).
-// Decision is NOT shown here: it is auto-drafted on Accept and only surfaced on
-// the /decisions page. The list-row chip only advertises Spec presence.
-const SLOT_META: { key: IssueSlot; label: string }[] = [
-  { key: "spec", label: "Spec" },
-];
 
 function fmtDate(iso: string): string {
   if (!iso) return "—";
@@ -174,7 +145,29 @@ function IssuesView() {
   if (selectedId) {
     return <IssueDetail key={selectedId} root={root} id={selectedId} />;
   }
-  return <IssueList root={root} />;
+  return <EmptyLanding />;
+}
+
+// Shown when a repo is open but no issue is selected — the issue list lives in
+// the left sidebar now (DEC-021), so the main pane just invites picking / New.
+function EmptyLanding() {
+  return (
+    <div className="flex h-svh flex-col">
+      <Header title="Issues" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
+          <CircleDot className="size-5 text-muted-foreground" />
+        </div>
+        <div className="space-y-1">
+          <div className="text-base font-medium">Issue を選択</div>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            左のサイドバーから Issue を選ぶか、{" "}
+            <span className="font-medium">New</span> で新しい Issue を作成してください。
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function NoFolder({ onOpen }: { onOpen: () => Promise<string | null> }) {
@@ -218,359 +211,6 @@ function Header({
       {children}
     </header>
   );
-}
-
-// ---------------------------------------------------------------------------
-// list
-// ---------------------------------------------------------------------------
-
-function IssueList({ root }: { root: string }) {
-  const router = useRouter();
-  const [issues, setIssues] = React.useState<Issue[] | null>(null);
-  const [trash, setTrash] = React.useState<TrashMeta[]>([]);
-  const [showTrash, setShowTrash] = React.useState(false);
-  const [title, setTitle] = React.useState("");
-  const [creating, setCreating] = React.useState(false);
-
-  const refreshTrash = React.useCallback(async () => {
-    try {
-      setTrash(await listTrash(root));
-    } catch {
-      setTrash([]);
-    }
-  }, [root]);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    listIssues(root)
-      .then((list) => {
-        if (!cancelled) setIssues(list);
-      })
-      .catch(() => {
-        if (!cancelled) setIssues([]);
-      });
-    // Load the trash + auto-purge anything past the 30-day TTL.
-    (async () => {
-      const all = await listTrash(root).catch(() => [] as TrashMeta[]);
-      const expired = expiredTrash(all, Date.now());
-      for (const m of expired) {
-        await purgeTrashed(root, m).catch(() => {});
-      }
-      if (!cancelled) {
-        setTrash(expired.length ? all.filter((m) => !expired.includes(m)) : all);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [root]);
-
-  const handleCreate = React.useCallback(async () => {
-    const t = title.trim();
-    if (!t || creating) return;
-    setCreating(true);
-    try {
-      const issue = await createIssue(root, t);
-      router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
-    } catch {
-      setCreating(false);
-    }
-  }, [title, creating, root, router]);
-
-  // Delete = move to the trash (recoverable; git untouched). DEC-020.
-  const handleDelete = React.useCallback(
-    async (issue: Issue) => {
-      const ok = await confirmDialog(
-        `Issue「${issue.title}」をゴミ箱に移動します。${TRASH_TTL_DAYS}日後に完全削除されます（それまでは復元できます）。`,
-        { title: "ゴミ箱へ移動", okLabel: "ゴミ箱へ移動", cancelLabel: "キャンセル" },
-      );
-      if (!ok) return;
-      try {
-        await trashIssue(root, issue);
-        setIssues((prev) => prev?.filter((i) => i.id !== issue.id) ?? prev);
-        await refreshTrash();
-      } catch (e) {
-        await messageDialog(
-          `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-          { title: "削除エラー" },
-        );
-      }
-    },
-    [root, refreshTrash],
-  );
-
-  // Restore a trashed issue back into the live list.
-  const handleRestore = React.useCallback(
-    async (meta: TrashMeta) => {
-      try {
-        await restoreFromTrash(root, meta);
-        setTrash((prev) => prev.filter((m) => m.id !== meta.id));
-        setIssues(await listIssues(root).catch(() => null));
-      } catch (e) {
-        await messageDialog(
-          `復元に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-          { title: "復元エラー" },
-        );
-      }
-    },
-    [root],
-  );
-
-  // Permanently remove a trashed issue now (worktree + branch + folders).
-  const handlePurge = React.useCallback(
-    async (meta: TrashMeta) => {
-      const ok = await confirmDialog(
-        `「${meta.title}」を完全に削除します。worktree / branch も削除され、元に戻せません。`,
-        { title: "完全に削除", okLabel: "完全に削除", cancelLabel: "キャンセル" },
-      );
-      if (!ok) return;
-      try {
-        await purgeTrashed(root, meta);
-        setTrash((prev) => prev.filter((m) => m.id !== meta.id));
-      } catch (e) {
-        await messageDialog(
-          `完全削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-          { title: "完全削除エラー" },
-        );
-      }
-    },
-    [root],
-  );
-
-  return (
-    <div className="flex h-svh flex-col">
-      <Header title="Issues">
-        <span
-          className="ml-2 hidden truncate font-mono text-[11px] text-muted-foreground sm:block"
-          title={root}
-        >
-          {root}
-        </span>
-        <button
-          type="button"
-          onClick={() => setShowTrash((v) => !v)}
-          className={cn(
-            "ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-            showTrash
-              ? "bg-secondary text-secondary-foreground"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-          title={showTrash ? "Issue 一覧へ戻る" : "ゴミ箱を開く"}
-        >
-          {showTrash ? (
-            <>
-              <ArrowLeft className="size-3.5" />
-              Issues
-            </>
-          ) : (
-            <>
-              <Trash2 className="size-3.5" />
-              ゴミ箱{trash.length > 0 ? `（${trash.length}）` : ""}
-            </>
-          )}
-        </button>
-      </Header>
-
-      {showTrash ? (
-        <TrashView
-          trash={trash}
-          onRestore={handleRestore}
-          onPurge={handlePurge}
-        />
-      ) : (
-        <>
-          {/* New issue */}
-          <div className="flex items-center gap-2 border-b px-4 py-3">
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void handleCreate();
-                }
-              }}
-              placeholder="新しい Issue のタイトル…"
-              className="h-9 max-w-md"
-            />
-            <Button
-              className="gap-1.5"
-              disabled={!title.trim() || creating}
-              onClick={() => void handleCreate()}
-            >
-              {creating ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Plus className="size-4" />
-              )}
-              New issue
-            </Button>
-          </div>
-
-          <ScrollArea className="min-h-0 flex-1">
-        {issues == null ? (
-          <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-        ) : issues.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 px-6 py-20 text-center">
-            <CircleDot className="size-6 text-muted-foreground" />
-            <div className="text-sm font-medium">まだ Issue がありません</div>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              上のフォームでタイトルを入れて最初の Issue を作成してください。
-            </p>
-          </div>
-        ) : (
-          <ul className="divide-y">
-            {issues.map((issue) => {
-              const badge = STATUS_BADGE[issue.status];
-              return (
-                <li key={issue.id} className="group/row relative flex items-center">
-                  <Link
-                    href={`/issues?issue=${encodeURIComponent(issue.id)}`}
-                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">
-                          {issue.title}
-                        </span>
-                        <Badge
-                          variant={badge.variant}
-                          className="shrink-0 font-normal"
-                        >
-                          {badge.label}
-                        </Badge>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        {SLOT_META.map((s) => {
-                          const on = issue.slots[s.key];
-                          return (
-                            <span
-                              key={s.key}
-                              className={cn(
-                                "rounded border px-1.5 py-0.5 text-[10px] font-medium",
-                                on
-                                  ? "border-foreground/20 bg-muted text-foreground"
-                                  : "border-dashed text-muted-foreground/50",
-                              )}
-                            >
-                              {on && (
-                                <Check className="mr-0.5 inline size-2.5 align-[-1px]" />
-                              )}
-                              {s.label}
-                            </span>
-                          );
-                        })}
-                        {issue.labels?.map((l) => (
-                          <span
-                            key={l}
-                            className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground"
-                          >
-                            {l}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                      {fmtDate(issue.created)}
-                    </span>
-                  </Link>
-                  <button
-                    type="button"
-                    title="Issue を削除"
-                    aria-label="Issue を削除"
-                    onClick={() => void handleDelete(issue)}
-                    className="mr-2 shrink-0 rounded p-2 text-muted-foreground opacity-0 transition-[color,opacity] hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-          </ScrollArea>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Trash view — restore or permanently delete trashed issues (DEC-020).
-// ---------------------------------------------------------------------------
-
-function TrashView({
-  trash,
-  onRestore,
-  onPurge,
-}: {
-  trash: TrashMeta[];
-  onRestore: (m: TrashMeta) => Promise<void>;
-  onPurge: (m: TrashMeta) => Promise<void>;
-}) {
-  return (
-    <>
-      <div className="flex items-center gap-2 border-b px-4 py-3 text-xs text-muted-foreground">
-        <Trash2 className="size-3.5" />
-        ゴミ箱の Issue は削除から {TRASH_TTL_DAYS} 日後に自動で完全削除されます。
-      </div>
-      <ScrollArea className="min-h-0 flex-1">
-        {trash.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 px-6 py-20 text-center">
-            <Trash2 className="size-6 text-muted-foreground" />
-            <div className="text-sm font-medium">ゴミ箱は空です</div>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              削除した Issue はここに {TRASH_TTL_DAYS} 日間保管され、復元できます。
-            </p>
-          </div>
-        ) : (
-          <ul className="divide-y">
-            {trash.map((m) => {
-              const left = daysLeft(m.deletedAt);
-              return (
-                <li key={m.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{m.title}</div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">
-                      削除: {fmtDateTime(m.deletedAt)} ·{" "}
-                      {left > 0 ? `あと ${left} 日で完全削除` : "まもなく完全削除"}
-                      {m.branch ? ` · branch あり` : ""}
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() => void onRestore(m)}
-                  >
-                    <ArrowLeft className="size-3.5" />
-                    復元
-                  </Button>
-                  <button
-                    type="button"
-                    title="完全に削除"
-                    aria-label="完全に削除"
-                    onClick={() => void onPurge(m)}
-                    className="shrink-0 rounded p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </ScrollArea>
-    </>
-  );
-}
-
-// Whole days remaining before a trashed issue is auto-purged.
-function daysLeft(deletedAt: string): number {
-  const t = Date.parse(deletedAt);
-  if (!Number.isFinite(t)) return 0;
-  const ms = t + TRASH_TTL_DAYS * 24 * 60 * 60 * 1000 - Date.now();
-  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
 }
 
 // ---------------------------------------------------------------------------

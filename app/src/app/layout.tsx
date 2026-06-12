@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -47,7 +48,9 @@ export default function RootLayout({
           <ReloadShortcut />
           <WorkspaceRootProvider>
             <SidebarProvider>
-              <AppSidebar />
+              <Suspense fallback={null}>
+                <AppSidebar />
+              </Suspense>
               <SidebarInset>{children}</SidebarInset>
             </SidebarProvider>
           </WorkspaceRootProvider>
