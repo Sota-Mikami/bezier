@@ -407,10 +407,25 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
   React.useEffect(() => {
     let cancelled = false;
     readIssue(root, id)
-      .then((found) => {
+      .then(async (found) => {
         if (cancelled) return;
-        if (found) setIssue(found);
-        else setNotFound(true);
+        if (!found) {
+          setNotFound(true);
+          return;
+        }
+        // Spec is mandatory and auto-created (no "Add Spec" click). New issues get
+        // it at creation; this rescues any legacy issue opened without a spec.md
+        // by generating it from the template on open.
+        if (!found.slots.spec) {
+          try {
+            await createSlot(root, found, "spec");
+            found = { ...found, slots: { ...found.slots, spec: true } };
+          } catch {
+            /* write failed — leave as-is; the Spec pane shows a loading state */
+          }
+          if (cancelled) return;
+        }
+        setIssue(found);
       })
       .catch(() => {
         if (!cancelled) setNotFound(true);
