@@ -153,6 +153,44 @@ fn write_file(path: String, contents: String) -> Result<(), String> {
     fs::write(&resolved, contents).map_err(|e| format!("write_file {path}: {e}"))
 }
 
+/// Read a file's raw bytes (e.g. an image asset for inline render). Returns the
+/// bytes as a Tauri `Response`, which the JS side receives as an ArrayBuffer
+/// (efficient — no JSON number-array inflation). Same `..` traversal guard as
+/// the text read.
+#[tauri::command]
+fn read_binary_file(path: String) -> Result<tauri::ipc::Response, String> {
+    reject_traversal(Path::new(&path))?;
+    let bytes = fs::read(&path).map_err(|e| format!("read_binary_file {path}: {e}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Write raw bytes to a file (e.g. an image asset pasted/dropped into a Spec).
+/// Mirrors `write_file`'s parent-dir creation + canonicalization guards; the
+/// only difference is a binary `Vec<u8>` payload instead of UTF-8 text.
+#[tauri::command]
+fn write_binary_file(path: String, contents: Vec<u8>) -> Result<(), String> {
+    let target = Path::new(&path);
+    reject_traversal(target)?;
+
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("write_binary_file {path}: path has no parent directory"))?;
+    if !parent.as_os_str().is_empty() && !parent.exists() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("write_binary_file {path}: cannot create parent dir: {e}"))?;
+    }
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|e| format!("write_binary_file {path}: cannot resolve parent dir: {e}"))?;
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| format!("write_binary_file {path}: path has no file name"))?;
+    let mut resolved: PathBuf = canonical_parent;
+    resolved.push(file_name);
+    reject_traversal(&resolved)?;
+
+    fs::write(&resolved, contents).map_err(|e| format!("write_binary_file {path}: {e}"))
+}
+
 /// Recursively remove a file or directory. Guarded: rejects `..` traversal and
 /// requires the resolved path to live under a `.continuum` working store, so it
 /// can only delete continuum's local issue artifacts — never arbitrary repo
@@ -1562,6 +1600,8 @@ pub fn run() {
             list_dir,
             read_file,
             write_file,
+            read_binary_file,
+            write_binary_file,
             remove_path,
             move_path,
             pty_spawn,
