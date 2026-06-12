@@ -113,10 +113,16 @@ export function AppSidebar() {
     for (const p of paths) if (!(p in issuesByRepo)) void loadIssues(p);
   }, [searching, recents, expanded, issuesByRepo, loadIssues]);
 
-  // Refresh the active repo's issues on navigation (a detail-view change reflects
-  // here when you come back).
+  // Refresh the active repo's issues AND trash on navigation, so a detail-view
+  // change (trash / restore / commit) reflects here when you come back. Deferred
+  // off the synchronous effect path (load* setState after their await).
   React.useEffect(() => {
-    if (root) void loadIssues(root);
+    if (!root) return;
+    const t = window.setTimeout(() => {
+      void loadIssues(root);
+      void loadTrash(root);
+    }, 0);
+    return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, selectedId]);
 
@@ -194,6 +200,16 @@ export function AppSidebar() {
     },
     [loadTrash],
   );
+
+  // Toggle the cross-repo trash view; refresh every repo's trash when opening so
+  // the aggregated list is current (something trashed elsewhere shows up).
+  const toggleTrashView = React.useCallback(() => {
+    setShowTrash((v) => {
+      const next = !v;
+      if (next) for (const r of recents) void loadTrash(r.path);
+      return next;
+    });
+  }, [recents, loadTrash]);
 
   const q = query.trim().toLowerCase();
   const matches = React.useCallback(
@@ -303,7 +319,7 @@ export function AppSidebar() {
       <SidebarFooter className="gap-1 p-2">
         <button
           type="button"
-          onClick={() => setShowTrash((v) => !v)}
+          onClick={toggleTrashView}
           className={cn(
             "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
             showTrash
