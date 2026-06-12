@@ -34,6 +34,12 @@ export interface PtySpawnOpts {
    * via ptyLookup + ptyBacklog. Omit for throwaway shells.
    */
   key?: string;
+  /**
+   * Optional path to the agent's hook-events file. The agent is launched with
+   * Stop/Notification hooks that append here when it awaits the user; the
+   * backend watches this file for DETERMINISTIC "waiting" detection.
+   */
+  eventsPath?: string;
 }
 
 /** Payload of the "pty://data" event. */
@@ -105,11 +111,16 @@ export function ptyActiveKeys(): Promise<string[]> {
 }
 
 /**
- * Idle threshold (ms): an alive agent quiet for this long is reported as
- * "waiting" (likely awaiting input). Claude streams status while working, so a
- * gap this long usually means it stopped at a prompt / finished a turn.
+ * Build the `--settings` JSON that wires Claude's Stop/Notification hooks to
+ * append to `eventsPath` — the deterministic signal that the agent is awaiting
+ * the user (turn ended / asked for input). Passed as a claude CLI arg.
  */
-export const WAITING_AFTER_MS = 8000;
+export function agentHookSettings(eventsPath: string): string {
+  // The hook command appends one byte; the backend watches the file's growth.
+  const cmd = `printf . >> ${JSON.stringify(eventsPath)}`;
+  const entry = [{ hooks: [{ type: "command", command: cmd }] }];
+  return JSON.stringify({ hooks: { Stop: entry, Notification: entry } });
+}
 
 /** Per-agent status for the Agent Inbox (DEC-028). */
 export type AgentState = "running" | "waiting" | "done" | "error";
@@ -124,11 +135,11 @@ export interface AgentStatus {
 }
 
 /**
- * Snapshot of every keyed agent's status. `waitingAfterMs` is the idle threshold
- * above which an alive-but-quiet agent is reported as "waiting" (awaiting input).
+ * Snapshot of every keyed agent's status. "waiting" is set deterministically by
+ * the agent's hooks (turn ended / asked for input), cleared on user input.
  */
-export function ptyStatuses(waitingAfterMs: number): Promise<AgentStatus[]> {
-  return invoke<AgentStatus[]>("pty_statuses", { waitingAfterMs });
+export function ptyStatuses(): Promise<AgentStatus[]> {
+  return invoke<AgentStatus[]>("pty_statuses");
 }
 
 /** Acknowledge/remove an EXITED agent for this key from the inbox. */

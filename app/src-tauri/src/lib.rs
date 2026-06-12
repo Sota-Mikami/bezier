@@ -264,6 +264,12 @@ pub struct PtySpawnOpts {
     /// reattachable. When set, the session survives the terminal unmounting.
     #[serde(default)]
     pub key: Option<String>,
+    /// Optional path to the agent's hook-events file. The agent (Claude) is
+    /// launched with Stop/Notification hooks that append a byte here when its
+    /// turn ends / it asks for input; growth ⇒ the agent is awaiting the user
+    /// (deterministic "waiting" detection, not an idle heuristic).
+    #[serde(default)]
+    pub events_path: Option<String>,
 }
 
 /// One live pty-backed session, held in tauri-managed state keyed by pty id.
@@ -294,6 +300,14 @@ pub struct Session {
     /// The session lingers in the map so the Agent Inbox can show done/error
     /// until acknowledged (Re-run / Discard / dismiss removes it).
     pub exited: std::sync::Arc<Mutex<Option<i32>>>,
+    /// True once a Stop/Notification hook fired (the agent is awaiting the user)
+    /// and not yet cleared by user input. Cleared in pty_write.
+    pub awaiting: std::sync::Arc<Mutex<bool>>,
+    /// Path to the hook-events file watched for growth (see PtySpawnOpts).
+    pub events_path: Option<String>,
+    /// The events file length already consumed (baseline = its length at spawn,
+    /// so only post-spawn hook writes count toward "awaiting").
+    pub events_seen_len: std::sync::Arc<Mutex<u64>>,
 }
 
 /// Payload for the `pty://data` event. camelCase to match the frozen TS
@@ -342,6 +356,21 @@ fn pty_spawn(
     let pair = pty_system
         .openpty(size)
         .map_err(|e| format!("pty_spawn openpty: {e}"))?;
+
+    // Prepare the hook-events file: ensure its parent dir exists (so the agent's
+    // `>> file` hook works) and record its current length as the baseline, so
+    // only hook writes that happen AFTER this spawn count toward "awaiting".
+    let events_seen_len = std::sync::Arc::new(Mutex::new(0u64));
+    if let Some(ep) = &opts.events_path {
+        let p = Path::new(ep);
+        if let Some(parent) = p.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let len = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        if let Ok(mut s) = events_seen_len.lock() {
+            *s = len;
+        }
+    }
 
     let mut builder = CommandBuilder::new(&opts.cmd);
     builder.args(&opts.args);
@@ -508,6 +537,9 @@ fn pty_spawn(
         backlog,
         last_activity,
         exited,
+        awaiting: std::sync::Arc::new(Mutex::new(false)),
+        events_path: opts.events_path.clone(),
+        events_seen_len,
     };
     state
         .sessions
@@ -595,13 +627,12 @@ struct AgentStatus {
     exit_code: Option<i32>,
 }
 
-/// Snapshot of every keyed agent's status. `waiting_after_ms` is the idle
-/// threshold above which an alive-but-quiet agent counts as "waiting".
+/// Snapshot of every keyed agent's status. "waiting" is DETERMINISTIC: it is set
+/// when the agent's Stop/Notification hook appended to its events file (its turn
+/// ended / it asked for input) and stays until the user types (pty_write clears
+/// it) — no idle heuristic.
 #[tauri::command]
-fn pty_statuses(
-    state: tauri::State<'_, PtyState>,
-    waiting_after_ms: u64,
-) -> Result<Vec<AgentStatus>, String> {
+fn pty_statuses(state: tauri::State<'_, PtyState>) -> Result<Vec<AgentStatus>, String> {
     let sessions = state
         .sessions
         .lock()
@@ -616,10 +647,25 @@ fn pty_statuses(
             .ok()
             .map(|t| t.elapsed().as_millis() as u64)
             .unwrap_or(0);
+
+        // Deterministic "awaiting": did a hook append to the events file since we
+        // last looked? If so latch awaiting=true (cleared on user input).
+        if let Some(ep) = &s.events_path {
+            let len = fs::metadata(ep).map(|m| m.len()).unwrap_or(0);
+            let mut seen = s.events_seen_len.lock().unwrap_or_else(|p| p.into_inner());
+            if len > *seen {
+                *seen = len;
+                if let Ok(mut a) = s.awaiting.lock() {
+                    *a = true;
+                }
+            }
+        }
+        let awaiting = s.awaiting.lock().map(|a| *a).unwrap_or(false);
+
         let st = match exit_code {
             Some(0) => "done",
             Some(_) => "error",
-            None if idle_ms >= waiting_after_ms => "waiting",
+            None if awaiting => "waiting",
             None => "running",
         };
         out.push(AgentStatus {
@@ -664,6 +710,18 @@ fn pty_write(state: tauri::State<'_, PtyState>, id: String, data: String) -> Res
     let session = sessions
         .get_mut(&id)
         .ok_or_else(|| format!("pty_write: no session {id}"))?;
+    // The user is responding → the agent is no longer awaiting them. Also advance
+    // the events baseline so the hook write that triggered this turn's "waiting"
+    // doesn't immediately re-trigger.
+    if let Ok(mut a) = session.awaiting.lock() {
+        *a = false;
+    }
+    if let Some(ep) = &session.events_path {
+        let len = fs::metadata(ep).map(|m| m.len()).unwrap_or(0);
+        if let Ok(mut seen) = session.events_seen_len.lock() {
+            *seen = len;
+        }
+    }
     session
         .writer
         .write_all(data.as_bytes())

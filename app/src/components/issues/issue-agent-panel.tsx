@@ -67,6 +67,7 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
     termSpawn,
     termNonce,
     termKey,
+    termEventsPath,
     handleTermReady,
     handleTermExit,
     canResume,
@@ -433,6 +434,7 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
             cwd={termCwd}
             spawn={termSpawn}
             sessionKey={termKey}
+            eventsPath={termEventsPath}
             onReady={handleTermReady}
             onExit={handleTermExit}
           />

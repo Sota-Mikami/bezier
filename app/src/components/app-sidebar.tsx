@@ -46,7 +46,6 @@ import { confirmDialog, messageDialog } from "@/lib/ipc";
 import {
   ptyStatuses,
   ptyDismiss,
-  WAITING_AFTER_MS,
   type AgentStatus,
   type AgentState,
 } from "@/lib/pty";
@@ -95,9 +94,7 @@ export function AppSidebar() {
   React.useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      const list = await ptyStatuses(WAITING_AFTER_MS).catch(
-        () => [] as AgentStatus[],
-      );
+      const list = await ptyStatuses().catch(() => [] as AgentStatus[]);
       if (cancelled) return;
       const map = new Map(list.map((s) => [s.key, s]));
       setStatusByKey(map);

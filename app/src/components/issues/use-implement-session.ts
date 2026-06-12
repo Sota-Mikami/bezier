@@ -61,7 +61,7 @@ import {
   ptyLookup,
   ptyKillKey,
   ptyStatuses,
-  WAITING_AFTER_MS,
+  agentHookSettings,
 } from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
@@ -111,6 +111,8 @@ export interface ImplementSession {
   termNonce: number;
   /** Stable key for the persistent agent pty (the issue id). */
   termKey: string;
+  /** Path to the agent's hook-events file (deterministic waiting, DEC-028). */
+  termEventsPath: string;
   /** A background agent (pty) is currently running for this issue (DEC-027). */
   running: boolean;
   handleTermReady: (id: string) => void;
@@ -160,6 +162,10 @@ export function useImplementSession(
   issue: Issue,
   onStatusChange: (status: IssueStatus) => void,
 ): ImplementSession {
+  // The agent's hook-events file: Claude appends here (Stop/Notification hooks)
+  // when it awaits the user; the backend watches it for "waiting" (DEC-028).
+  const eventsPath = `${root.replace(/\/+$/, "")}/.continuum/agent-events/${issue.id}`;
+
   const [gitRepo, setGitRepo] = React.useState<boolean | null>(null);
   const [ref, setRef] = React.useState<WorktreeRef | null>(null);
   const [agents, setAgents] = React.useState<AgentTool[]>([]);
@@ -290,7 +296,7 @@ export function useImplementSession(
   React.useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      const all = await ptyStatuses(WAITING_AFTER_MS).catch(() => []);
+      const all = await ptyStatuses().catch(() => []);
       if (cancelled) return;
       const mine = all.find((s) => s.key === issue.id);
       setRunning(mine?.state === "running" || mine?.state === "waiting");
@@ -439,6 +445,9 @@ export function useImplementSession(
       if (opts.prompt) args.push(opts.prompt);
       if (isClaude) {
         if (opts.resume) args.push("--continue");
+        // Wire Stop/Notification hooks → the events file, for deterministic
+        // "agent is awaiting you" detection (DEC-028, replacing the idle guess).
+        args.push("--settings", agentHookSettings(eventsPath));
         args.push("--add-dir", issue.dir);
       }
       // Any launch counts as "the agent has been started for this issue", so the
@@ -451,7 +460,7 @@ export function useImplementSession(
       setTermMounted(true);
       setTermNonce((n) => n + 1);
     },
-    [issue.dir],
+    [issue.dir, eventsPath],
   );
 
   // Build a fresh seed handoff and launch it on an existing worktree. Used by the
@@ -903,6 +912,7 @@ export function useImplementSession(
     termSpawn,
     termNonce,
     termKey: issue.id,
+    termEventsPath: eventsPath,
     running,
     handleTermReady,
     handleTermExit,
