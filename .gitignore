@@ -27,3 +27,6 @@ app/.shots/
 # continuum ephemeral local working store (DEC-008/010: drafts / status /
 # annotations / worktree refs — never committed; durable docs land via PR)
 .continuum/
+
+# site/ is its own git repo (continuum dogfoods on it)
+/site
