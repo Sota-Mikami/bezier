@@ -19,6 +19,7 @@ import {
   Trash2,
   RotateCcw,
   Loader2,
+  Check,
 } from "lucide-react";
 
 import {
@@ -482,13 +483,15 @@ function RepoGroup({
                       <span className="absolute inline-flex size-2 animate-ping rounded-full bg-emerald-500/70" />
                       <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
                     </span>
+                  ) : issue.status === "merged" ? (
+                    <Check className="size-3 shrink-0 text-foreground" />
                   ) : (
                     <CircleDot
                       className={cn(
                         "size-3 shrink-0",
-                        issue.status === "open" && "text-muted-foreground",
-                        issue.status === "in-progress" && "text-primary",
-                        issue.status === "merged" && "text-foreground",
+                        issue.status === "open"
+                          ? "text-muted-foreground"
+                          : "text-primary",
                       )}
                     />
                   )}

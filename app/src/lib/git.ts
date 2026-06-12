@@ -208,6 +208,15 @@ export function ghPrCreate(
   });
 }
 
+/**
+ * PR state for `branch` ("OPEN" / "MERGED" / "CLOSED"), or "" if none / gh
+ * missing. Best-effort, never throws — used to auto-mark an issue done when its
+ * PR merges on the platform. -> invoke("gh_pr_state", { repoPath, branch })
+ */
+export function ghPrState(repoPath: string, branch: string): Promise<string> {
+  return invoke<string>("gh_pr_state", { repoPath, branch });
+}
+
 // ---------------------------------------------------------------------------
 // Diff parsing (presentation helper, used by the Changes view)
 // ---------------------------------------------------------------------------

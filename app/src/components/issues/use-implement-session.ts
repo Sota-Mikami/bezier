@@ -51,6 +51,7 @@ import {
   gitRemoteUrl,
   gitPush,
   ghPrCreate,
+  ghPrState,
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
@@ -103,6 +104,8 @@ export interface ImplementSession {
   termNonce: number;
   /** Stable key for the persistent agent pty (the issue id). */
   termKey: string;
+  /** A background agent (pty) is currently running for this issue (DEC-027). */
+  running: boolean;
   handleTermReady: (id: string) => void;
   handleTermExit: (code: number | null) => void;
 
@@ -271,6 +274,41 @@ export function useImplementSession(
       cancelled = true;
     };
   }, [root, issue, loadBehind]);
+
+  // Live "running" signal for the derived state (DEC-027): poll whether a
+  // background agent pty is alive for this issue.
+  const [running, setRunning] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const live = await ptyLookup(issue.id).catch(() => null);
+      if (!cancelled) setRunning(!!live);
+    };
+    void tick();
+    const h = window.setInterval(() => void tick(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(h);
+    };
+  }, [issue.id]);
+
+  // Auto-"done" (DEC-027): once this issue's PR is MERGED on the platform, mark
+  // it merged. Best-effort, checked when a PR link is present.
+  const refPrUrl = ref?.prUrl ?? null;
+  const refBranch = ref?.branch ?? null;
+  React.useEffect(() => {
+    if (!refPrUrl || !refBranch) return;
+    let cancelled = false;
+    (async () => {
+      const state = await ghPrState(root, refBranch).catch(() => "");
+      if (cancelled || state !== "MERGED") return;
+      await updateIssueMeta(root, issue, { status: "merged" }).catch(() => {});
+      onStatusChange("merged");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refPrUrl, refBranch, root, issue, onStatusChange]);
 
   // Detect installed agents once.
   React.useEffect(() => {
@@ -854,6 +892,7 @@ export function useImplementSession(
     termSpawn,
     termNonce,
     termKey: issue.id,
+    running,
     handleTermReady,
     handleTermExit,
     thread,

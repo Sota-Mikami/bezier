@@ -1209,6 +1209,26 @@ fn gh_pr_create(
     ))
 }
 
+/// The state of the PR for `branch` ("OPEN" / "MERGED" / "CLOSED"), or "" when
+/// there is no PR / gh is unavailable. Used to auto-mark an issue "done" once its
+/// PR is merged on the platform (DEC-027). Best-effort: never errors.
+#[tauri::command]
+fn gh_pr_state(repo_path: String, branch: String) -> Result<String, String> {
+    if reject_traversal(Path::new(&repo_path)).is_err() {
+        return Ok(String::new());
+    }
+    let out = std::process::Command::new("gh")
+        .args(["pr", "view", &branch, "--json", "state", "-q", ".state"])
+        .current_dir(&repo_path)
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        }
+        _ => Ok(String::new()),
+    }
+}
+
 // ============================================================================
 // v0.5 slice 2.5 — preview readiness probe.
 //
@@ -1414,6 +1434,7 @@ pub fn run() {
             git_remote_url,
             git_push,
             gh_pr_create,
+            gh_pr_state,
             http_ping,
             symlink,
             clone_dir,
