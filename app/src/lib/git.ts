@@ -160,6 +160,55 @@ export function gitMergeToMain(
 }
 
 // ---------------------------------------------------------------------------
+// Open-PR finalize path (DEC-015) — push the Issue branch + open a GitHub PR
+// via `gh`, so review/CI/merge happen on the platform and `main` is never
+// touched locally. The default finalize action for repos with a GitHub remote;
+// git_merge_to_main is demoted to a solo/local opt-in. Tauri maps camelCase JS
+// arg keys to the Rust snake_case params (worktreePath -> worktree_path,
+// repoPath -> repo_path, bodyFilePath -> body_file_path).
+// ---------------------------------------------------------------------------
+
+/**
+ * origin's remote URL — used to detect whether this repo can Open a PR. Rejects
+ * (Err) when the repo has no `origin` remote.
+ * -> invoke("git_remote_url", { repoPath })
+ */
+export function gitRemoteUrl(repoPath: string): Promise<string> {
+  return invoke<string>("git_remote_url", { repoPath });
+}
+
+/**
+ * Push the worktree's `branch` to origin (`push -u origin <branch>`). Commits a
+ * WIP first if the worktree is dirty (same as Sync), so the PR carries the
+ * agent's work. Resolves to git's push summary.
+ * -> invoke("git_push", { worktreePath, branch })
+ */
+export function gitPush(worktreePath: string, branch: string): Promise<string> {
+  return invoke<string>("git_push", { worktreePath, branch });
+}
+
+/**
+ * Open a GitHub PR for `branch` via `gh pr create` (cwd = repoPath), with the
+ * body read from `bodyFilePath` (`--body-file`, safe for large markdown).
+ * Resolves to the PR URL; if a PR already exists for the branch, resolves to the
+ * existing PR's URL. Never touches `main`.
+ * -> invoke("gh_pr_create", { repoPath, branch, title, bodyFilePath })
+ */
+export function ghPrCreate(
+  repoPath: string,
+  branch: string,
+  title: string,
+  bodyFilePath: string,
+): Promise<string> {
+  return invoke<string>("gh_pr_create", {
+    repoPath,
+    branch,
+    title,
+    bodyFilePath,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Diff parsing (presentation helper, used by the Changes view)
 // ---------------------------------------------------------------------------
 

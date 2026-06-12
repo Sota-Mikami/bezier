@@ -110,6 +110,7 @@ const THREAD_EVENT_LABEL: Record<ThreadEventType, string> = {
   sync: "main を同期",
   accept: "Accept（commit）",
   merge: "main に merge",
+  pr_opened: "PR を作成",
   discard: "破棄",
 };
 

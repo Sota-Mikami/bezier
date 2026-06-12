@@ -18,7 +18,9 @@ import {
   Loader2,
   GitBranch,
   GitMerge,
+  GitPullRequest,
   ArrowDownToLine,
+  ExternalLink,
   RotateCcw,
   Check,
   Trash2,
@@ -75,6 +77,9 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
     syncMain,
     mergeToMain,
     resolveConflictsWithAI,
+    canOpenPR,
+    prUrl,
+    openPR,
     canImplement,
     handleImplement,
     handleRerun,
@@ -300,25 +305,79 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
                 )}
                 Sync with main
               </Button>
-              {/* span wrapper so the tooltip shows even while the button is
-                  disabled (disabled buttons don't emit hover events). */}
-              <span title={canMerge ? "main に merge します" : "先に Sync with main"}>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5"
-                  disabled={!canMerge}
-                  onClick={() => void mergeToMain()}
-                >
-                  {action === "merge" ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <GitMerge className="size-3.5" />
-                  )}
-                  Merge to main
-                </Button>
-              </span>
+
+              {canOpenPR ? (
+                // DEC-015: with a GitHub remote + gh, Open PR is the PRIMARY,
+                // team-safe finalize (push branch + gh pr create; main untouched).
+                // Merge to main is demoted to a muted, solo/local opt-in.
+                <>
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={!!action}
+                    onClick={() => void openPR()}
+                    title="branch を push して GitHub に PR を作成（main は直接触りません）"
+                  >
+                    {action === "pr" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <GitPullRequest className="size-3.5" />
+                    )}
+                    Open PR
+                  </Button>
+                  <span title={canMerge ? "main に直接 merge（solo 用）" : "先に Sync with main"}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 text-[11px] text-muted-foreground"
+                      disabled={!canMerge}
+                      onClick={() => void mergeToMain()}
+                    >
+                      {action === "merge" ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <GitMerge className="size-3" />
+                      )}
+                      Merge to main（solo）
+                    </Button>
+                  </span>
+                </>
+              ) : (
+                // No GitHub remote / no gh: only the local Merge to main path.
+                // span wrapper so the tooltip shows even while disabled (disabled
+                // buttons don't emit hover events).
+                <span title={canMerge ? "main に merge します" : "先に Sync with main"}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    disabled={!canMerge}
+                    onClick={() => void mergeToMain()}
+                  >
+                    {action === "merge" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <GitMerge className="size-3.5" />
+                    )}
+                    Merge to main
+                  </Button>
+                </span>
+              )}
             </div>
+
+            {prUrl && (
+              <a
+                href={prUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="flex items-center gap-1.5 text-[11px] font-medium text-sky-600 hover:underline dark:text-sky-400"
+                title={prUrl}
+              >
+                <GitPullRequest className="size-3 shrink-0" />
+                <span className="truncate">{prUrl}</span>
+                <ExternalLink className="size-3 shrink-0" />
+              </a>
+            )}
 
             {syncConflicts.length > 0 && (
               <div className="space-y-1.5 rounded border border-amber-500/40 bg-amber-500/10 p-2">

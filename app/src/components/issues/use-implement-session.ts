@@ -26,6 +26,7 @@ import {
   writeWorktreeRef,
   clearWorktreeRef,
   buildImplementHandoff,
+  buildPrBody,
   draftDecision,
   updateIssueMeta,
   readThread,
@@ -48,10 +49,13 @@ import {
   gitSyncMain,
   gitMergeConflictCheck,
   gitMergeToMain,
+  gitRemoteUrl,
+  gitPush,
+  ghPrCreate,
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
-import { ptyWrite } from "@/lib/pty";
+import { ptyWrite, commandExists } from "@/lib/pty";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
 
 function errMsg(e: unknown): string {
@@ -65,6 +69,7 @@ export type SessionAction =
   | "discard"
   | "sync"
   | "merge"
+  | "pr"
   | null;
 
 /** The base branch Issue branches are cut from / merged back into (DEC-009). */
@@ -122,6 +127,13 @@ export interface ImplementSession {
   mergeToMain: () => Promise<void>;
   resolveConflictsWithAI: () => void;
 
+  // Open-PR finalize (DEC-015). `canOpenPR` = a GitHub remote + `gh` available,
+  // so the team-safe Open-PR path is the primary finalize; `prUrl` is the opened
+  // PR's URL (persisted on the WorktreeRef, so it survives re-opening the issue).
+  canOpenPR: boolean;
+  prUrl: string | null;
+  openPR: () => Promise<void>;
+
   canImplement: boolean;
   handleImplement: () => Promise<void>;
   handleRerun: () => Promise<void>;
@@ -155,6 +167,12 @@ export function useImplementSession(
   const [ahead, setAhead] = React.useState<number | null>(null);
   const [mergeClean, setMergeClean] = React.useState<boolean | null>(null);
   const [syncConflicts, setSyncConflicts] = React.useState<string[]>([]);
+
+  // Open-PR finalize (DEC-015). `canOpenPR` is detected once a worktree exists
+  // (GitHub remote + `gh` available); `prUrl` mirrors the WorktreeRef's persisted
+  // PR link so a re-opened issue still shows it.
+  const [canOpenPR, setCanOpenPR] = React.useState(false);
+  const [prUrl, setPrUrl] = React.useState<string | null>(null);
 
   // Refresh behind/ahead + the dry-run conflict verdict for a worktree. Each
   // probe is independent: a failure (e.g. base ref missing) just clears that
@@ -221,6 +239,7 @@ export function useImplementSession(
       .then((r) => {
         if (cancelled || !r) return;
         setRef(r);
+        setPrUrl(r.prUrl ?? null);
         // Lazy-load the diff for a resumed worktree.
         Promise.all([gitDiff(r.path), gitStatus(r.path)])
           .then(([d, s]) => {
@@ -274,6 +293,36 @@ export function useImplementSession(
       cancelled = true;
     };
   }, [root, issue]);
+
+  // Detect whether the team-safe Open-PR finalize is available: a worktree
+  // exists, the repo has a GitHub `origin` remote, and `gh` is installed. Probed
+  // when a worktree appears; failures (no remote / no gh) leave it false so only
+  // the solo Merge-to-main path is offered.
+  const hasRef = !!ref;
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // No worktree yet -> nothing to finalize, so no Open-PR affordance.
+      if (!hasRef) {
+        if (!cancelled) setCanOpenPR(false);
+        return;
+      }
+      try {
+        const hasGh = await commandExists("gh");
+        if (!hasGh) {
+          if (!cancelled) setCanOpenPR(false);
+          return;
+        }
+        await gitRemoteUrl(root); // Err when no origin remote
+        if (!cancelled) setCanOpenPR(true);
+      } catch {
+        if (!cancelled) setCanOpenPR(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasRef, root]);
 
   // Append a structured event to the durable thread + reflect it in state.
   // Best-effort: a write failure must never break the underlying action.
@@ -558,6 +607,7 @@ export function useImplementSession(
       setAhead(null);
       setMergeClean(null);
       setSyncConflicts([]);
+      setPrUrl(null);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -632,6 +682,37 @@ export function useImplementSession(
     }
   }, [ref, action, root, loadBehind, logEvent]);
 
+  // Open-PR finalize (DEC-015, the team-safe default): build the PR body (spec +
+  // activity, so the "why" rides with the PR — DEC-008), push the branch, then
+  // `gh pr create`. Never touches main. The returned PR URL is persisted on the
+  // WorktreeRef (survives re-opening the issue) and logged to the thread. Status
+  // stays in-progress — review/merge happen on the platform.
+  const openPR = React.useCallback(async () => {
+    if (!ref || action) return;
+    setAction("pr");
+    setError(null);
+    setInfo(null);
+    try {
+      const { path: bodyPath } = await buildPrBody(root, issue, thread);
+      await gitPush(ref.path, ref.branch);
+      const url = await ghPrCreate(root, ref.branch, issue.title, bodyPath);
+      // Persist the PR URL on the worktree ref so it survives a re-open.
+      const nextRef: WorktreeRef = { ...ref, prUrl: url };
+      await writeWorktreeRef(issue, nextRef);
+      setRef(nextRef);
+      setPrUrl(url);
+      setInfo(`PR を作成しました: ${url}`);
+      void logEvent("pr_opened", url);
+      // The branch was pushed (and possibly WIP-committed); refresh the local view.
+      await refreshDiff(ref.path);
+      await loadBehind(ref.path);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setAction(null);
+    }
+  }, [ref, action, root, issue, thread, logEvent, refreshDiff, loadBehind]);
+
   const canImplement =
     gitRepo === true && issue.slots.spec && !!selectedAgent?.available && !action;
 
@@ -670,6 +751,9 @@ export function useImplementSession(
     syncMain,
     mergeToMain,
     resolveConflictsWithAI,
+    canOpenPR,
+    prUrl,
+    openPR,
     canImplement,
     handleImplement,
     handleRerun,
