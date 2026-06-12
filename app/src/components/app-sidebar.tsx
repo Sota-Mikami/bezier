@@ -1,11 +1,11 @@
 "use client";
 
-// The left navigator (DEC-021). The sidebar IS the issue list now: a big "New"
-// button + search at the top, then each known repo as a collapsible toggle whose
-// body lists that repo's issues (first 5, "もっと見る" for the rest) and, at the
-// bottom, that repo's trash (restore / 完全に削除). Selecting an issue switches
-// the active repo to its owner and opens it in the main pane. Replaces the old
-// Obsidian-style bottom switcher + Issues/Repo nav.
+// The left navigator (DEC-021 / DEC-022). The sidebar IS the issue list: a big
+// "New" button + search at the top, then each known repo as a collapsible toggle
+// whose body lists that repo's issues (first 5 + もっと見る). Trash is NOT per
+// toggle — it's a single CROSS-REPO list reached from the footer (DEC-022), so
+// the toggles stay purely issue lists. Selecting an issue switches the active
+// repo to its owner and opens it in the main pane.
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   ChevronRight,
+  ChevronLeft,
   FolderOpen,
   CircleDot,
   Trash2,
@@ -44,9 +45,10 @@ import { cn } from "@/lib/utils";
 /** How many issues a repo toggle shows before "もっと見る". */
 const PAGE = 5;
 
-interface RepoData {
-  issues: Issue[];
-  trash: TrashMeta[];
+/** A trashed issue plus the repo it belongs to (for the cross-repo list). */
+interface TrashRow {
+  repoPath: string;
+  meta: TrashMeta;
 }
 
 export function AppSidebar() {
@@ -56,46 +58,65 @@ export function AppSidebar() {
   const { root, recents, switchTo, openRoot } = useWorkspaceRoot();
 
   const [query, setQuery] = React.useState("");
+  const [showTrash, setShowTrash] = React.useState(false);
   const [expanded, setExpanded] = React.useState<Set<string>>(
     () => new Set(root ? [root] : []),
   );
-  const [data, setData] = React.useState<Record<string, RepoData>>({});
+  const [issuesByRepo, setIssuesByRepo] = React.useState<
+    Record<string, Issue[]>
+  >({});
+  const [trashByRepo, setTrashByRepo] = React.useState<
+    Record<string, TrashMeta[]>
+  >({});
   const [showAll, setShowAll] = React.useState<Set<string>>(new Set());
-  const [trashOpen, setTrashOpen] = React.useState<Set<string>>(new Set());
   const [creating, setCreating] = React.useState(false);
-  const loadingRef = React.useRef<Set<string>>(new Set());
+  const loadingIssues = React.useRef<Set<string>>(new Set());
 
-  // Load one repo's issues + trash (auto-purging anything past the 30-day TTL).
-  const loadRepo = React.useCallback(async (path: string) => {
-    if (loadingRef.current.has(path)) return;
-    loadingRef.current.add(path);
+  const loadIssues = React.useCallback(async (path: string) => {
+    if (loadingIssues.current.has(path)) return;
+    loadingIssues.current.add(path);
     try {
-      const [issues, trash] = await Promise.all([
-        listIssues(path).catch(() => [] as Issue[]),
-        listTrash(path).catch(() => [] as TrashMeta[]),
-      ]);
-      const expired = expiredTrash(trash, Date.now());
-      for (const m of expired) await purgeTrashed(path, m).catch(() => {});
-      const liveTrash = expired.length
-        ? trash.filter((m) => !expired.includes(m))
-        : trash;
-      setData((prev) => ({ ...prev, [path]: { issues, trash: liveTrash } }));
+      const issues = await listIssues(path).catch(() => [] as Issue[]);
+      setIssuesByRepo((prev) => ({ ...prev, [path]: issues }));
     } finally {
-      loadingRef.current.delete(path);
+      loadingIssues.current.delete(path);
     }
   }, []);
 
-  // Ensure the repos we need are loaded: when searching, every repo (so results
-  // are global); otherwise just the expanded ones. Re-fetch the active repo on
-  // navigation so cross-view changes (a detail-view trash/commit) reflect here.
+  // Load a repo's trash (auto-purging anything past the 30-day TTL).
+  const loadTrash = React.useCallback(async (path: string) => {
+    const trash = await listTrash(path).catch(() => [] as TrashMeta[]);
+    const expired = expiredTrash(trash, Date.now());
+    for (const m of expired) await purgeTrashed(path, m).catch(() => {});
+    const live = expired.length
+      ? trash.filter((m) => !expired.includes(m))
+      : trash;
+    setTrashByRepo((prev) => ({ ...prev, [path]: live }));
+  }, []);
+
+  // Trash is cross-repo, so load every repo's trash up front (cheap: one dir
+  // read each) for the footer count + the aggregated list. Deferred off the
+  // synchronous effect path (loadTrash setStates after its await).
+  React.useEffect(() => {
+    const t = window.setTimeout(() => {
+      for (const r of recents) {
+        if (!(r.path in trashByRepo)) void loadTrash(r.path);
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [recents, trashByRepo, loadTrash]);
+
+  // Issues: load expanded repos (or all when searching, for a global filter).
   const searching = query.trim().length > 0;
   React.useEffect(() => {
     const paths = searching ? recents.map((r) => r.path) : [...expanded];
-    for (const p of paths) if (!(p in data)) void loadRepo(p);
-  }, [searching, recents, expanded, data, loadRepo]);
+    for (const p of paths) if (!(p in issuesByRepo)) void loadIssues(p);
+  }, [searching, recents, expanded, issuesByRepo, loadIssues]);
 
+  // Refresh the active repo's issues on navigation (a detail-view change reflects
+  // here when you come back).
   React.useEffect(() => {
-    if (root) void loadRepo(root);
+    if (root) void loadIssues(root);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, selectedId]);
 
@@ -127,6 +148,7 @@ export function AppSidebar() {
       }
       const issue = await createIssue(target, "");
       if (target !== root) switchTo(target);
+      void loadIssues(target);
       router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
     } catch (e) {
       await messageDialog(
@@ -136,13 +158,13 @@ export function AppSidebar() {
     } finally {
       setCreating(false);
     }
-  }, [creating, root, openRoot, switchTo, router]);
+  }, [creating, root, openRoot, switchTo, loadIssues, router]);
 
   const handleRestore = React.useCallback(
     async (repoPath: string, meta: TrashMeta) => {
       try {
         await restoreFromTrash(repoPath, meta);
-        await loadRepo(repoPath);
+        await Promise.all([loadTrash(repoPath), loadIssues(repoPath)]);
       } catch (e) {
         await messageDialog(
           `復元に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
@@ -150,7 +172,7 @@ export function AppSidebar() {
         );
       }
     },
-    [loadRepo],
+    [loadTrash, loadIssues],
   );
 
   const handlePurge = React.useCallback(
@@ -162,7 +184,7 @@ export function AppSidebar() {
       if (!ok) return;
       try {
         await purgeTrashed(repoPath, meta);
-        await loadRepo(repoPath);
+        await loadTrash(repoPath);
       } catch (e) {
         await messageDialog(
           `完全削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
@@ -170,7 +192,7 @@ export function AppSidebar() {
         );
       }
     },
-    [loadRepo],
+    [loadTrash],
   );
 
   const q = query.trim().toLowerCase();
@@ -178,6 +200,23 @@ export function AppSidebar() {
     (issue: Issue) => !q || issue.title.toLowerCase().includes(q),
     [q],
   );
+
+  // Flatten all repos' trash, newest-deleted first, for the cross-repo view.
+  const trashRows: TrashRow[] = React.useMemo(() => {
+    const rows: TrashRow[] = [];
+    for (const [repoPath, list] of Object.entries(trashByRepo)) {
+      for (const meta of list) rows.push({ repoPath, meta });
+    }
+    rows.sort((a, b) =>
+      a.meta.deletedAt < b.meta.deletedAt
+        ? 1
+        : a.meta.deletedAt > b.meta.deletedAt
+          ? -1
+          : 0,
+    );
+    return rows;
+  }, [trashByRepo]);
+  const trashCount = trashRows.length;
 
   return (
     <Sidebar>
@@ -189,33 +228,54 @@ export function AppSidebar() {
           <span className="text-sm font-semibold">continuum</span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => void handleNew()}
-          disabled={creating}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-        >
-          {creating ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          New
-        </button>
+        {!showTrash && (
+          <>
+            <button
+              type="button"
+              onClick={() => void handleNew()}
+              disabled={creating}
+              className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {creating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              New
+            </button>
 
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Issue を検索…"
-            className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        </div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Issue を検索…"
+                className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          </>
+        )}
+
+        {showTrash && (
+          <button
+            type="button"
+            onClick={() => setShowTrash(false)}
+            className="flex items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="size-4" />
+            Issues に戻る
+          </button>
+        )}
       </SidebarHeader>
 
       <SidebarContent className="gap-0 px-1 py-1">
-        {recents.length === 0 ? (
+        {showTrash ? (
+          <GlobalTrash
+            rows={trashRows}
+            onRestore={handleRestore}
+            onPurge={handlePurge}
+          />
+        ) : recents.length === 0 ? (
           <p className="px-3 py-6 text-xs text-muted-foreground">
             リポジトリがありません。下の「フォルダを開く」から追加してください。
           </p>
@@ -227,33 +287,36 @@ export function AppSidebar() {
               active={r.path === root}
               open={expanded.has(r.path) || searching}
               forceOpen={searching}
-              data={data[r.path]}
+              issues={issuesByRepo[r.path]}
               query={q}
               matches={matches}
               showAll={showAll.has(r.path)}
-              trashOpen={trashOpen.has(r.path)}
               selectedId={selectedId}
               onToggle={() => toggleRepo(r.path)}
               onSelectIssue={(id) => selectIssue(r.path, id)}
-              onShowAll={() =>
-                setShowAll((p) => new Set(p).add(r.path))
-              }
-              onToggleTrash={() =>
-                setTrashOpen((p) => {
-                  const n = new Set(p);
-                  if (n.has(r.path)) n.delete(r.path);
-                  else n.add(r.path);
-                  return n;
-                })
-              }
-              onRestore={(m) => void handleRestore(r.path, m)}
-              onPurge={(m) => void handlePurge(r.path, m)}
+              onShowAll={() => setShowAll((p) => new Set(p).add(r.path))}
             />
           ))
         )}
       </SidebarContent>
 
-      <SidebarFooter className="p-2">
+      <SidebarFooter className="gap-1 p-2">
+        <button
+          type="button"
+          onClick={() => setShowTrash((v) => !v)}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
+            showTrash
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          )}
+        >
+          <Trash2 className="size-4" />
+          ゴミ箱
+          {trashCount > 0 && (
+            <span className="ml-auto text-[10px]">{trashCount}</span>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => void openRoot()}
@@ -272,44 +335,35 @@ function RepoGroup({
   active,
   open,
   forceOpen,
-  data,
+  issues,
   query,
   matches,
   showAll,
-  trashOpen,
   selectedId,
   onToggle,
   onSelectIssue,
   onShowAll,
-  onToggleTrash,
-  onRestore,
-  onPurge,
 }: {
   path: string;
   active: boolean;
   open: boolean;
   forceOpen: boolean;
-  data: RepoData | undefined;
+  issues: Issue[] | undefined;
   query: string;
   matches: (i: Issue) => boolean;
   showAll: boolean;
-  trashOpen: boolean;
   selectedId: string | null;
   onToggle: () => void;
   onSelectIssue: (id: string) => void;
   onShowAll: () => void;
-  onToggleTrash: () => void;
-  onRestore: (m: TrashMeta) => void;
-  onPurge: (m: TrashMeta) => void;
 }) {
-  const allIssues = data?.issues ?? [];
-  const filtered = query ? allIssues.filter(matches) : allIssues;
+  const all = issues ?? [];
+  const filtered = query ? all.filter(matches) : all;
   // When searching, hide repos that have no matching issue.
   if (forceOpen && query && filtered.length === 0) return null;
 
   const shown = showAll || query ? filtered : filtered.slice(0, PAGE);
   const more = filtered.length - shown.length;
-  const trash = data?.trash ?? [];
 
   return (
     <div className="mb-0.5">
@@ -329,19 +383,17 @@ function RepoGroup({
           )}
         />
         <span className="truncate">{repoName(path)}</span>
-        {active && (
-          <span className="size-1.5 shrink-0 rounded-full bg-primary" />
-        )}
-        {data && allIssues.length > 0 && (
+        {active && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
+        {issues && all.length > 0 && (
           <span className="ml-auto shrink-0 text-[10px] font-normal text-muted-foreground">
-            {allIssues.length}
+            {all.length}
           </span>
         )}
       </button>
 
       {open && (
         <div className="ml-3 border-l pl-2">
-          {!data ? (
+          {!issues ? (
             <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" /> 読み込み中…
             </div>
@@ -386,68 +438,71 @@ function RepoGroup({
               )}
             </>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
 
-          {/* Per-repo trash at the bottom of the toggle. */}
-          {data && (
-            <div className="mt-0.5">
+// Cross-repo trash list (DEC-022). Each row shows the issue title + its repo, the
+// remaining days before auto-purge, and Restore / 完全に削除.
+function GlobalTrash({
+  rows,
+  onRestore,
+  onPurge,
+}: {
+  rows: TrashRow[];
+  onRestore: (repoPath: string, m: TrashMeta) => void;
+  onPurge: (repoPath: string, m: TrashMeta) => void;
+}) {
+  return (
+    <div className="px-1">
+      <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+        削除した Issue は {TRASH_TTL_DAYS} 日後に自動で完全削除されます。
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+          ゴミ箱は空です
+        </p>
+      ) : (
+        rows.map(({ repoPath, meta }) => (
+          <div
+            key={`${repoPath}:${meta.id}`}
+            className="group/trash rounded-md px-2 py-1.5 hover:bg-sidebar-accent"
+          >
+            <div className="flex items-center gap-1">
+              <span
+                className="min-w-0 flex-1 truncate text-xs"
+                title={meta.title || "(無題)"}
+              >
+                {meta.title || "(無題)"}
+              </span>
               <button
                 type="button"
-                onClick={onToggleTrash}
-                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+                title="復元"
+                aria-label="復元"
+                onClick={() => onRestore(repoPath, meta)}
+                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover/trash:opacity-100"
               >
-                <ChevronRight
-                  className={cn(
-                    "size-3 shrink-0 transition-transform",
-                    trashOpen && "rotate-90",
-                  )}
-                />
-                <Trash2 className="size-3 shrink-0" />
-                ゴミ箱{trash.length > 0 ? `（${trash.length}）` : ""}
+                <RotateCcw className="size-3.5" />
               </button>
-              {trashOpen && (
-                <div className="ml-3 border-l pl-2">
-                  {trash.length === 0 ? (
-                    <p className="px-2 py-1 text-[11px] text-muted-foreground">
-                      空です
-                    </p>
-                  ) : (
-                    trash.map((m) => (
-                      <div
-                        key={m.id}
-                        className="group/trash flex items-center gap-1 px-2 py-1 text-[11px]"
-                      >
-                        <span
-                          className="min-w-0 flex-1 truncate text-muted-foreground"
-                          title={`${m.title || "(無題)"} · あと ${daysLeft(m.deletedAt)} 日で完全削除`}
-                        >
-                          {m.title || "(無題)"}
-                        </span>
-                        <button
-                          type="button"
-                          title="復元"
-                          aria-label="復元"
-                          onClick={() => onRestore(m)}
-                          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover/trash:opacity-100"
-                        >
-                          <RotateCcw className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          title="完全に削除"
-                          aria-label="完全に削除"
-                          onClick={() => onPurge(m)}
-                          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-destructive group-hover/trash:opacity-100"
-                        >
-                          <Trash2 className="size-3" />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
+              <button
+                type="button"
+                title="完全に削除"
+                aria-label="完全に削除"
+                onClick={() => onPurge(repoPath, meta)}
+                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-destructive group-hover/trash:opacity-100"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
             </div>
-          )}
-        </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span className="truncate">{repoName(repoPath)}</span>
+              <span>·</span>
+              <span className="shrink-0">あと {daysLeft(meta.deletedAt)} 日</span>
+            </div>
+          </div>
+        ))
       )}
     </div>
   );
