@@ -277,21 +277,70 @@ fn pty_spawn(
     let thread_id = id.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
+        // Carry buffer for an INCOMPLETE multi-byte UTF-8 sequence at the end of
+        // a read. Without it, a Japanese (3-byte) char split across two pty reads
+        // would decode to replacement chars (mojibake — e.g. "ら" garbled).
+        let mut carry: Vec<u8> = Vec::new();
+        let emit_chunk = |chunk: String| {
+            let _ = app_handle.emit(
+                "pty://data",
+                PtyDataPayload {
+                    id: thread_id.clone(),
+                    chunk,
+                },
+            );
+        };
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break, // EOF: child closed the pty.
                 Ok(n) => {
-                    let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
-                    let _ = app_handle.emit(
-                        "pty://data",
-                        PtyDataPayload {
-                            id: thread_id.clone(),
-                            chunk,
-                        },
-                    );
+                    carry.extend_from_slice(&buf[..n]);
+                    // Emit the longest VALID UTF-8 prefix; keep an incomplete
+                    // trailing sequence in `carry` for the next read. Genuinely
+                    // invalid bytes are replaced so they can never stall.
+                    loop {
+                        match std::str::from_utf8(&carry) {
+                            Ok(s) => {
+                                if !s.is_empty() {
+                                    let chunk = s.to_owned();
+                                    carry.clear();
+                                    emit_chunk(chunk);
+                                }
+                                break;
+                            }
+                            Err(e) => {
+                                let valid = e.valid_up_to();
+                                match e.error_len() {
+                                    // Incomplete tail: emit valid prefix, keep rest.
+                                    None => {
+                                        if valid > 0 {
+                                            let chunk = String::from_utf8_lossy(&carry[..valid])
+                                                .into_owned();
+                                            carry.drain(..valid);
+                                            emit_chunk(chunk);
+                                        }
+                                        break;
+                                    }
+                                    // Invalid byte(s) mid-stream: emit valid prefix
+                                    // + U+FFFD, drop the bad bytes, keep scanning.
+                                    Some(bad) => {
+                                        let mut chunk = String::from_utf8_lossy(&carry[..valid])
+                                            .into_owned();
+                                        chunk.push('\u{FFFD}');
+                                        carry.drain(..valid + bad);
+                                        emit_chunk(chunk);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(_) => break, // read error: treat as terminated.
             }
+        }
+        // Flush any trailing incomplete bytes (lossy) on EOF.
+        if !carry.is_empty() {
+            emit_chunk(String::from_utf8_lossy(&carry).into_owned());
         }
         let code = child.wait().ok().map(|status| status.exit_code() as i32);
         let _ = app_handle.emit(

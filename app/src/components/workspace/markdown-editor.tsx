@@ -21,8 +21,15 @@ import {
   placeholder as cmPlaceholder,
   highlightSpecialChars,
   drawSelection,
+  Decoration,
+  type DecorationSet,
 } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import {
+  EditorState,
+  StateField,
+  StateEffect,
+  type Range,
+} from "@codemirror/state";
 import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
@@ -87,6 +94,15 @@ export interface MarkdownEditorProps {
    * last edits aren't lost when leaving the issue before the debounce fires.
    */
   flushOnUnmount?: boolean;
+  /**
+   * 1-based line numbers (into the editor body) to briefly FLASH on mount — the
+   * "live change visualization" (DEC-012 §7). When the agent rewrites spec.md
+   * externally, the SlotEditor computes a line diff and remounts this editor with
+   * the changed lines here; on mount they get a `cm-flash` line decoration that
+   * fades out (~2.5s) so the user sees exactly what changed. Empty/undefined = no
+   * flash. Applied once per mount (this component remounts on each external reload).
+   */
+  flashLines?: number[];
   className?: string;
 }
 
@@ -207,6 +223,24 @@ const editorTheme = EditorView.theme({
     backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)",
   },
   ".cm-placeholder": { color: "var(--muted-foreground)" },
+
+  // Live change flash (DEC-012 §7): a brief accent wash on lines the agent just
+  // rewrote, fading out so the eye catches WHAT changed without lingering noise.
+  // Negative inset margin lets the band breathe past the line padding without
+  // affecting CM6 height measurement (it's a background-only highlight).
+  ".cm-flash": {
+    animation: "cm-flash-fade 2.5s ease-out forwards",
+    borderRadius: "4px",
+  },
+  "@keyframes cm-flash-fade": {
+    "0%": {
+      backgroundColor: "color-mix(in oklab, var(--primary) 30%, transparent)",
+    },
+    "60%": {
+      backgroundColor: "color-mix(in oklab, var(--primary) 20%, transparent)",
+    },
+    "100%": { backgroundColor: "transparent" },
+  },
 
   // Revealed (on-cursor) syntax punctuation: shown, muted (Obsidian-style).
   ".cm-md-syntax": { color: "var(--muted-foreground)", opacity: "0.5" },
@@ -398,6 +432,44 @@ const editorTheme = EditorView.theme({
   },
 });
 
+// --- Live change flash (DEC-012 §7) --------------------------------------
+// A self-contained decoration layer (separate from livePreview) that paints a
+// `cm-flash` line decoration on a set of lines, driven by a StateEffect. The CSS
+// (`@keyframes cm-flash-fade` in editorTheme) fades the accent background out
+// over ~2.5s; the SlotEditor then dispatches an empty set to drop the (now
+// invisible) decoration. Line decorations must come from a StateField, so this
+// is one.
+const setFlashLines = StateEffect.define<readonly number[]>();
+const flashLineDeco = Decoration.line({ class: "cm-flash" });
+
+const flashField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(value, tr) {
+    value = value.map(tr.changes);
+    for (const e of tr.effects) {
+      if (!e.is(setFlashLines)) continue;
+      const lines = e.value;
+      if (lines.length === 0) {
+        value = Decoration.none;
+        continue;
+      }
+      const doc = tr.state.doc;
+      const ranges: Range<Decoration>[] = [];
+      // `lines` arrives ascending (the diff walks the new content top-down), so
+      // the line.from positions are already sorted for the RangeSet.
+      for (const ln of lines) {
+        if (ln < 1 || ln > doc.lines) continue;
+        ranges.push(flashLineDeco.range(doc.line(ln).from));
+      }
+      value = Decoration.set(ranges, true);
+    }
+    return value;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 function MarkdownEditorInner(
   props: MarkdownEditorProps,
   ref: React.ForwardedRef<MarkdownEditorHandle>,
@@ -410,11 +482,14 @@ function MarkdownEditorInner(
     frontmatterDirty,
     onSaved,
     flushOnUnmount,
+    flashLines,
     className,
   } = props;
 
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const viewRef = React.useRef<EditorView | null>(null);
+  // Timer that clears the flash decoration after the fade animation completes.
+  const flashTimerRef = React.useRef<number | null>(null);
 
   // Latest props/doc kept in refs so save() reads fresh values and the editor
   // does NOT rebuild when only the frontmatter draft changes (which would lose
@@ -492,6 +567,7 @@ function MarkdownEditorInner(
           // language highlighting via @codemirror/language-data.
           markdown({ base: markdownLanguage, codeLanguages: languages }),
           livePreview,
+          flashField,
           editorTheme,
           cmPlaceholder("Start writing…  (type / for commands)"),
           updateListener,
@@ -505,7 +581,23 @@ function MarkdownEditorInner(
     viewRef.current = view;
     dirtyRef.current = false;
 
+    // Live change flash (DEC-012 §7): on mount, paint the changed lines and clear
+    // them after the fade. `flashLines` is fixed for this mounted instance (the
+    // parent remounts via key on each external reload), so reading the closed-over
+    // prop here is correct.
+    if (flashLines && flashLines.length > 0) {
+      view.dispatch({ effects: setFlashLines.of(flashLines) });
+      flashTimerRef.current = window.setTimeout(() => {
+        flashTimerRef.current = null;
+        viewRef.current?.dispatch({ effects: setFlashLines.of([]) });
+      }, 2500);
+    }
+
     return () => {
+      if (flashTimerRef.current !== null) {
+        window.clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = null;
+      }
       // Best-effort autosave flush before teardown (opt-in). Fire-and-forget:
       // save() reads viewRef BEFORE we destroy, so the latest text is captured.
       if (flushOnUnmountRef.current && dirtyRef.current) {

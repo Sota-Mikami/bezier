@@ -312,15 +312,21 @@ export function useImplementSession(
       // can read+write the issue's spec.md (which lives in the MAIN repo's
       // .continuum tree, OUTSIDE this worktree) — that closes the chat⇆spec loop.
       // `--continue` resumes the prior conversation (the exit handler falls back
-      // to a fresh seed if there is none). Order: `claude [--continue] --add-dir
-      // <dir> "<prompt>"`. Other agents (codex) keep the bare positional prompt.
+      // to a fresh seed if there is none).
+      //
+      // ORDER MATTERS: claude's `--add-dir <directories...>` is VARIADIC, so it
+      // greedily swallows every following arg as a directory — including the
+      // prompt. So the positional prompt must come FIRST and `--add-dir` LAST
+      // (with `<dir>` as the only trailing arg it can consume):
+      //   `claude "<prompt>" [--continue] --add-dir <dir>`
+      // Other agents (codex) keep the bare positional prompt.
       const isClaude = agent.id === "claude";
       const args: string[] = [];
+      if (opts.prompt) args.push(opts.prompt);
       if (isClaude) {
         if (opts.resume) args.push("--continue");
         args.push("--add-dir", issue.dir);
       }
-      if (opts.prompt) args.push(opts.prompt);
       // Remember whether THIS launch is a resume so a quick failure can fall back.
       resumeStartRef.current = opts.resume ? Date.now() : null;
       setTermCwd(cwd);

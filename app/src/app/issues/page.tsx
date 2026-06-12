@@ -54,6 +54,18 @@ import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignReview } from "@/components/issues/design-review";
 import { useImplementSession } from "@/components/issues/use-implement-session";
+import { gitStatus } from "@/lib/git";
+
+// Live change visualization (DEC-012 §7).
+// How often we poll the worktree's git status to detect the agent writing CODE
+// (→ auto-switch to Design). The Design iframe HMR-reloads on its own; this just
+// focuses the user there.
+const CODE_WATCH_MS = 1800;
+// After the user MANUALLY clicks a center tab, suppress auto-switching for this
+// long so we never yank them off a tab they chose to look at (pulse only).
+const MANUAL_SWITCH_GRACE_MS = 8000;
+// How long the "● updating" pulse stays on a tab after a change.
+const PULSE_MS = 3000;
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -424,6 +436,57 @@ function IssueWorkbench({
   const [tab, setTab] = React.useState<DetailTab>("spec");
   const [creatingSpec, setCreatingSpec] = React.useState(false);
 
+  // --- Live change visualization (DEC-012 §7) ------------------------------
+  // A change signal (agent rewrote spec.md / wrote code) PULSES the changed tab
+  // and AUTO-SWITCHES to it — unless the user manually picked a tab in the last
+  // few seconds (then: pulse only, don't steal their view). Switching only toggles
+  // a `hidden` class; it never calls .focus(), so the terminal keeps keyboard
+  // focus while the user is typing there.
+  const [specPulse, setSpecPulse] = React.useState(false);
+  const [designPulse, setDesignPulse] = React.useState(false);
+  const lastManualSwitchAt = React.useRef(0);
+  const pulseTimers = React.useRef<{ spec?: number; design?: number }>({});
+
+  const signalChange = React.useCallback((changed: DetailTab) => {
+    // Pulse the changed tab (re-arm the clear timer on repeated changes).
+    if (changed === "spec") {
+      setSpecPulse(true);
+      window.clearTimeout(pulseTimers.current.spec);
+      pulseTimers.current.spec = window.setTimeout(
+        () => setSpecPulse(false),
+        PULSE_MS,
+      );
+    } else {
+      setDesignPulse(true);
+      window.clearTimeout(pulseTimers.current.design);
+      pulseTimers.current.design = window.setTimeout(
+        () => setDesignPulse(false),
+        PULSE_MS,
+      );
+    }
+    // Respect a recent manual choice: pulse only, don't auto-switch.
+    if (Date.now() - lastManualSwitchAt.current > MANUAL_SWITCH_GRACE_MS) {
+      setTab(changed);
+    }
+  }, []);
+
+  // User clicked a center tab: record it (suppress auto-switch briefly) and clear
+  // that tab's pulse since they're now looking at it.
+  const handleManualTab = React.useCallback((next: DetailTab) => {
+    lastManualSwitchAt.current = Date.now();
+    setTab(next);
+    if (next === "spec") setSpecPulse(false);
+    else setDesignPulse(false);
+  }, []);
+
+  React.useEffect(() => {
+    const timers = pulseTimers.current;
+    return () => {
+      window.clearTimeout(timers.spec);
+      window.clearTimeout(timers.design);
+    };
+  }, []);
+
   const patchMeta = React.useCallback(
     async (patch: { title?: string; status?: IssueStatus; labels?: string[] }) => {
       await updateIssueMeta(root, issue, patch);
@@ -457,6 +520,42 @@ function IssueWorkbench({
   // The SHARED implementation session — read by BOTH the right agent panel
   // (terminal + controls) and the center Design tab (Preview + Diff).
   const session = useImplementSession(root, issue, handleStatusChange);
+
+  // Code-change detection (DEC-012 §7): poll the worktree's porcelain status
+  // while a worktree exists. When it differs from the last seen snapshot (the
+  // agent wrote/added/removed files) → signal a Design change (auto-switch +
+  // pulse). The first tick only establishes the baseline (no fire) so reopening
+  // an in-progress issue with existing changes doesn't false-trigger. Comparing
+  // the full porcelain string both debounces (re-editing the same already-dirty
+  // file leaves porcelain unchanged → no spam) and catches new/removed files.
+  const worktreePath = session.ref?.path ?? null;
+  React.useEffect(() => {
+    if (!worktreePath) return;
+    let cancelled = false;
+    let last: string | null = null;
+    const tick = async () => {
+      let status: string;
+      try {
+        status = await gitStatus(worktreePath);
+      } catch {
+        return; // worktree briefly busy/removed — try next tick
+      }
+      if (cancelled) return;
+      if (last === null) {
+        last = status; // baseline only
+        return;
+      }
+      if (status !== last) {
+        last = status;
+        signalChange("design");
+      }
+    };
+    const h = window.setInterval(() => void tick(), CODE_WATCH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(h);
+    };
+  }, [worktreePath, signalChange]);
 
   return (
     <div className="flex h-svh flex-col">
@@ -513,19 +612,21 @@ function IssueWorkbench({
               variant={tab === "spec" ? "secondary" : "ghost"}
               size="sm"
               className="h-8 gap-1.5"
-              onClick={() => setTab("spec")}
+              onClick={() => handleManualTab("spec")}
             >
               <FileText className="size-3.5" />
               Spec
+              {specPulse && <UpdatingPulse />}
             </Button>
             <Button
               variant={tab === "design" ? "secondary" : "ghost"}
               size="sm"
               className="h-8 gap-1.5"
-              onClick={() => setTab("design")}
+              onClick={() => handleManualTab("design")}
             >
               <MonitorPlay className="size-3.5" />
               Design
+              {designPulse && <UpdatingPulse />}
             </Button>
           </div>
 
@@ -534,7 +635,11 @@ function IssueWorkbench({
           <div className="relative min-h-0 flex-1">
             <div className={cn("absolute inset-0", tab !== "spec" && "hidden")}>
               {issue.slots.spec ? (
-                <SlotEditor path={slotPath(issue, "spec")} label="Spec" />
+                <SlotEditor
+                  path={slotPath(issue, "spec")}
+                  label="Spec"
+                  onExternalChange={() => signalChange("spec")}
+                />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
                   <FileText className="size-6" />
@@ -567,6 +672,22 @@ function IssueWorkbench({
         </section>
       </div>
     </div>
+  );
+}
+
+// A gentle "● 更新中" notify dot for a center tab whose artifact just changed
+// (DEC-012 §7). Subtle Notion/Figma feel: a soft pinging ring + a solid accent
+// core, in the app's primary token. Decorative only (the pulse is advisory).
+function UpdatingPulse() {
+  return (
+    <span
+      className="relative ml-0.5 flex size-1.5"
+      title="更新中"
+      aria-hidden="true"
+    >
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+      <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+    </span>
   );
 }
 
