@@ -260,6 +260,10 @@ pub struct PtySpawnOpts {
     pub cols: u16,
     /// Initial terminal height in rows.
     pub rows: u16,
+    /// Optional stable key (the issue id) to make this pty persistent +
+    /// reattachable. When set, the session survives the terminal unmounting.
+    #[serde(default)]
+    pub key: Option<String>,
 }
 
 /// One live pty-backed session, held in tauri-managed state keyed by pty id.
@@ -276,6 +280,13 @@ pub struct Session {
     pub master: Box<dyn MasterPty + Send>,
     /// Cloned killer handle; used to terminate the child on teardown.
     pub killer: Box<dyn ChildKiller + Send + Sync>,
+    /// Stable key (the issue id) for persistent agent ptys, so the front-end can
+    /// find + reattach to a still-running session after navigating away. None for
+    /// throwaway shells (e.g. the /workspace terminal).
+    pub key: Option<String>,
+    /// Rolling capture of the pty output (capped), replayed on reattach so the
+    /// returning terminal shows what happened while it was detached.
+    pub backlog: std::sync::Arc<Mutex<String>>,
 }
 
 /// Payload for the `pty://data` event. camelCase to match the frozen TS
@@ -369,21 +380,38 @@ fn pty_spawn(
         .map_err(|e| format!("pty_spawn clone_reader: {e}"))?;
 
     let id = uuid::Uuid::new_v4().to_string();
+    let backlog = std::sync::Arc::new(Mutex::new(String::new()));
 
     // Reader thread: stream output as `pty://data`, then `pty://exit` on EOF.
     let app_handle = app.clone();
     let thread_id = id.clone();
+    let backlog_w = backlog.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         // Carry buffer for an INCOMPLETE multi-byte UTF-8 sequence at the end of
         // a read. Without it, a Japanese (3-byte) char split across two pty reads
         // would decode to replacement chars (mojibake — e.g. "ら" garbled).
         let mut carry: Vec<u8> = Vec::new();
-        let emit_chunk = |chunk: String| {
-            let _ = app_handle.emit(
+        let emit_app = app_handle.clone();
+        let emit_tid = thread_id.clone();
+        let emit_chunk = move |chunk: String| {
+            // Append to the rolling backlog (capped to the last ~256KB, trimmed on
+            // a char boundary) for replay when a terminal reattaches.
+            if let Ok(mut b) = backlog_w.lock() {
+                b.push_str(&chunk);
+                const CAP: usize = 256 * 1024;
+                if b.len() > CAP {
+                    let mut cut = b.len() - CAP;
+                    while cut < b.len() && !b.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    *b = b.split_off(cut);
+                }
+            }
+            let _ = emit_app.emit(
                 "pty://data",
                 PtyDataPayload {
-                    id: thread_id.clone(),
+                    id: emit_tid.clone(),
                     chunk,
                 },
             );
@@ -454,6 +482,8 @@ fn pty_spawn(
         writer,
         master: pair.master,
         killer,
+        key: opts.key.clone(),
+        backlog,
     };
     state
         .sessions
@@ -462,6 +492,70 @@ fn pty_spawn(
         .insert(id.clone(), session);
 
     Ok(id)
+}
+
+/// Find a live pty session by its stable `key` (issue id); returns its id when
+/// one is still running. Used by a returning terminal to REATTACH to a
+/// background agent instead of spawning a new one.
+#[tauri::command]
+fn pty_lookup(state: tauri::State<'_, PtyState>, key: String) -> Result<Option<String>, String> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|e| format!("pty_lookup lock: {e}"))?;
+    Ok(sessions
+        .iter()
+        .find(|(_, s)| s.key.as_deref() == Some(key.as_str()))
+        .map(|(id, _)| id.clone()))
+}
+
+/// The captured output backlog for a session, replayed into a reattaching
+/// terminal so it shows what happened while detached. "" if the session is gone.
+#[tauri::command]
+fn pty_backlog(state: tauri::State<'_, PtyState>, id: String) -> Result<String, String> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|e| format!("pty_backlog lock: {e}"))?;
+    Ok(sessions
+        .get(&id)
+        .and_then(|s| s.backlog.lock().ok().map(|b| b.clone()))
+        .unwrap_or_default())
+}
+
+/// Kill + drop every live session with this `key` (the issue id). Used on
+/// Discard / Re-run, where the background agent must actually stop.
+#[tauri::command]
+fn pty_kill_key(state: tauri::State<'_, PtyState>, key: String) -> Result<(), String> {
+    let mut sessions = state
+        .sessions
+        .lock()
+        .map_err(|e| format!("pty_kill_key lock: {e}"))?;
+    let ids: Vec<String> = sessions
+        .iter()
+        .filter(|(_, s)| s.key.as_deref() == Some(key.as_str()))
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in ids {
+        if let Some(mut session) = sessions.remove(&id) {
+            let _ = session.killer.kill();
+        }
+    }
+    Ok(())
+}
+
+/// The keys (issue ids) of all live agent sessions — drives the sidebar's
+/// "running" indicators.
+#[tauri::command]
+fn pty_active_keys(state: tauri::State<'_, PtyState>) -> Result<Vec<String>, String> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|e| format!("pty_active_keys lock: {e}"))?;
+    Ok(sessions
+        .values()
+        .filter_map(|s| s.key.clone())
+        .collect())
 }
 
 /// Write raw input to the pty's stdin.
@@ -1300,6 +1394,10 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            pty_lookup,
+            pty_backlog,
+            pty_kill_key,
+            pty_active_keys,
             command_exists,
             resolve_command,
             git_is_repo,

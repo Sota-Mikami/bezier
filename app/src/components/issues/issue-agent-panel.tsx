@@ -66,6 +66,7 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
     termCwd,
     termSpawn,
     termNonce,
+    termKey,
     handleTermReady,
     handleTermExit,
     canResume,
@@ -431,6 +432,7 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
             key={`${termCwd}#${termNonce}#${termSpawn?.cmd ?? "shell"}`}
             cwd={termCwd}
             spawn={termSpawn}
+            sessionKey={termKey}
             onReady={handleTermReady}
             onExit={handleTermExit}
           />

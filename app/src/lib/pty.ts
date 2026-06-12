@@ -28,6 +28,12 @@ export interface PtySpawnOpts {
   cols: number;
   /** Initial terminal height in rows. */
   rows: number;
+  /**
+   * Optional stable key (the issue id). When set, the pty PERSISTS after the
+   * terminal unmounts (a background agent keeps running) and can be reattached
+   * via ptyLookup + ptyBacklog. Omit for throwaway shells.
+   */
+  key?: string;
 }
 
 /** Payload of the "pty://data" event. */
@@ -73,6 +79,29 @@ export function ptyResize(id: string, cols: number, rows: number): Promise<void>
  */
 export function ptyKill(id: string): Promise<void> {
   return invoke<void>("pty_kill", { id });
+}
+
+/**
+ * Find a still-running persistent pty by its stable key (issue id). Returns its
+ * id to REATTACH to, or null. -> invoke("pty_lookup", { key })
+ */
+export function ptyLookup(key: string): Promise<string | null> {
+  return invoke<string | null>("pty_lookup", { key });
+}
+
+/** The captured output backlog of a session (for replay on reattach). */
+export function ptyBacklog(id: string): Promise<string> {
+  return invoke<string>("pty_backlog", { id });
+}
+
+/** Kill every live session with this key (issue id). Used on Discard / Re-run. */
+export function ptyKillKey(key: string): Promise<void> {
+  return invoke<void>("pty_kill_key", { key });
+}
+
+/** Keys (issue ids) of all live agent sessions — for "running" indicators. */
+export function ptyActiveKeys(): Promise<string[]> {
+  return invoke<string[]>("pty_active_keys");
 }
 
 /**
