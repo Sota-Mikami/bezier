@@ -166,10 +166,16 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
                     onClick={() => setSelectedAgentId(a.id)}
                   >
                     {a.name}
-                    {!a.available && (
+                    {a.comingSoon ? (
                       <Badge variant="secondary" className="ml-1">
-                        not found
+                        coming soon
                       </Badge>
+                    ) : (
+                      !a.available && (
+                        <Badge variant="secondary" className="ml-1">
+                          not found
+                        </Badge>
+                      )
                     )}
                   </Button>
                 );
