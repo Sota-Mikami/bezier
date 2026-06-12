@@ -234,7 +234,7 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
                 ) : (
                   <Check className="size-3.5" />
                 )}
-                Accept
+                Commit
               </Button>
               <Button
                 size="sm"

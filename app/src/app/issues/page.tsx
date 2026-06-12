@@ -108,7 +108,7 @@ const THREAD_EVENT_LABEL: Record<ThreadEventType, string> = {
   rerun: "AI を再実行",
   resume: "セッションを再開",
   sync: "main を同期",
-  accept: "Accept（commit）",
+  accept: "Commit（branch に確定）",
   merge: "main に merge",
   pr_opened: "PR を作成",
   discard: "破棄",

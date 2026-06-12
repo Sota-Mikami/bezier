@@ -598,7 +598,7 @@ const THREAD_LABELS: Record<ThreadEventType, string> = {
   rerun: "再実装",
   resume: "セッション再開",
   sync: "main を同期",
-  accept: "Accept（branch に commit）",
+  accept: "Commit（branch に確定）",
   merge: "main に merge",
   pr_opened: "PR を作成",
   discard: "破棄",

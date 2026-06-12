@@ -588,8 +588,9 @@ export function useImplementSession(
         return;
       }
       const sha = await gitCommitAll(ref.path, issue.title);
-      await updateIssueMeta(root, issue, { status: "merged" });
-      onStatusChange("merged");
+      // Commit is a checkpoint on the branch — NOT a merge. Stay in-progress;
+      // the issue only becomes "merged" on the actual Merge-to-main (or when the
+      // PR merges on the platform, which the user reflects via the status menu).
       setInfo(`commit ${sha.slice(0, 9)} を ${ref.branch} に作成しました。`);
       // The durable record of "what changed / where" lives in thread.json
       // (DEC-014/A) — the accept event carries the committed paths + branch.
@@ -605,7 +606,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, issue, root, onStatusChange, refreshDiff, loadBehind, logEvent]);
+  }, [ref, action, issue, refreshDiff, loadBehind, logEvent]);
 
   const handleDiscard = React.useCallback(async () => {
     if (!ref || action) return;
@@ -686,7 +687,7 @@ export function useImplementSession(
     const prompt = [
       `git worktree \`${ref.path}\` で main(\`${BASE}\`) を取り込んだ際にマージ衝突が発生しました。`,
       files ? `衝突ファイル: ${files}。` : "",
-      "各ファイルの衝突マーカー (<<<<<<< / ======= / >>>>>>>) を解決し、解決後に `git add` してください（commit は人間が UI の Accept から行います）。",
+      "各ファイルの衝突マーカー (<<<<<<< / ======= / >>>>>>>) を解決し、解決後に `git add` してください（commit は人間が UI の Commit から行います）。",
     ]
       .filter(Boolean)
       .join("\n");
@@ -694,8 +695,9 @@ export function useImplementSession(
   }, [ref, action, selectedAgent, syncConflicts, launchAgent]);
 
   // Guarded merge of the branch INTO main (the explicit final step on top of
-  // Accept). The Rust guard rejects if main is dirty / the branch is behind or
-  // conflicts; the UI also gates the button on behind===0 && mergeClean.
+  // Commit). The Rust guard rejects if main is dirty / the branch is behind or
+  // conflicts; the UI also gates the button on behind===0 && mergeClean. This —
+  // not Commit — is what actually lands on main, so it sets status "merged".
   const mergeToMain = React.useCallback(async () => {
     if (!ref || action) return;
     setAction("merge");
@@ -704,6 +706,8 @@ export function useImplementSession(
     try {
       const out = await gitMergeToMain(root, ref.branch);
       const first = out.split("\n").find((l) => l.trim().length > 0) ?? "merged";
+      await updateIssueMeta(root, issue, { status: "merged" });
+      onStatusChange("merged");
       setInfo(`main に merge しました: ${first}`);
       void logEvent("merge");
       await loadBehind(ref.path);
@@ -712,7 +716,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, root, loadBehind, logEvent]);
+  }, [ref, action, root, issue, onStatusChange, loadBehind, logEvent]);
 
   // Open-PR finalize (DEC-015, the team-safe default): build the PR body (spec +
   // activity, so the "why" rides with the PR — DEC-008), push the branch, then
