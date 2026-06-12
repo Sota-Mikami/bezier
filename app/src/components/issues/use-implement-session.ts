@@ -223,6 +223,13 @@ export function useImplementSession(
     refRef.current = ref;
   }, [ref]);
 
+  // Auto-resume bookkeeping. Set true as soon as ANY launch happens for this
+  // issue (implement/rerun/resume), so the auto-resume effect fires at most once
+  // per issue-detail mount — and never re-launches after the user has quit the
+  // agent on their own. The hook re-instantiates per issue (fresh mount), so this
+  // resets to false each time you open a different issue.
+  const autoResumedRef = React.useRef(false);
+
   // Detect git + load any existing worktree ref + its diff (resume an
   // in-progress issue). Keyed by issue.id at the detail call site (fresh mount
   // per issue), so we only set state from async continuations.
@@ -376,6 +383,9 @@ export function useImplementSession(
         if (opts.resume) args.push("--continue");
         args.push("--add-dir", issue.dir);
       }
+      // Any launch counts as "the agent has been started for this issue", so the
+      // auto-resume-on-entry effect won't fire again (e.g. after the user quits).
+      autoResumedRef.current = true;
       // Remember whether THIS launch is a resume so a quick failure can fall back.
       resumeStartRef.current = opts.resume ? Date.now() : null;
       setTermCwd(cwd);
@@ -539,6 +549,25 @@ export function useImplementSession(
     }
     void logEvent("resume");
   }, [ref, action, selectedAgent, launchAgent, seedLaunch, logEvent]);
+
+  // Auto-resume on entry: when you open an issue that already has a worktree
+  // (so there's a prior agent session to continue), relaunch `claude --continue`
+  // automatically — no need to press "セッションを再開". The TUI replays the prior
+  // conversation into the terminal, so opening an in-progress issue lands you
+  // back in the live chat. Fires at most once per issue mount (autoResumedRef is
+  // flipped by launchAgent), and only when nothing is already running. If there
+  // turns out to be no session to continue, the exit handler seeds a fresh one.
+  React.useEffect(() => {
+    if (autoResumedRef.current) return;
+    if (!ref || termMounted || action) return;
+    if (!selectedAgent?.available) return;
+    // Mark immediately so a re-render before the deferred launch can't double-fire,
+    // and defer the launch itself off the synchronous effect path (handleResume
+    // clears error/info via setState — doing that synchronously cascades renders).
+    autoResumedRef.current = true;
+    const t = window.setTimeout(() => void handleResume(), 0);
+    return () => window.clearTimeout(t);
+  }, [ref, termMounted, action, selectedAgent, handleResume]);
 
   const handleAccept = React.useCallback(async () => {
     if (!ref || action) return;
