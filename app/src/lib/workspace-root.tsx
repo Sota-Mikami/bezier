@@ -40,31 +40,20 @@ export function repoName(path: string): string {
 }
 
 /**
- * Resolve a picked folder to a usable repo root (DEC-035), guiding the user
- * through the subfolder / not-a-repo cases. Returns the path to open, or null if
- * the user cancelled. Falls back to the picked path if git status can't be read.
+ * Resolve a picked folder to a usable workspace (DEC-035 / DEC-039). A repo root
+ * or a SUBFOLDER of a repo both just open (the subfolder opens in monorepo mode:
+ * worktrees are cut off the repo root, but the agent + preview are scoped to the
+ * subfolder — handled downstream). A non-repo folder offers `git init`. Returns
+ * the path to open, or null if cancelled.
  */
 async function ensureUsableRepo(picked: string): Promise<string | null> {
   const st = await gitRepoStatus(picked).catch(() => null);
-  if (!st || !st.toplevel) {
-    // git unavailable or status failed → only offer the not-a-repo path below if
-    // we positively know it isn't a repo; otherwise open as-is.
-    if (st && !st.isRepo) return offerInit(picked);
-    return picked;
-  }
-  if (st.isRepo && st.isToplevel) return picked;
-  if (st.isRepo && !st.isToplevel) {
-    const ok = await confirmDialog(
-      `このフォルダはリポジトリ「${repoName(st.toplevel)}」の一部（サブフォルダ）です。continuum はリポジトリ単位で動くため、リポジトリの root を開くことを推奨します。`,
-      {
-        title: "リポジトリの root を開く",
-        okLabel: "root を開く",
-        cancelLabel: "キャンセル",
-      },
-    );
-    return ok ? st.toplevel : null;
-  }
-  return offerInit(picked);
+  // Inside a git repo (root or subfolder) → open it as-is. A subfolder is now
+  // first-class (monorepo support), so no "open the root" detour.
+  if (st?.isRepo) return picked;
+  // Positively not a repo → offer to git init. (Unknown/error → open as-is.)
+  if (st && !st.isRepo) return offerInit(picked);
+  return picked;
 }
 
 async function offerInit(picked: string): Promise<string | null> {

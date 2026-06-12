@@ -682,7 +682,7 @@ export async function buildImplementHandoff(
   root: string,
   issue: Issue,
   worktreePath: string,
-  opts?: { followUp?: boolean; userMessage?: string },
+  opts?: { followUp?: boolean; userMessage?: string; subPath?: string },
 ): Promise<{ path: string; content: string }> {
   let issueMd: string;
   try {
@@ -737,11 +737,20 @@ export async function buildImplementHandoff(
     "- 会話で意図や要件が変わったら、**まず spec.md を更新**してから実装し、Spec と実装を常に同期させてください。",
     "",
   ];
+  // Monorepo scope (DEC-039): when the issue is scoped to a subfolder of a
+  // larger repo, the agent's cwd IS that subfolder. Tell it to stay within it.
+  const monorepoNote = opts?.subPath
+    ? [
+        `**この作業は monorepo の \`${opts.subPath}/\` パッケージに限定されています。** あなたの作業ディレクトリは既にそこです。原則 \`${opts.subPath}/\` の外（リポジトリの他パッケージや root 設定）は変更しないでください。`,
+        "",
+      ]
+    : [];
   const content = [
     `# 実装ハンドオフ — ${issue.title || "(無題)"}`,
     "",
     ...intro,
     "",
+    ...monorepoNote,
     "---",
     "",
     ...(opts?.userMessage

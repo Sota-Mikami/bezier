@@ -52,6 +52,7 @@ import {
   gitPush,
   ghPrCreate,
   ghPrState,
+  gitRepoStatus,
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
@@ -167,6 +168,37 @@ export function useImplementSession(
   const eventsPath = `${root.replace(/\/+$/, "")}/.continuum/agent-events/${issue.id}`;
 
   const [gitRepo, setGitRepo] = React.useState<boolean | null>(null);
+  // Monorepo support (DEC-039): when the opened folder (`root`) is a SUBFOLDER
+  // of the git repo, `subPath` is its path relative to the repo toplevel (""
+  // when root IS the toplevel). Worktrees are cut off the toplevel (git does
+  // this automatically), but the agent's cwd + the preview are scoped to
+  // <worktree>/<subPath> — the package you actually opened. git ops (diff/
+  // commit) stay on the worktree root (changes only land in subPath anyway).
+  const [subPath, setSubPath] = React.useState("");
+  React.useEffect(() => {
+    let cancelled = false;
+    gitRepoStatus(root)
+      .then((st) => {
+        if (cancelled || !st.isRepo || !st.toplevel) return;
+        const top = st.toplevel.replace(/\/+$/, "");
+        const r = root.replace(/\/+$/, "");
+        setSubPath(r.startsWith(top + "/") ? r.slice(top.length + 1) : "");
+      })
+      .catch(() => {
+        /* leave "" */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [root]);
+  // The agent's working directory inside a worktree: scoped to the opened
+  // subfolder for monorepos (= the worktree root when not a subfolder).
+  const workDir = React.useCallback(
+    (worktreePath: string) =>
+      subPath ? `${worktreePath}/${subPath}` : worktreePath,
+    [subPath],
+  );
+
   const [ref, setRef] = React.useState<WorktreeRef | null>(null);
   const [agents, setAgents] = React.useState<AgentTool[]>([]);
   const [selectedAgentId, setSelectedAgentId] = React.useState<string | null>(
@@ -217,7 +249,7 @@ export function useImplementSession(
   // Dev-server lifecycle (the Preview). Hook-owned so it survives the
   // Preview⇆Diff toggle AND the Spec⇆Design center-tab switch, and can be
   // stopped on Discard. Keyed off the shared worktree path.
-  const preview = usePreviewServer(root, ref?.path ?? null);
+  const preview = usePreviewServer(root, ref ? workDir(ref.path) : null);
 
   // Embedded terminal (one at a time). termCwd/termSpawn/termNonce mirror the
   // /workspace pattern; pendingInput is written once the pty is ready.
@@ -477,10 +509,13 @@ export function useImplementSession(
   const seedLaunch = React.useCallback(
     async (worktreePath: string) => {
       if (!selectedAgent?.available) return;
-      const { content } = await buildImplementHandoff(root, issue, worktreePath);
-      launchAgent(selectedAgent, worktreePath, { prompt: content });
+      const wd = workDir(worktreePath);
+      const { content } = await buildImplementHandoff(root, issue, wd, {
+        subPath,
+      });
+      launchAgent(selectedAgent, wd, { prompt: content });
     },
-    [selectedAgent, root, issue, launchAgent],
+    [selectedAgent, root, issue, launchAgent, workDir, subPath],
   );
   const seedLaunchRef = React.useRef(seedLaunch);
   React.useEffect(() => {
@@ -558,9 +593,11 @@ export function useImplementSession(
       await writeWorktreeRef(issue, newRef);
       await updateIssueMeta(root, issue, { status: "in-progress" });
       onStatusChange("in-progress");
-      const { content } = await buildImplementHandoff(root, issue, wt);
+      const { content } = await buildImplementHandoff(root, issue, workDir(wt), {
+        subPath,
+      });
       setRef(newRef);
-      launchAgent(selectedAgent, wt, { prompt: content });
+      launchAgent(selectedAgent, workDir(wt), { prompt: content });
       void logEvent("implement");
       // Branch is fresh off HEAD here, but main may already be ahead — show it.
       void loadBehind(wt);
@@ -579,6 +616,8 @@ export function useImplementSession(
     launchAgent,
     loadBehind,
     logEvent,
+    workDir,
+    subPath,
   ]);
 
   // Chat-first start (DEC-023): begin from a free-text message instead of a
@@ -605,11 +644,12 @@ export function useImplementSession(
         await writeWorktreeRef(issue, newRef);
         await updateIssueMeta(root, issue, { status: "in-progress" });
         onStatusChange("in-progress");
-        const { content } = await buildImplementHandoff(root, issue, wt, {
+        const { content } = await buildImplementHandoff(root, issue, workDir(wt), {
           userMessage: msg,
+          subPath,
         });
         setRef(newRef);
-        launchAgent(selectedAgent, wt, { prompt: content });
+        launchAgent(selectedAgent, workDir(wt), { prompt: content });
         void logEvent("implement", "チャット開始");
         void loadBehind(wt);
       } catch (e) {
@@ -628,6 +668,8 @@ export function useImplementSession(
       launchAgent,
       loadBehind,
       logEvent,
+      workDir,
+      subPath,
     ],
   );
 
@@ -646,17 +688,18 @@ export function useImplementSession(
       // Stop any background agent still running for this issue so the re-run is
       // the single live session (otherwise we'd spawn a 2nd pty for the key).
       await ptyKillKey(issue.id).catch(() => {});
-      const { content } = await buildImplementHandoff(root, issue, ref.path, {
+      const { content } = await buildImplementHandoff(root, issue, workDir(ref.path), {
         followUp: true,
+        subPath,
       });
-      launchAgent(selectedAgent, ref.path, { prompt: content });
+      launchAgent(selectedAgent, workDir(ref.path), { prompt: content });
       void logEvent("rerun");
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setAction(null);
     }
-  }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent]);
+  }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir, subPath]);
 
   // Resume the prior agent conversation in the existing worktree. For claude this
   // is `claude --continue --add-dir <issue.dir>`; if there's no session to
@@ -671,12 +714,12 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     if (selectedAgent.id === "claude") {
-      launchAgent(selectedAgent, ref.path, { resume: true });
+      launchAgent(selectedAgent, workDir(ref.path), { resume: true });
     } else {
       await seedLaunch(ref.path);
     }
     void logEvent("resume");
-  }, [ref, action, selectedAgent, launchAgent, seedLaunch, logEvent]);
+  }, [ref, action, selectedAgent, launchAgent, seedLaunch, logEvent, workDir]);
 
   // Auto-resume on entry: when you open an issue that already has a worktree
   // (so there's a prior agent session to continue), relaunch `claude --continue`
@@ -703,7 +746,7 @@ export function useImplementSession(
       if (live) {
         setError(null);
         setInfo(null);
-        setTermCwd(ref.path);
+        setTermCwd(workDir(ref.path));
         setTermSpawn(undefined);
         setTermMounted(true);
         setTermNonce((n) => n + 1);
@@ -715,7 +758,7 @@ export function useImplementSession(
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [ref, termMounted, action, selectedAgent, handleResume, issue.id]);
+  }, [ref, termMounted, action, selectedAgent, handleResume, issue.id, workDir]);
 
   const handleAccept = React.useCallback(async () => {
     if (!ref || action) return;
@@ -836,8 +879,8 @@ export function useImplementSession(
     ]
       .filter(Boolean)
       .join("\n");
-    launchAgent(selectedAgent, ref.path, { prompt });
-  }, [ref, action, selectedAgent, syncConflicts, launchAgent]);
+    launchAgent(selectedAgent, workDir(ref.path), { prompt });
+  }, [ref, action, selectedAgent, syncConflicts, launchAgent, workDir]);
 
   // Guarded merge of the branch INTO main (the explicit final step on top of
   // Commit). The Rust guard rejects if main is dirty / the branch is behind or
