@@ -445,9 +445,17 @@ export function useImplementSession(
       if (opts.prompt) args.push(opts.prompt);
       if (isClaude) {
         if (opts.resume) args.push("--continue");
-        // Wire Stop/Notification hooks → the events file, for deterministic
-        // "agent is awaiting you" detection (DEC-028, replacing the idle guess).
-        args.push("--settings", agentHookSettings(eventsPath));
+        // Wire Stop/Notification hooks → the events file (deterministic "agent is
+        // awaiting you", DEC-028) AND match Claude's TUI theme to the terminal
+        // background so its output stays legible in light mode (DEC-034).
+        const dark =
+          typeof window !== "undefined" && window.matchMedia
+            ? window.matchMedia("(prefers-color-scheme: dark)").matches
+            : true;
+        args.push(
+          "--settings",
+          agentHookSettings(eventsPath, dark ? "dark" : "light"),
+        );
         args.push("--add-dir", issue.dir);
       }
       // Any launch counts as "the agent has been started for this issue", so the

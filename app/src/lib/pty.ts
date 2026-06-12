@@ -111,15 +111,26 @@ export function ptyActiveKeys(): Promise<string[]> {
 }
 
 /**
- * Build the `--settings` JSON that wires Claude's Stop/Notification hooks to
- * append to `eventsPath` — the deterministic signal that the agent is awaiting
- * the user (turn ended / asked for input). Passed as a claude CLI arg.
+ * Build the `--settings` JSON for a Claude launch:
+ *  - Stop/Notification hooks → append to `eventsPath` (deterministic "awaiting
+ *    the user" signal), and
+ *  - `theme` matched to the terminal background. Claude's TUI emits colors tuned
+ *    for its theme; without matching it, a light terminal renders Claude's
+ *    dark-tuned output washed-out. Syncing the theme keeps it legible (best
+ *    practice for embedding an agent TUI).
  */
-export function agentHookSettings(eventsPath: string): string {
+export function agentHookSettings(
+  eventsPath: string,
+  theme?: "light" | "dark",
+): string {
   // The hook command appends one byte; the backend watches the file's growth.
   const cmd = `printf . >> ${JSON.stringify(eventsPath)}`;
   const entry = [{ hooks: [{ type: "command", command: cmd }] }];
-  return JSON.stringify({ hooks: { Stop: entry, Notification: entry } });
+  const settings: Record<string, unknown> = {
+    hooks: { Stop: entry, Notification: entry },
+  };
+  if (theme) settings.theme = theme;
+  return JSON.stringify(settings);
 }
 
 /** Per-agent status for the Agent Inbox (DEC-028). */
