@@ -350,6 +350,8 @@ export interface TrashMeta {
   /** The issue's branch + worktree, if it had one (for purge-time teardown). */
   branch?: string;
   worktreePath?: string;
+  /** The opened PR's URL, if any (shown in the trash preview). */
+  prUrl?: string;
 }
 
 function trashDraftsDir(root: string): string {
@@ -374,6 +376,7 @@ export async function trashIssue(root: string, issue: Issue): Promise<void> {
     title: issue.title,
     deletedAt: new Date().toISOString(),
     ...(ref ? { branch: ref.branch, worktreePath: ref.path } : {}),
+    ...(ref?.prUrl ? { prUrl: ref.prUrl } : {}),
   };
   // Marker is written into the live folder BEFORE the move, so it travels with it.
   await writeFile(`${issue.dir}/.trashed.json`, `${JSON.stringify(meta, null, 2)}\n`);
@@ -408,6 +411,78 @@ export async function listTrash(root: string): Promise<TrashMeta[]> {
   }
   out.sort((a, b) => (a.deletedAt < b.deletedAt ? 1 : a.deletedAt > b.deletedAt ? -1 : 0));
   return out;
+}
+
+/** A read-only snapshot of a trashed issue (for the trash preview — no worktree). */
+export interface TrashDetail {
+  meta: TrashMeta;
+  /** issue.md description body (frontmatter stripped). */
+  body: string;
+  /** spec.md content, or null if it had none. */
+  spec: string | null;
+  /** The durable activity thread, if any. */
+  thread: ThreadEvent[];
+}
+
+/**
+ * Read a trashed issue's contents WITHOUT restoring it (no worktree, no git):
+ * its issue.md body, spec.md, and activity thread, straight from the trash
+ * store. `id` is the issue id; the folder is found by scanning the trash.
+ */
+export async function readTrashDetail(
+  root: string,
+  id: string,
+): Promise<TrashDetail | null> {
+  let entries;
+  try {
+    entries = await listDir(trashDraftsDir(root));
+  } catch {
+    return null;
+  }
+  const match = entries.find(
+    (e) => e.isDir && splitFolderName(e.name).id === id,
+  );
+  if (!match) return null;
+
+  let meta: TrashMeta;
+  try {
+    meta = JSON.parse(await readFile(`${match.path}/.trashed.json`)) as TrashMeta;
+  } catch {
+    return null;
+  }
+
+  let body = "";
+  try {
+    const text = await readFile(`${match.path}/issue.md`);
+    body = splitFrontmatter(text).body.trim();
+  } catch {
+    /* no issue.md */
+  }
+
+  let spec: string | null = null;
+  try {
+    spec = await readFile(`${match.path}/spec.md`);
+  } catch {
+    /* no spec.md */
+  }
+
+  let thread: ThreadEvent[] = [];
+  try {
+    const raw = await readFile(`${trashIssuesDir(root)}/${id}/thread.json`);
+    const data = JSON.parse(raw) as unknown;
+    if (Array.isArray(data)) {
+      thread = data.filter(
+        (e): e is ThreadEvent =>
+          !!e &&
+          typeof (e as ThreadEvent).type === "string" &&
+          typeof (e as ThreadEvent).at === "string",
+      );
+    }
+  } catch {
+    /* no thread */
+  }
+
+  return { meta, body, spec, thread };
 }
 
 /** Restore a trashed issue back into the live store (move-back). */
