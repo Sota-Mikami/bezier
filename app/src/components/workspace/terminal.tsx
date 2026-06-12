@@ -206,13 +206,20 @@ export default function TerminalPane({
       const pid = id;
       ptyId = pid;
 
-      // Shift+Enter inserts a newline instead of submitting (DEC-036). xterm
-      // sends \r for both plain and Shift+Enter, so the agent TUI can't tell
-      // them apart and Shift+Enter would submit. Intercept it and send \n (a
-      // literal newline in the input buffer; plain Enter still sends \r = submit).
+      // Key handling (DEC-036). The #1 rule for IME (Japanese) input: while a
+      // composition is active, DO NOTHING here and let the browser's
+      // composition events own it. The Enter that CONFIRMS a kanji conversion
+      // arrives as a keydown with isComposing=true (or keyCode 229); if we (or
+      // xterm) also processed it, it would send \r = a premature submit — the
+      // "unnatural newline / double" symptom. So bail on composition first.
+      //
+      // Otherwise: Shift+Enter inserts a newline (send \n) instead of submitting
+      // — xterm sends \r for both, so the agent TUI can't tell them apart. Plain
+      // Enter still sends \r (submit).
       term.attachCustomKeyEventHandler((ev) => {
+        if (ev.type !== "keydown") return true;
+        if (ev.isComposing || ev.keyCode === 229) return false;
         if (
-          ev.type === "keydown" &&
           ev.key === "Enter" &&
           ev.shiftKey &&
           !ev.ctrlKey &&
