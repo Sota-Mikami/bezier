@@ -221,12 +221,8 @@ export default function TerminalPane({
       term.attachCustomKeyEventHandler((ev) => {
         if (ev.type !== "keydown") return true;
         if (ev.isComposing || ev.keyCode === 229) return false;
-        if (
-          ev.key === "Enter" &&
-          ev.shiftKey &&
-          !ev.ctrlKey &&
-          !ev.metaKey
-        ) {
+        const isEnter = ev.key === "Enter" || ev.keyCode === 13;
+        if (isEnter && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
           ptyWrite(pid, "\x1b\r").catch(() => {});
           return false; // prevent xterm's default \r
         }
