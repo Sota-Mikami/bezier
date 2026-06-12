@@ -146,6 +146,7 @@ export function AppSidebar() {
   const handleNew = React.useCallback(async () => {
     if (creating) return;
     setCreating(true);
+    setShowTrash(false);
     try {
       let target = root;
       if (!target) {
@@ -165,6 +166,22 @@ export function AppSidebar() {
       setCreating(false);
     }
   }, [creating, root, openRoot, switchTo, loadIssues, router]);
+
+  // Quick-new shortcut: ⌘N (mac) / Ctrl+N. The modifier means it never fires by
+  // accident while typing in the Spec editor or chatting with the agent, so it
+  // works from anywhere — including while focused in those surfaces. Capture
+  // phase so it wins over any inner handler; we only act on the exact chord.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && !e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) {
+        e.preventDefault();
+        void handleNew();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [handleNew]);
 
   const handleRestore = React.useCallback(
     async (repoPath: string, meta: TrashMeta) => {
@@ -258,6 +275,9 @@ export function AppSidebar() {
                 <Plus className="size-4" />
               )}
               New
+              <kbd className="ml-1 rounded bg-primary-foreground/15 px-1 py-0.5 text-[10px] font-medium leading-none">
+                ⌘N
+              </kbd>
             </button>
 
             <div className="relative">

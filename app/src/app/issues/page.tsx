@@ -15,7 +15,6 @@ import {
   ArrowLeft,
   Loader2,
   Check,
-  Tag,
   ChevronDown,
   FileText,
   MonitorPlay,
@@ -25,8 +24,6 @@ import {
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
@@ -352,7 +349,7 @@ function IssueWorkbench({
   }, []);
 
   const patchMeta = React.useCallback(
-    async (patch: { title?: string; status?: IssueStatus; labels?: string[] }) => {
+    async (patch: { title?: string; status?: IssueStatus }) => {
       await updateIssueMeta(root, issue, patch);
       setIssue((prev) => (prev ? { ...prev, ...patch } : prev));
     },
@@ -461,11 +458,6 @@ function IssueWorkbench({
           onCommit={(t) => void patchMeta({ title: t })}
         />
         <div className="ml-auto flex items-center gap-2">
-          <LabelsEditor
-            key={(issue.labels ?? []).join(" ")}
-            labels={issue.labels ?? []}
-            onChange={(labels) => void patchMeta({ labels })}
-          />
           <StatusDropdown
             status={issue.status}
             onChange={(s) => void patchMeta({ status: s })}
@@ -483,28 +475,22 @@ function IssueWorkbench({
       </DetailHeader>
 
       <div className="flex min-h-0 flex-1">
-        {/* left: minimal thread (narrow) */}
-        <section className="flex w-[280px] shrink-0 flex-col border-r">
+        {/* left: minimal activity thread (hidden on narrow widths — secondary). */}
+        <section className="hidden w-[280px] shrink-0 flex-col border-r lg:flex">
           <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
             スレッド
           </div>
           <ScrollArea className="min-h-0 flex-1">
             <div className="space-y-3 p-4">
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-foreground/40" />
-                起票 · {fmtDate(issue.created)}
-              </div>
-              <div className="rounded-lg border bg-card p-3 text-sm leading-relaxed whitespace-pre-wrap">
-                {issue.body.trim() || (
-                  <span className="text-muted-foreground">（説明なし）</span>
-                )}
-              </div>
-
-              {/* Durable activity timeline (chat-first loop): structured events
-                  that persist even after the live terminal is gone. */}
+              {/* Durable activity timeline (chat-first loop): newest-first, so the
+                  latest activity is on top. 起票 (oldest) sits at the bottom. */}
               {session.thread.length > 0 && (
                 <ThreadTimeline events={session.thread} />
               )}
+              <div className="flex items-center gap-2 border-t pt-3 text-[11px] text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-foreground/40" />
+                起票 · {fmtDate(issue.created)}
+              </div>
             </div>
           </ScrollArea>
         </section>
@@ -557,8 +543,9 @@ function IssueWorkbench({
           </div>
         </section>
 
-        {/* right: persistent AI agent panel (picker + controls + terminal) */}
-        <section className="flex w-[42%] min-w-[360px] max-w-[680px] shrink-0 flex-col">
+        {/* right: persistent AI agent panel (picker + controls + terminal).
+            Narrower min on small widths; the center keeps its min-w-0. */}
+        <section className="flex w-[42%] min-w-[300px] max-w-[640px] shrink-0 flex-col md:min-w-[340px]">
           <IssueAgentPanel issue={issue} session={session} />
         </section>
       </div>
@@ -586,11 +573,13 @@ function UpdatingPulse() {
 // first, below 起票). Each event = a small JA label + a compact timestamp; an
 // optional note (commit sha / conflict count) sits underneath.
 function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
+  // Newest-first: render a reversed copy (the stored thread is chronological).
+  const ordered = [...events].reverse();
   return (
-    <ul className="space-y-2 border-t pt-3">
-      {events.map((e, i) => (
+    <ul className="space-y-2">
+      {ordered.map((e, i) => (
         <li
-          key={`${e.at}#${i}`}
+          key={`${e.at}#${events.length - i}`}
           className="flex items-start gap-2 text-[11px] text-muted-foreground"
         >
           <span className="mt-1 size-1.5 shrink-0 rounded-full bg-foreground/30" />
@@ -707,73 +696,5 @@ function StatusDropdown({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function LabelsEditor({
-  labels,
-  onChange,
-}: {
-  labels: string[];
-  onChange: (labels: string[]) => void;
-}) {
-  // Mounted fresh per committed label set (key at call site), so init from prop.
-  const [open, setOpen] = React.useState(false);
-  const [draft, setDraft] = React.useState(labels.join(", "));
-
-  const commit = () => {
-    const next = Array.from(
-      new Set(
-        draft
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-      ),
-    );
-    setOpen(false);
-    if (next.join(" ") !== labels.join(" ")) onChange(next);
-  };
-
-  if (open) {
-    return (
-      <Input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            (e.target as HTMLInputElement).blur();
-          } else if (e.key === "Escape") {
-            setDraft(labels.join(", "));
-            setOpen(false);
-          }
-        }}
-        placeholder="ラベル（カンマ区切り）"
-        className="h-8 w-56"
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setOpen(true)}
-      className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted"
-    >
-      <Tag className="size-3.5" />
-      {labels.length ? (
-        <span className="flex flex-wrap gap-1">
-          {labels.map((l) => (
-            <Badge key={l} variant="secondary" className="font-normal">
-              {l}
-            </Badge>
-          ))}
-        </span>
-      ) : (
-        "ラベル"
-      )}
-    </button>
   );
 }
