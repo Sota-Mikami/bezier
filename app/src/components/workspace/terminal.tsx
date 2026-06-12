@@ -213,9 +213,11 @@ export default function TerminalPane({
       // xterm) also processed it, it would send \r = a premature submit — the
       // "unnatural newline / double" symptom. So bail on composition first.
       //
-      // Otherwise: Shift+Enter inserts a newline (send \n) instead of submitting
-      // — xterm sends \r for both, so the agent TUI can't tell them apart. Plain
-      // Enter still sends \r (submit).
+      // Otherwise: Shift+Enter inserts a newline instead of submitting. xterm
+      // sends \r for both, so the agent TUI can't tell them apart. Send ESC+CR
+      // (\x1b\r) — that's exactly what Claude Code's own `/terminal-setup` maps
+      // Shift+Enter to (sendSequence "\r"), so Claude reads it as a
+      // newline. Plain Enter still sends \r (submit).
       term.attachCustomKeyEventHandler((ev) => {
         if (ev.type !== "keydown") return true;
         if (ev.isComposing || ev.keyCode === 229) return false;
@@ -225,7 +227,7 @@ export default function TerminalPane({
           !ev.ctrlKey &&
           !ev.metaKey
         ) {
-          ptyWrite(pid, "\n").catch(() => {});
+          ptyWrite(pid, "\x1b\r").catch(() => {});
           return false; // prevent xterm's default \r
         }
         return true;
