@@ -18,6 +18,10 @@ import {
   FileText,
   MonitorPlay,
   Trash2,
+  RotateCcw,
+  GitBranch,
+  GitPullRequest,
+  ExternalLink,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -34,12 +38,16 @@ import {
   slotPath,
   deriveState,
   DERIVED_STATE_META,
+  readTrashDetail,
+  restoreFromTrash,
   type Issue,
   type IssueStatus,
   type DerivedState,
   type ThreadEvent,
   type ThreadEventType,
+  type TrashDetail,
 } from "@/lib/issues";
+import { purgeTrashed } from "@/lib/issue-actions";
 import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignReview } from "@/components/issues/design-review";
@@ -109,6 +117,7 @@ function IssuesView() {
   const { root, hydrated, openRoot } = useWorkspaceRoot();
   const sp = useSearchParams();
   const selectedId = sp.get("issue");
+  const trashId = sp.get("trash");
 
   if (!hydrated) {
     return (
@@ -122,6 +131,9 @@ function IssuesView() {
     return <NoFolder onOpen={openRoot} />;
   }
 
+  if (trashId) {
+    return <TrashPreview key={trashId} root={root} id={trashId} />;
+  }
   if (selectedId) {
     return <IssueDetail key={selectedId} root={root} id={selectedId} />;
   }
@@ -146,6 +158,187 @@ function EmptyLanding() {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Read-only preview of a trashed issue (DEC-030): its spec / body / activity log
+// without restoring or launching a worktree, with Restore / 完全に削除 actions.
+function TrashPreview({ root, id }: { root: string; id: string }) {
+  const router = useRouter();
+  const [detail, setDetail] = React.useState<TrashDetail | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    readTrashDetail(root, id)
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch(() => {
+        if (!cancelled) setDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [root, id]);
+
+  const onRestore = React.useCallback(async () => {
+    if (!detail || busy) return;
+    setBusy(true);
+    try {
+      await restoreFromTrash(root, detail.meta);
+      router.push(`/issues?issue=${encodeURIComponent(detail.meta.id)}`);
+    } catch (e) {
+      await messageDialog(
+        `復元に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+        { title: "復元エラー" },
+      );
+      setBusy(false);
+    }
+  }, [detail, busy, root, router]);
+
+  const onPurge = React.useCallback(async () => {
+    if (!detail || busy) return;
+    const ok = await confirmDialog(
+      `「${detail.meta.title || "(無題)"}」を完全に削除します。worktree / branch も削除され、元に戻せません。`,
+      { title: "完全に削除", okLabel: "完全に削除", cancelLabel: "キャンセル" },
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await purgeTrashed(root, detail.meta);
+      router.push("/issues");
+    } catch (e) {
+      await messageDialog(
+        `完全削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+        { title: "完全削除エラー" },
+      );
+      setBusy(false);
+    }
+  }, [detail, busy, root, router]);
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+        <Trash2 className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {detail?.meta.title || (loading ? "読み込み中…" : "(無題)")}
+        </span>
+        <span className="shrink-0 rounded-md border px-2 py-1 text-xs text-muted-foreground">
+          ゴミ箱
+        </span>
+        {detail && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={busy}
+              onClick={() => void onRestore()}
+            >
+              <RotateCcw className="size-3.5" />
+              復元
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-destructive hover:text-destructive"
+              disabled={busy}
+              onClick={() => void onPurge()}
+            >
+              <Trash2 className="size-3.5" />
+              完全に削除
+            </Button>
+          </div>
+        )}
+      </header>
+
+      {loading ? (
+        <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          読み込み中…
+        </div>
+      ) : !detail ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <div className="text-base font-medium">見つかりません</div>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            このゴミ箱項目は既に完全削除されたか、移動された可能性があります。
+          </p>
+          <Button
+            render={<Link href="/issues" />}
+            nativeButton={false}
+            variant="outline"
+            className="gap-2"
+          >
+            <ArrowLeft className="size-4" />
+            戻る
+          </Button>
+        </div>
+      ) : (
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="mx-auto max-w-3xl space-y-6 p-6">
+            {/* Meta */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span>削除: {fmtDateTime(detail.meta.deletedAt)}</span>
+              {detail.meta.branch && (
+                <span className="flex items-center gap-1 font-mono">
+                  <GitBranch className="size-3" />
+                  {detail.meta.branch}
+                </span>
+              )}
+              {detail.meta.prUrl && (
+                <a
+                  href={detail.meta.prUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="flex items-center gap-1 text-sky-600 hover:underline dark:text-sky-400"
+                >
+                  <GitPullRequest className="size-3" />
+                  PR
+                  <ExternalLink className="size-3" />
+                </a>
+              )}
+            </div>
+
+            {detail.body && (
+              <section className="space-y-1.5">
+                <h3 className="text-xs font-semibold text-muted-foreground">
+                  Issue
+                </h3>
+                <div className="whitespace-pre-wrap rounded-lg border bg-card p-3 text-sm leading-relaxed">
+                  {detail.body}
+                </div>
+              </section>
+            )}
+
+            <section className="space-y-1.5">
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <FileText className="size-3.5" />
+                Spec
+              </h3>
+              <div className="whitespace-pre-wrap rounded-lg border bg-card p-3 font-mono text-xs leading-relaxed">
+                {detail.spec ?? "（Spec はありません）"}
+              </div>
+            </section>
+
+            {detail.thread.length > 0 && (
+              <section className="space-y-1.5">
+                <h3 className="text-xs font-semibold text-muted-foreground">
+                  活動ログ
+                </h3>
+                <div className="rounded-lg border bg-card p-3">
+                  <ThreadTimeline events={detail.thread} />
+                </div>
+              </section>
+            )}
+          </div>
+        </ScrollArea>
+      )}
     </div>
   );
 }
@@ -460,9 +653,16 @@ function IssueWorkbench({
         </div>
       </DetailHeader>
 
-      <div className="flex min-h-0 flex-1">
-        {/* left: minimal activity thread (hidden on narrow widths — secondary). */}
-        <section className="hidden w-[280px] shrink-0 flex-col border-r lg:flex">
+      {/* Responsive layout (DEC-031):
+          - xl+ : 3 columns  thread | center | agent
+          - md–xl : 2 columns center | agent (thread hidden)
+          - <md : single column STACKED — center on top, agent below — so neither
+            pane is ever crushed horizontally; both read at full width.
+          The agent terminal stays mounted across all of these, so the session
+          persists. */}
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {/* left: minimal activity thread (only on wide — secondary). */}
+        <section className="hidden w-[240px] shrink-0 flex-col border-r xl:flex">
           <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
             スレッド
           </div>
@@ -481,8 +681,9 @@ function IssueWorkbench({
           </ScrollArea>
         </section>
 
-        {/* center: artifact tabs — Spec (CM editor) | Design (Preview/Diff) */}
-        <section className="flex min-w-0 flex-1 flex-col border-r">
+        {/* center: artifact tabs — Spec (CM editor) | Design (Preview/Diff).
+            Stacked: top, 3/5 of the height. Row: fills the middle column. */}
+        <section className="flex min-h-0 min-w-0 flex-[3] flex-col border-b md:flex-1 md:border-b-0 md:border-r">
           <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
             <Button
               variant={tab === "spec" ? "secondary" : "ghost"}
@@ -530,8 +731,9 @@ function IssueWorkbench({
         </section>
 
         {/* right: persistent AI agent panel (picker + controls + terminal).
-            Narrower min on small widths; the center keeps its min-w-0. */}
-        <section className="flex w-[42%] min-w-[300px] max-w-[640px] shrink-0 flex-col md:min-w-[340px]">
+            Stacked (<md): bottom, 2/5 of the height — proportional so it never
+            overflows a short window. Row (md+): a side column min/max-clamped. */}
+        <section className="flex min-h-0 flex-[2] flex-col md:w-[42%] md:min-w-[340px] md:max-w-[640px] md:flex-none">
           <IssueAgentPanel issue={issue} session={session} />
         </section>
       </div>

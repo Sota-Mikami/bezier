@@ -19,6 +19,32 @@ CEO が承認・決定した不可逆な事項を記録する。**二度聞か�
 
 ---
 
+## DEC-031 (2026-06-12) — Issue detail のレスポンシブを 3→2→1 で再設計（横潰れ撲滅）
+
+> CEO:「どのように resize しても一定綺麗に見えるように」。旧設計は center=min-w-0／agent=min-w-340 で、幅を縮めると center が潰れて agent だけ残る横潰れが発生。
+
+- **3 段ブレイクポイント**:
+  - **xl+**: 3 カラム（thread | center | agent）。thread は xl のみ（240px・二次情報）。
+  - **md–xl**: 2 カラム（center | agent）。thread 非表示。
+  - **<md**: **単一カラムに縦スタック**（center=上, agent=下）。横潰れが原理的に起きない。
+- **スタックは比率 flex**（center `flex-[3]` / agent `flex-[2]` = 3:2）。固定 vh でなく比率なので**短いウィンドウでも overflow しない**（両ペインが min-h-0 で縮む）。row モードでは agent を `md:flex-none` ＋ `w-[42%] min-w-[340px] max-w-[640px]`、center は `md:flex-1`。
+- **agent パネル内のコントロールを `max-h-[55%] overflow-y-auto`**: merge UI＋衝突表示でコントロールが伸びても**ターミナルを 0 高にしない**（特に短い agent ペインで効く）。
+- ターミナルは全モードで mount 維持＝セッション継続（DEC-026）。
+
+---
+
+## DEC-030 (2026-06-12) — ゴミ箱の中身プレビュー（worktree 起動なしの読み取り専用詳細）
+
+> CEO:「ゴミ箱に入れたもの、起動せずとも中身を確認した上で完全削除/復元したい。適切な preview/詳細表示を」。
+
+- **trash 行クリック → メインペインに読み取り専用プレビュー**（`?trash=<id>`）。repo を switchTo してから表示。
+- `readTrashDetail(root, id)`（issues.ts）: trash store から **issue.md body / spec.md / thread.json** を直接読む（worktree も git も触らない）。`TrashDetail` 型。
+- **プレビュー内容**: タイトル＋削除日時＋branch＋PRリンク（`TrashMeta.prUrl` 追加・trash 時に保存）＋Issue 本文＋Spec＋活動ログ（ThreadTimeline 再利用）。
+- **その場で操作**: 「復元」（→該当 issue を開く）/「完全に削除」（確認付き・worktree/branch も purge）。
+- サイドバー GlobalTrash 行はタイトルをクリック可能化＋選択ハイライト。
+
+---
+
 ## DEC-029 (2026-06-12) — waiting 検知を idle ヒューリスティック → Claude hooks で決定論化
 
 > CEO:「8秒沈黙判定は急かしすぎ。明確に判定できないの？ cmux はちゃんと Agent からのアクション待ちの時に通知できている」。正しい。cmux は Claude Code の hooks で検知している（env に `CMUX_CLAUDE_HOOK_CMUX_BIN` があったのが証拠）。

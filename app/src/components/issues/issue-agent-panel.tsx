@@ -111,8 +111,10 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
         )}
       </div>
 
-      {/* Controls */}
-      <div className="shrink-0 space-y-3 border-b p-3">
+      {/* Controls — capped + scrollable so a tall control stack (merge UI +
+          conflicts) can never squeeze the terminal to zero on a short panel
+          (e.g. the stacked layout on narrow widths). */}
+      <div className="max-h-[55%] shrink-0 space-y-3 overflow-y-auto border-b p-3">
         {gitRepo === false && (
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />

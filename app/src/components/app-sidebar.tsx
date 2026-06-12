@@ -64,6 +64,7 @@ export function AppSidebar() {
   const router = useRouter();
   const sp = useSearchParams();
   const selectedId = sp.get("issue");
+  const selectedTrashId = sp.get("trash");
   const { root, recents, switchTo, openRoot } = useWorkspaceRoot();
 
   const [query, setQuery] = React.useState("");
@@ -332,6 +333,16 @@ export function AppSidebar() {
     });
   }, []);
 
+  // Open a trashed issue's read-only preview in the main pane (switch the active
+  // repo to its owner so the preview reads the right .continuum/trash).
+  const selectTrash = React.useCallback(
+    (repoPath: string, id: string) => {
+      if (repoPath !== root) switchTo(repoPath);
+      router.push(`/issues?trash=${encodeURIComponent(id)}`);
+    },
+    [root, switchTo, router],
+  );
+
   // Flatten all repos' trash, newest-deleted first, for the cross-repo view.
   const trashRows: TrashRow[] = React.useMemo(() => {
     const rows: TrashRow[] = [];
@@ -406,6 +417,8 @@ export function AppSidebar() {
         {showTrash ? (
           <GlobalTrash
             rows={trashRows}
+            selectedTrashId={selectedTrashId}
+            onSelect={selectTrash}
             onRestore={handleRestore}
             onPurge={handlePurge}
           />
@@ -738,17 +751,21 @@ function notifyAttention(s: AgentStatus): void {
 // remaining days before auto-purge, and Restore / 完全に削除.
 function GlobalTrash({
   rows,
+  selectedTrashId,
+  onSelect,
   onRestore,
   onPurge,
 }: {
   rows: TrashRow[];
+  selectedTrashId: string | null;
+  onSelect: (repoPath: string, id: string) => void;
   onRestore: (repoPath: string, m: TrashMeta) => void;
   onPurge: (repoPath: string, m: TrashMeta) => void;
 }) {
   return (
     <div className="px-1">
       <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-        削除した Issue は {TRASH_TTL_DAYS} 日後に自動で完全削除されます。
+        削除した Issue は {TRASH_TTL_DAYS} 日後に自動で完全削除されます。クリックで中身を確認できます。
       </div>
       {rows.length === 0 ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -758,15 +775,20 @@ function GlobalTrash({
         rows.map(({ repoPath, meta }) => (
           <div
             key={`${repoPath}:${meta.id}`}
-            className="group/trash rounded-md px-2 py-1.5 hover:bg-sidebar-accent"
+            className={cn(
+              "group/trash rounded-md px-2 py-1.5 hover:bg-sidebar-accent",
+              meta.id === selectedTrashId && "bg-sidebar-accent",
+            )}
           >
             <div className="flex items-center gap-1">
-              <span
-                className="min-w-0 flex-1 truncate text-xs"
+              <button
+                type="button"
+                onClick={() => onSelect(repoPath, meta.id)}
+                className="min-w-0 flex-1 truncate text-left text-xs"
                 title={meta.title || "(無題)"}
               >
                 {meta.title || "(無題)"}
-              </span>
+              </button>
               <button
                 type="button"
                 title="復元"
