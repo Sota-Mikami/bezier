@@ -653,9 +653,16 @@ function IssueWorkbench({
         </div>
       </DetailHeader>
 
-      <div className="flex min-h-0 flex-1">
-        {/* left: minimal activity thread (hidden on narrow widths — secondary). */}
-        <section className="hidden w-[280px] shrink-0 flex-col border-r lg:flex">
+      {/* Responsive layout (DEC-031):
+          - xl+ : 3 columns  thread | center | agent
+          - md–xl : 2 columns center | agent (thread hidden)
+          - <md : single column STACKED — center on top, agent below — so neither
+            pane is ever crushed horizontally; both read at full width.
+          The agent terminal stays mounted across all of these, so the session
+          persists. */}
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {/* left: minimal activity thread (only on wide — secondary). */}
+        <section className="hidden w-[240px] shrink-0 flex-col border-r xl:flex">
           <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
             スレッド
           </div>
@@ -674,8 +681,9 @@ function IssueWorkbench({
           </ScrollArea>
         </section>
 
-        {/* center: artifact tabs — Spec (CM editor) | Design (Preview/Diff) */}
-        <section className="flex min-w-0 flex-1 flex-col border-r">
+        {/* center: artifact tabs — Spec (CM editor) | Design (Preview/Diff).
+            Stacked: top, 3/5 of the height. Row: fills the middle column. */}
+        <section className="flex min-h-0 min-w-0 flex-[3] flex-col border-b md:flex-1 md:border-b-0 md:border-r">
           <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
             <Button
               variant={tab === "spec" ? "secondary" : "ghost"}
@@ -723,8 +731,9 @@ function IssueWorkbench({
         </section>
 
         {/* right: persistent AI agent panel (picker + controls + terminal).
-            Narrower min on small widths; the center keeps its min-w-0. */}
-        <section className="flex w-[42%] min-w-[300px] max-w-[640px] shrink-0 flex-col md:min-w-[340px]">
+            Stacked (<md): bottom, 2/5 of the height — proportional so it never
+            overflows a short window. Row (md+): a side column min/max-clamped. */}
+        <section className="flex min-h-0 flex-[2] flex-col md:w-[42%] md:min-w-[340px] md:max-w-[640px] md:flex-none">
           <IssueAgentPanel issue={issue} session={session} />
         </section>
       </div>
