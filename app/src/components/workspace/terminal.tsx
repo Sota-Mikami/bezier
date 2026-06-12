@@ -7,7 +7,7 @@
 // prerender). This file still guards mounting itself so it is safe even if
 // imported eagerly.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -32,6 +32,8 @@ export interface TerminalPaneProps {
   spawn?: { cmd: string; args?: string[] };
   /** Fired once the pty is spawned, with its id. */
   onReady?: (id: string) => void;
+  /** Fired once when the child process exits, with its exit code (null if signal-killed). */
+  onExit?: (code: number | null) => void;
   className?: string;
 }
 
@@ -51,10 +53,19 @@ export default function TerminalPane({
   cwd,
   spawn,
   onReady,
+  onExit,
   className,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
+  // Keep the latest onExit in a ref — the pty effect captures its closure once
+  // (mount-keyed), so reading through a ref avoids a stale callback without
+  // re-spawning the pty when the parent re-renders. Synced in a layout effect
+  // (refs must not be written during render).
+  const onExitRef = useRef(onExit);
+  useLayoutEffect(() => {
+    onExitRef.current = onExit;
+  });
 
   useEffect(() => {
     const el = containerRef.current;
@@ -158,6 +169,7 @@ export default function TerminalPane({
         await onPtyExit((p) => {
           if (p.id !== id) return;
           setExitCode(p.code);
+          onExitRef.current?.(p.code);
           if (term) {
             term.write(
               `\r\n\x1b[90m[process exited${

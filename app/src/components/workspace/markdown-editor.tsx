@@ -51,6 +51,15 @@ export interface MarkdownEditorHandle {
   save: () => Promise<void>;
   /** Whether the editor body has unsaved edits. */
   isDirty: () => boolean;
+  /** Current editor body text (markdown, sans frontmatter). */
+  getText: () => string;
+  /**
+   * Drop the dirty flag WITHOUT saving — the in-editor text is unchanged but is
+   * no longer considered unsaved. Used when intentionally discarding local edits
+   * (e.g. adopting an external rewrite): a subsequent flushOnUnmount becomes a
+   * no-op so the about-to-be-discarded edits aren't written back.
+   */
+  clearDirty: () => void;
 }
 
 export interface MarkdownEditorProps {
@@ -537,8 +546,13 @@ function MarkdownEditorInner(
 
   React.useImperativeHandle(
     ref,
-    () => ({ save, isDirty: () => dirtyRef.current }),
-    [save],
+    () => ({
+      save,
+      isDirty: () => dirtyRef.current,
+      getText: () => viewRef.current?.state.doc.toString() ?? docRef.current.body,
+      clearDirty: () => markDirty(false),
+    }),
+    [save, markDirty],
   );
 
   return (

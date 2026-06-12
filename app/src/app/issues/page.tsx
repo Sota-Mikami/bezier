@@ -47,6 +47,8 @@ import {
   type Issue,
   type IssueStatus,
   type IssueSlot,
+  type ThreadEvent,
+  type ThreadEventType,
 } from "@/lib/issues";
 import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
@@ -79,6 +81,25 @@ function fmtDate(iso: string): string {
   // ISO timestamp -> YYYY-MM-DD; leave anything else as-is.
   return /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : iso;
 }
+
+// Compact "MM-DD HH:MM" for the durable activity thread timestamps.
+function fmtDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// JA labels for the structured thread events (DEC-012 chat-first loop).
+const THREAD_EVENT_LABEL: Record<ThreadEventType, string> = {
+  implement: "実装を開始",
+  rerun: "AI を再実行",
+  resume: "セッションを再開",
+  sync: "main を同期",
+  accept: "Accept（commit）",
+  merge: "main に merge",
+  discard: "破棄",
+};
 
 // ---------------------------------------------------------------------------
 // page shell
@@ -475,6 +496,12 @@ function IssueWorkbench({
                   <span className="text-muted-foreground">（説明なし）</span>
                 )}
               </div>
+
+              {/* Durable activity timeline (chat-first loop): structured events
+                  that persist even after the live terminal is gone. */}
+              {session.thread.length > 0 && (
+                <ThreadTimeline events={session.thread} />
+              )}
             </div>
           </ScrollArea>
         </section>
@@ -540,6 +567,35 @@ function IssueWorkbench({
         </section>
       </div>
     </div>
+  );
+}
+
+// Durable activity timeline rendered in the LEFT thread, chronological (oldest
+// first, below 起票). Each event = a small JA label + a compact timestamp; an
+// optional note (commit sha / conflict count) sits underneath.
+function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
+  return (
+    <ul className="space-y-2 border-t pt-3">
+      {events.map((e, i) => (
+        <li
+          key={`${e.at}#${i}`}
+          className="flex items-start gap-2 text-[11px] text-muted-foreground"
+        >
+          <span className="mt-1 size-1.5 shrink-0 rounded-full bg-foreground/30" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-medium text-foreground/80">
+                {THREAD_EVENT_LABEL[e.type] ?? e.type}
+              </span>
+              <span className="shrink-0 font-mono text-[10px]">
+                {fmtDateTime(e.at)}
+              </span>
+            </div>
+            {e.note && <div className="mt-0.5 truncate">{e.note}</div>}
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 

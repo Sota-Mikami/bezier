@@ -25,6 +25,7 @@ import {
   TriangleAlert,
   Sparkles,
   TerminalSquare,
+  Play,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,9 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
     termSpawn,
     termNonce,
     handleTermReady,
+    handleTermExit,
+    canResume,
+    handleResume,
     behind,
     ahead,
     mergeClean,
@@ -184,6 +188,20 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
             </Button>
           ) : (
             <>
+              {/* Resume the prior conversation when no live session is running
+                  (app restarted / issue re-opened). */}
+              {!termMounted && (
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={!canResume}
+                  onClick={() => void handleResume()}
+                  title="前回のエージェント会話を再開（claude --continue）"
+                >
+                  <Play className="size-3.5" />
+                  セッションを再開
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -354,7 +372,31 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
             cwd={termCwd}
             spawn={termSpawn}
             onReady={handleTermReady}
+            onExit={handleTermExit}
           />
+        ) : ref ? (
+          // A worktree exists but no live pty (app restarted / issue re-opened):
+          // offer to resume the prior conversation rather than start over.
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="flex size-10 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900">
+              <Play className="size-4 text-zinc-400" />
+            </div>
+            <div className="text-sm font-medium text-zinc-200">
+              セッションは休止中
+            </div>
+            <p className="max-w-xs text-xs text-zinc-400">
+              この Issue には worktree があります。前回のエージェント会話を再開できます。
+            </p>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              disabled={!canResume}
+              onClick={() => void handleResume()}
+            >
+              <Play className="size-3.5" />
+              セッションを再開
+            </Button>
+          </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <div className="flex size-10 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900">

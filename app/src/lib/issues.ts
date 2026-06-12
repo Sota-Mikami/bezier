@@ -500,6 +500,7 @@ export async function buildImplementHandoff(
     specMd = "(spec.md がありません)";
   }
   const outPath = `${stripTrailingSlash(root)}/.continuum/handoff/${issue.id}.md`;
+  const specPath = slotPath(issue, "spec");
   // On a re-run the worktree already holds the previous iteration's changes; ask
   // the agent to adjust them to the updated spec rather than start over (DEC-012
   // review↔refine cycle).
@@ -515,11 +516,28 @@ export async function buildImplementHandoff(
         "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
         "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
       ];
+  // The Spec is the LIVING spec for this issue. It lives OUTSIDE the worktree
+  // (in the main repo's .continuum tree) but is made readable+writable to the
+  // agent via `claude --add-dir <issue.dir>`. Telling the agent to (1) re-read it
+  // before every implementation and (2) update it when the conversation changes
+  // the intent keeps Spec⇆code in sync without the human manually saying
+  // "re-read" each turn (DEC-012 chat-first loop).
+  const livingSpec = [
+    `## 生きた仕様 (Spec)`,
+    "",
+    `この issue の仕様書は \`${specPath}\` です。worktree の外にありますが、\`--add-dir\` で **読み書きできます**。`,
+    "- **実装の前に必ず spec.md を読み直して**、最新の仕様に従ってください（毎回・自動で）。",
+    "- 会話で意図や要件が変わったら、**まず spec.md を更新**してから実装し、Spec と実装を常に同期させてください。",
+    "",
+  ];
   const content = [
     `# 実装ハンドオフ — ${issue.title}`,
     "",
     ...intro,
     "",
+    "---",
+    "",
+    ...livingSpec,
     "---",
     "",
     "## Issue",
@@ -585,4 +603,79 @@ export async function draftDecision(
   const path = slotPath(issue, "decision");
   await writeFile(path, content);
   return path;
+}
+
+// ---------------------------------------------------------------------------
+// v0.5 slice 3 — durable activity thread (chat-first loop, DEC-012)
+// ---------------------------------------------------------------------------
+//
+// A per-issue, structured event log persisted to <root>/.continuum/issues/<ulid>/
+// thread.json (the local .continuum store, gitignored). The live agent terminal
+// is a volatile pty that dies on leave/restart — this log gives the LEFT thread a
+// durable, visible history (起票 / Implement / Re-run / Sync / Accept / Merge /
+// Discard / session resumed) that survives even a Discard. It is NOT a chat
+// transcript (resume shows the conversation); it is a coarse activity timeline.
+
+export type ThreadEventType =
+  | "implement"
+  | "rerun"
+  | "resume"
+  | "sync"
+  | "accept"
+  | "merge"
+  | "discard";
+
+export interface ThreadEvent {
+  type: ThreadEventType;
+  /** ISO timestamp (new Date().toISOString()). */
+  at: string;
+  /** Optional human note (e.g. a commit sha, conflict count). */
+  note?: string;
+}
+
+/** <root>/.continuum/issues/<ulid>/thread.json — the durable activity log. */
+function threadPath(root: string, issue: Pick<Issue, "id">): string {
+  return `${stripTrailingSlash(root)}/.continuum/issues/${issue.id}/thread.json`;
+}
+
+/** Read the issue's activity thread, newest-appended last. [] when none. */
+export async function readThread(
+  root: string,
+  issue: Pick<Issue, "id">,
+): Promise<ThreadEvent[]> {
+  let text: string;
+  try {
+    text = await readFile(threadPath(root, issue));
+  } catch {
+    return [];
+  }
+  try {
+    const data = JSON.parse(text) as unknown;
+    if (!Array.isArray(data)) return [];
+    return data.filter(
+      (e): e is ThreadEvent =>
+        !!e &&
+        typeof (e as ThreadEvent).type === "string" &&
+        typeof (e as ThreadEvent).at === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Append one event to the issue's activity thread and return the new list.
+ * Best-effort durability: reads the current log, pushes, and rewrites the whole
+ * array (writeFile auto-creates the parent dir). Chronological order (oldest
+ * first) so the LEFT thread can render 起票 → … top-to-bottom.
+ */
+export async function appendThreadEvent(
+  root: string,
+  issue: Pick<Issue, "id">,
+  event: ThreadEvent,
+): Promise<ThreadEvent[]> {
+  const cur = await readThread(root, issue);
+  const next = [...cur, event];
+  await writeFile(threadPath(root, issue), `${JSON.stringify(next, null, 2)}\n`);
+  return next;
 }

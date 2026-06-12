@@ -28,9 +28,13 @@ import {
   buildImplementHandoff,
   draftDecision,
   updateIssueMeta,
+  readThread,
+  appendThreadEvent,
   type Issue,
   type IssueStatus,
   type WorktreeRef,
+  type ThreadEvent,
+  type ThreadEventType,
 } from "@/lib/issues";
 import {
   gitIsRepo,
@@ -93,6 +97,17 @@ export interface ImplementSession {
   termSpawn: TermSpawn | undefined;
   termNonce: number;
   handleTermReady: (id: string) => void;
+  handleTermExit: (code: number | null) => void;
+
+  // Durable activity thread (chat-first loop): structured events rendered in the
+  // LEFT thread, persisted to .continuum/issues/<id>/thread.json (survives the
+  // volatile pty + Discard).
+  thread: ThreadEvent[];
+
+  // Session resume: when a worktree exists but no live pty is running, relaunch
+  // `claude --continue` to pick the prior conversation back up.
+  canResume: boolean;
+  handleResume: () => Promise<void>;
 
   // Dev-server preview (iframe), shared with the Design tab.
   preview: PreviewServer;
@@ -176,6 +191,20 @@ export function useImplementSession(
   const [termNonce, setTermNonce] = React.useState(0);
   const pendingInputRef = React.useRef<string | null>(null);
 
+  // Durable activity thread (loaded once per issue; appended on each action).
+  const [thread, setThread] = React.useState<ThreadEvent[]>([]);
+
+  // Resume bookkeeping. `resumeStartRef` is the ms timestamp of the LAST resume
+  // launch (null = the last launch was not a resume); a quick non-zero exit
+  // means `claude --continue` had no prior session, so we fall back to a fresh
+  // seed launch. `refRef` mirrors the latest worktree ref so the exit handler
+  // (captured once by the terminal) reads a current value.
+  const resumeStartRef = React.useRef<number | null>(null);
+  const refRef = React.useRef<WorktreeRef | null>(null);
+  React.useEffect(() => {
+    refRef.current = ref;
+  }, [ref]);
+
   // Detect git + load any existing worktree ref + its diff (resume an
   // in-progress issue). Keyed by issue.id at the detail call site (fresh mount
   // per issue), so we only set state from async continuations.
@@ -231,23 +260,92 @@ export function useImplementSession(
     };
   }, []);
 
+  // Load the durable activity thread once per issue.
+  React.useEffect(() => {
+    let cancelled = false;
+    readThread(root, issue)
+      .then((evts) => {
+        if (!cancelled) setThread(evts);
+      })
+      .catch(() => {
+        /* no thread yet */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [root, issue]);
+
+  // Append a structured event to the durable thread + reflect it in state.
+  // Best-effort: a write failure must never break the underlying action.
+  const logEvent = React.useCallback(
+    async (type: ThreadEventType, note?: string) => {
+      try {
+        const next = await appendThreadEvent(root, issue, {
+          type,
+          at: new Date().toISOString(),
+          ...(note ? { note } : {}),
+        });
+        setThread(next);
+      } catch {
+        /* thread is advisory; ignore persistence failures */
+      }
+    },
+    [root, issue],
+  );
+
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
 
   const launchAgent = React.useCallback(
-    (agent: AgentTool, cwd: string, prompt: string) => {
+    (
+      agent: AgentTool,
+      cwd: string,
+      opts: { prompt?: string; resume?: boolean },
+    ) => {
       // Pass the handoff text as the agent's positional prompt arg
       // (`claude "<prompt>"` starts an interactive session seeded with it). This
       // is reliable + visible, unlike typing into the TUI after a fixed delay
       // (which raced the TUI's input loop and got dropped), and it avoids the
       // agent needing to read a handoff file that lives in the main repo while it
       // runs in the external worktree.
+      //
+      // For claude specifically we also pass `--add-dir <issue.dir>` so the agent
+      // can read+write the issue's spec.md (which lives in the MAIN repo's
+      // .continuum tree, OUTSIDE this worktree) — that closes the chat⇆spec loop.
+      // `--continue` resumes the prior conversation (the exit handler falls back
+      // to a fresh seed if there is none). Order: `claude [--continue] --add-dir
+      // <dir> "<prompt>"`. Other agents (codex) keep the bare positional prompt.
+      const isClaude = agent.id === "claude";
+      const args: string[] = [];
+      if (isClaude) {
+        if (opts.resume) args.push("--continue");
+        args.push("--add-dir", issue.dir);
+      }
+      if (opts.prompt) args.push(opts.prompt);
+      // Remember whether THIS launch is a resume so a quick failure can fall back.
+      resumeStartRef.current = opts.resume ? Date.now() : null;
       setTermCwd(cwd);
-      setTermSpawn({ cmd: agent.bin, args: [prompt] });
+      setTermSpawn({ cmd: agent.bin, args });
       setTermMounted(true);
       setTermNonce((n) => n + 1);
     },
-    [],
+    [issue.dir],
   );
+
+  // Build a fresh seed handoff and launch it on an existing worktree. Used by the
+  // resume fallback (when `claude --continue` finds no prior session). Kept in a
+  // ref so the terminal's once-captured exit handler can call the latest closure.
+  const seedLaunch = React.useCallback(
+    async (worktreePath: string) => {
+      if (!selectedAgent?.available) return;
+      const { content } = await buildImplementHandoff(root, issue, worktreePath);
+      launchAgent(selectedAgent, worktreePath, { prompt: content });
+    },
+    [selectedAgent, root, issue, launchAgent],
+  );
+  const seedLaunchRef = React.useRef(seedLaunch);
+  React.useEffect(() => {
+    seedLaunchRef.current = seedLaunch;
+  }, [seedLaunch]);
 
   const teardownTerminal = React.useCallback(() => {
     pendingInputRef.current = null;
@@ -266,6 +364,25 @@ export function useImplementSession(
         /* session torn down */
       });
     }, 800);
+  }, []);
+
+  // Resume fallback: `claude --continue` exits quickly with a non-zero code when
+  // there is no prior session to continue. In that case start a fresh seed launch
+  // on the same worktree so the user isn't stranded. A clean/long-running exit
+  // (the user finishing or quitting a real session) is left alone. Stable
+  // identity (reads refs) so the terminal captures it once per launch.
+  const handleTermExit = React.useCallback((code: number | null) => {
+    const startedAt = resumeStartRef.current;
+    resumeStartRef.current = null;
+    const r = refRef.current;
+    if (startedAt == null || !r) return; // last launch wasn't a resume
+    const quick = Date.now() - startedAt < 6000;
+    if (quick && code !== 0) {
+      setInfo(
+        "前回のセッションを再開できなかったため、新規セッションを開始しました。",
+      );
+      void seedLaunchRef.current(r.path);
+    }
   }, []);
 
   const refreshDiff = React.useCallback(async (worktreePath: string) => {
@@ -303,7 +420,8 @@ export function useImplementSession(
       onStatusChange("in-progress");
       const { content } = await buildImplementHandoff(root, issue, wt);
       setRef(newRef);
-      launchAgent(selectedAgent, wt, content);
+      launchAgent(selectedAgent, wt, { prompt: content });
+      void logEvent("implement");
       // Branch is fresh off HEAD here, but main may already be ahead — show it.
       void loadBehind(wt);
     } catch (e) {
@@ -320,6 +438,7 @@ export function useImplementSession(
     onStatusChange,
     launchAgent,
     loadBehind,
+    logEvent,
   ]);
 
   // Re-run AI on the SAME worktree with a follow-up handoff built from the
@@ -337,13 +456,34 @@ export function useImplementSession(
       const { content } = await buildImplementHandoff(root, issue, ref.path, {
         followUp: true,
       });
-      launchAgent(selectedAgent, ref.path, content);
+      launchAgent(selectedAgent, ref.path, { prompt: content });
+      void logEvent("rerun");
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setAction(null);
     }
-  }, [ref, action, selectedAgent, root, issue, launchAgent]);
+  }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent]);
+
+  // Resume the prior agent conversation in the existing worktree. For claude this
+  // is `claude --continue --add-dir <issue.dir>`; if there's no session to
+  // continue the exit handler falls back to a fresh seed. Other agents have no
+  // continue semantics here, so they get a fresh seed launch directly.
+  const handleResume = React.useCallback(async () => {
+    if (!ref || action) return;
+    if (!selectedAgent?.available) {
+      setError("利用可能なエージェント (claude / codex) が見つかりません。");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    if (selectedAgent.id === "claude") {
+      launchAgent(selectedAgent, ref.path, { resume: true });
+    } else {
+      await seedLaunch(ref.path);
+    }
+    void logEvent("resume");
+  }, [ref, action, selectedAgent, launchAgent, seedLaunch, logEvent]);
 
   const handleAccept = React.useCallback(async () => {
     if (!ref || action) return;
@@ -369,6 +509,7 @@ export function useImplementSession(
       setInfo(
         `commit ${sha.slice(0, 9)} を ${ref.branch} に作成し、decision.md を生成しました（Decisions に表示されます）。`,
       );
+      void logEvent("accept", `commit ${sha.slice(0, 9)}`);
       await refreshDiff(ref.path);
       // Re-evaluate behind/ahead + merge cleanliness now that the branch moved.
       await loadBehind(ref.path);
@@ -377,7 +518,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, issue, root, onStatusChange, refreshDiff, loadBehind]);
+  }, [ref, action, issue, root, onStatusChange, refreshDiff, loadBehind, logEvent]);
 
   const handleDiscard = React.useCallback(async () => {
     if (!ref || action) return;
@@ -403,6 +544,7 @@ export function useImplementSession(
       await clearWorktreeRef(issue);
       await updateIssueMeta(root, issue, { status: "open" });
       onStatusChange("open");
+      void logEvent("discard");
       setRef(null);
       setDiff("");
       setStatusText("");
@@ -415,7 +557,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, preview, teardownTerminal, root, issue, onStatusChange]);
+  }, [ref, action, preview, teardownTerminal, root, issue, onStatusChange, logEvent]);
 
   // Sync-with-main: merge main INTO the branch (inside the isolated worktree).
   // Clean -> behind goes to 0. Conflict -> surface the file list; the worktree
@@ -432,18 +574,20 @@ export function useImplementSession(
       await loadBehind(ref.path);
       if (res.ok) {
         setInfo("main を取り込みました（同期済）。");
+        void logEvent("sync");
       } else {
         setSyncConflicts(res.conflicts);
         setError(
           `衝突しました（${res.conflicts.length} ファイル）。右のターミナルで解決して commit してください。`,
         );
+        void logEvent("sync", `衝突 ${res.conflicts.length} ファイル`);
       }
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setAction(null);
     }
-  }, [ref, action, refreshDiff, loadBehind]);
+  }, [ref, action, refreshDiff, loadBehind, logEvent]);
 
   // Hand the conflict off to the agent in the worktree terminal (reuses the same
   // launch path as Implement/Re-run). The agent resolves the markers + `git add`;
@@ -458,7 +602,7 @@ export function useImplementSession(
     ]
       .filter(Boolean)
       .join("\n");
-    launchAgent(selectedAgent, ref.path, prompt);
+    launchAgent(selectedAgent, ref.path, { prompt });
   }, [ref, action, selectedAgent, syncConflicts, launchAgent]);
 
   // Guarded merge of the branch INTO main (the explicit final step on top of
@@ -473,16 +617,21 @@ export function useImplementSession(
       const out = await gitMergeToMain(root, ref.branch);
       const first = out.split("\n").find((l) => l.trim().length > 0) ?? "merged";
       setInfo(`main に merge しました: ${first}`);
+      void logEvent("merge");
       await loadBehind(ref.path);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setAction(null);
     }
-  }, [ref, action, root, loadBehind]);
+  }, [ref, action, root, loadBehind, logEvent]);
 
   const canImplement =
     gitRepo === true && issue.slots.spec && !!selectedAgent?.available && !action;
+
+  // Resume is offered when a worktree exists but no live pty is mounted (e.g. the
+  // app restarted / the issue was re-opened) and an agent is available.
+  const canResume = !!ref && !termMounted && !!selectedAgent?.available && !action;
 
   return {
     gitRepo,
@@ -503,6 +652,10 @@ export function useImplementSession(
     termSpawn,
     termNonce,
     handleTermReady,
+    handleTermExit,
+    thread,
+    canResume,
+    handleResume,
     preview,
     behind,
     ahead,
