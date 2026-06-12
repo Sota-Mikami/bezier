@@ -63,10 +63,10 @@ export const DEFAULT_SETTINGS: Settings = {
   trashTtlDays: 30,
 };
 
-const STORAGE_KEY = "continuum:settings";
+const STORAGE_KEY = "bezier:settings";
 /** Mirror of `theme` written separately so the pre-paint THEME_SYNC script (in
  * layout.tsx) can read it without parsing the whole settings blob. */
-const THEME_KEY = "continuum:theme";
+const THEME_KEY = "bezier:theme";
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   const n = typeof v === "number" ? v : Number(v);

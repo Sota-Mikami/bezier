@@ -1,0 +1,12 @@
+<svg width="210" height="48" viewBox="0 0 210 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+  <path d="M11 35 C24 35 24 13 37 13" stroke="#1c1c24" stroke-width="4" stroke-linecap="round"/>
+  <g stroke="#4750d4" stroke-width="2.2" stroke-linecap="round">
+    <path d="M11 35 L24 35"/>
+    <path d="M37 13 L24 13"/>
+  </g>
+  <circle cx="24" cy="35" r="2" fill="#4750d4"/>
+  <circle cx="24" cy="13" r="2" fill="#4750d4"/>
+  <rect x="9" y="33" width="4" height="4" rx="0.8" fill="#1c1c24"/>
+  <rect x="35" y="11" width="4" height="4" rx="0.8" fill="#1c1c24"/>
+  <text x="58" y="31.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="25" font-weight="600" letter-spacing="-0.8" fill="#1c1c24">Bezier</text>
+</svg>

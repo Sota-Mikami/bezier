@@ -1,24 +1,24 @@
 <!-- 作成日: 2026-06-04 / Owner: CEO + COO -->
-# continuum — 会社憲章
+# Bezier — 会社憲章
 
-> プロダクト名（コードネーム）: **continuum**
-> ディレクトリ: `~/Workspaces/Personal/projects/continuum/`
+> プロダクト名（コードネーム）: **Bezier**
+> ディレクトリ: `~/Workspaces/Personal/projects/bezier/`
 > ステージ: **Idea**（Anthropic AI-Native Startup Playbook）
 
 ---
 
 ## ミッション
 
-**PdM / UIUXデザイナー / エンジニア / QA の境界が溶けた世界で、一人の「maker」が Spec → Design → Mock → QA を連続的（continuum）に回せる、AI-native な制作ツールをつくる。**
+**PdM / UIUXデザイナー / エンジニア / QA の境界が溶けた世界で、一人の「maker」が Spec → Design → Mock → QA を連続的（Bezier）に回せる、AI-native な制作ツールをつくる。**
 
 我々はこの未来を信じる:
-- UIUXデザイナーは PdM 化する。PdM もエンジニアもデザインする。役割は **分業** ではなく **連続体（continuum）** になる。
+- UIUXデザイナーは PdM 化する。PdM もエンジニアもデザインする。役割は **分業** ではなく **連続体（Bezier）** になる。
 - その世界の **業界標準ツール** を取りに行く。
 
 ## プロダクト命題（the maker thesis）
 
 - **Personal-first → dogfood → SaaS として販売**
-- 我々自身が最初の顧客。**continuum で continuum を作る**。
+- 我々自身が最初の顧客。**Bezier で Bezier を作る**。
 - 単一の作業面の上で、意図 → 仕様 → デザイン → モック → QA が地続きに流れる。
 
 ## 楔（最初に磨き込むもの）
@@ -67,7 +67,7 @@ CEO（三上奏太）
 2. **承認ゲートは明示** — COO が `approval-queue.md` で集約、CEO が一括判断
 3. **決定は不可逆ログ** — `playbook/decisions-log.md`（DEC-###）に記録、二度聞かない
 4. **Spec には受け入れ基準** — 受け入れ基準のない Spec は Design に進めない
-5. **dogfood 収束** — 各 doc / agent は将来のプロダクト機能の下書き。手で回すループが、やがて continuum が自動化するループ
+5. **dogfood 収束** — 各 doc / agent は将来のプロダクト機能の下書き。手で回すループが、やがて Bezier が自動化するループ
 6. **code is not the asset** — 資産は「何をなぜどう作るかの蓄積された判断」。コードは downstream projection
 7. **build ≠ 検証** — プロトタイプがあること ≠ 検証。検証はユーザーの会話と行動データ（Anthropic Idea Stage 鉄則）
 
@@ -76,7 +76,7 @@ CEO（三上奏太）
 ## ファイル構造
 
 ```
-continuum/
+Bezier/
 ├── CLAUDE.md              # 本ディレクトリの起動コンテキスト（"まず STATUS.md"）
 ├── COMPANY.md             # 本ファイル（会社憲章）
 ├── STATUS.md              # 現在地 + 日付付きハンドオフ（逆時系列、最初に読む）
@@ -94,12 +94,12 @@ continuum/
 ├── product/
 │   ├── issues/            # Design Issue登録簿 ISSUE-###（作業の単位）
 │   ├── prd/ · specs/      # Spec段階の成果物
-│   └── principles.md      # maker-loop の定義（continuum は何で何でないか）
+│   └── principles.md      # maker-loop の定義（Bezier は何で何でないか）
 ├── design/
 │   ├── design-system.md   # トークン/コンポーネント/パターン/voice の SSOT
 │   └── flows/ · mocks/    # フロー仕様 / モック・プロトのポインタ
-└── app/                   # ★continuum本体（Next.jsアプリ。将来の独立gitリポ）
-    └── agent/             # continuum-agent サービス（長時間稼働Node）
+└── app/                   # ★Bezier本体（Next.jsアプリ。将来の独立gitリポ）
+    └── agent/             # Bezier-agent サービス（長時間稼働Node）
 ```
 
 ---

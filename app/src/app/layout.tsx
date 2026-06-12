@@ -17,15 +17,16 @@ const FONT_MONO =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
 
 export const metadata: Metadata = {
-  title: "continuum — Spec→Design→Mock→QA",
-  description: "AI-native maker tool. Spec-driven, repo-aware.",
+  title: "Bezier — Hold the handles",
+  description:
+    "プロダクトデザイナー & PdM のためのエージェント・ワークベンチ。ハンドルを握る。曲線はエージェントが描く。",
 };
 
 // Apply the saved theme preference (light / dark / system) BEFORE paint so there
-// is no flash. Reads `continuum:theme` from localStorage (written by settings.tsx);
+// is no flash. Reads `bezier:theme` from localStorage (written by settings.tsx);
 // "system" (or unset) follows the OS and live-updates. The design system is
 // class-based (.dark in globals.css); <ThemeKeeper/> takes over after hydration.
-const THEME_SYNC = `(function(){try{var pref=localStorage.getItem('continuum:theme')||'system';var m=window.matchMedia('(prefers-color-scheme: dark)');var a=function(){var dark=pref==='dark'||(pref==='system'&&m.matches);document.documentElement.classList.toggle('dark',dark);};a();m.addEventListener('change',function(){if(pref==='system')a();});}catch(e){}})();`;
+const THEME_SYNC = `(function(){try{var pref=localStorage.getItem('bezier:theme')||'system';var m=window.matchMedia('(prefers-color-scheme: dark)');var a=function(){var dark=pref==='dark'||(pref==='system'&&m.matches);document.documentElement.classList.toggle('dark',dark);};a();m.addEventListener('change',function(){if(pref==='system')a();});}catch(e){}})();`;
 
 export default function RootLayout({
   children,

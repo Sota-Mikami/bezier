@@ -2,15 +2,15 @@
 //
 // The "Design" tab runs the worktree's web app and shows it in an iframe. This
 // module resolves the dev command/port/package dir (from
-// <root>/.continuum/config.json, falling back to detection over the worktree's
+// <root>/.bezier/config.json, falling back to detection over the worktree's
 // package.json `scripts.dev`), builds the shell command (injecting a port flag
 // for known frameworks), ensures the worktree has node_modules (symlinked from
 // the main repo), and exposes the Rust `http_ping` readiness probe. config.json
-// lives under .continuum/ which is gitignored (DEC-008/010), so this never lands
+// lives under .bezier/ which is gitignored (DEC-008/010), so this never lands
 // in the repo.
 //
-// slice 2.5.1 fixes two real blockers found dogfooding continuum on itself:
-//   1. the web app is often in a SUBDIR (continuum: `app/`), not the repo root,
+// slice 2.5.1 fixes two real blockers found dogfooding Bezier on itself:
+//   1. the web app is often in a SUBDIR (bezier: `app/`), not the repo root,
 //      so we detect a `packageDir` and run the dev server with cwd =
 //      <worktree>/<packageDir>.
 //   2. a fresh worktree has no node_modules (gitignored), so we symlink
@@ -29,7 +29,7 @@ import { readFile, writeFile } from "@/lib/ipc";
  */
 export type RunnerKind = "web" | "tauri";
 
-/** Persisted, repo-level preview config (<root>/.continuum/config.json). */
+/** Persisted, repo-level preview config (<root>/.bezier/config.json). */
 export interface PreviewConfig {
   /** Shell command to start the dev server (e.g. "npm run dev"). */
   devCommand: string;
@@ -76,7 +76,7 @@ function normalizeRelDir(p: string): string {
 }
 
 function configPath(root: string): string {
-  return `${stripTrailingSlash(root)}/.continuum/config.json`;
+  return `${stripTrailingSlash(root)}/.bezier/config.json`;
 }
 
 /** Join a base dir with a relative packageDir ("" -> base unchanged). */
@@ -182,7 +182,7 @@ export async function detectDev(dir: string): Promise<DevDetect> {
 
 /**
  * A deterministic, repo-stable default port in [4100, 4179]. Deliberately away
- * from 3210 (continuum's own dev port). Used only when no config exists yet.
+ * from 3210 (Bezier's own dev port). Used only when no config exists yet.
  */
 export function defaultPort(seed: string): number {
   let h = 0;
@@ -219,7 +219,7 @@ export interface RunnerDetect {
   /**
    * Path of the Tauri crate dir RELATIVE to the worktree root (the dir that
    * holds tauri.conf.json + the Rust build `target`), or null for web. For
-   * continuum this is "app/src-tauri"; for a root-level Tauri app, "src-tauri".
+   * Bezier this is "app/src-tauri"; for a root-level Tauri app, "src-tauri".
    */
   srcTauriRel: string | null;
 }
@@ -227,7 +227,7 @@ export interface RunnerDetect {
 /**
  * Detect whether the worktree is a Tauri app. A repo is "tauri" when a
  * `src-tauri/tauri.conf.json` exists either at the repo root OR inside the
- * detected `packageDir` (continuum: the web app + Tauri crate both live under
+ * detected `packageDir` (bezier: the web app + Tauri crate both live under
  * `app/`, so the config is `app/src-tauri/tauri.conf.json`). Returns the runner
  * and, for tauri, the worktree-relative Tauri crate dir. Never throws.
  */
@@ -236,7 +236,7 @@ export async function detectRunner(
   packageDir: string,
 ): Promise<RunnerDetect> {
   const pkg = normalizeRelDir(packageDir);
-  // Probe the packageDir-nested location first (continuum's layout), then root.
+  // Probe the packageDir-nested location first (Bezier's layout), then root.
   const candidates: string[] = [];
   if (pkg) candidates.push(`${pkg}/src-tauri`);
   candidates.push("src-tauri");
@@ -265,7 +265,7 @@ export function tauriDevPort(seed: string): number {
 
 /**
  * Build the shell command that launches the worktree as a real Tauri dev window
- * on `port`. continuum's tauri.conf.json HARDCODES `beforeDevCommand:
+ * on `port`. Bezier's tauri.conf.json HARDCODES `beforeDevCommand:
  * "npm run dev -- -p 3210"` / `devUrl: "http://localhost:3210"`, which would
  * collide with the main app — so we pass a `--config` JSON override (Tauri v2
  * merges it) that re-points both at `port`. The `--` makes npm forward

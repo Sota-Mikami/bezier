@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://continuum.local/scene-graph/v1",
-  "title": "continuum scene-graph v1",
+  "$id": "https://bezier.local/scene-graph/v1",
+  "title": "bezier scene-graph v1",
   "description": "ローカルエンジン ↔ クラウド SoR のコントラクト最小版。生成した画面の構造を記述する。",
   "type": "object",
   "required": ["schema_version", "label", "nodes", "reused"],

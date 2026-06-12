@@ -1,14 +1,14 @@
 <!-- 作成日: 2026-06-04 / Owner: Head of Product -->
-# continuum — プロダクト原則 / the maker-loop
+# Bezier — プロダクト原則 / the maker-loop
 
-## continuum は何か
+## Bezier は何か
 
 **一人の「maker」が Spec → Design → Mock → QA を連続的に回す単一の作業面。**
 既存プロダクトの文法を読み込み、その実パーツを流用してモックを生成・編集し、仕様と QA まで地続きにする。
 
 ## the maker loop（中核モデル）= 仕様駆動ループ（spec-driven）
 
-参照: Amazon **Kiro**（spec → tasks → 実装 のAIコーディング）。continuum はこの「仕様駆動」を、デザイン/モックの**発散・収束**まで含めて一気通貫にする。
+参照: Amazon **Kiro**（spec → tasks → 実装 のAIコーディング）。Bezier はこの「仕様駆動」を、デザイン/モックの**発散・収束**まで含めて一気通貫にする。
 
 ```
 Intent ─→ Spec(下書き) ─→ Design ─→ Mock ─→ Spec(確定) ─→ QA ─→ Handoff(spec→タスク) ─→ [AI実装]
@@ -28,7 +28,7 @@ CEO の5ステップに対応:
 - **Mock は発散の場**（パターンを広げる）、**収束で1案採用** → それが Spec を更新する。直線でなくループ。
 - AI は全段階に同席する（書く・作る・検証する・分解する）が、**判断は maker が持つ**。
 
-## continuum は何で「ない」か（禁則）
+## Bezier は何で「ない」か（禁則）
 
 - ❌ **白紙生成ツールではない**。既存の文脈を無視した「それっぽいUI」は作らない。
 - ❌ **コード生成器ではない**。コードは scene-graph からの downstream projection（export）。真実ではない。

@@ -5,7 +5,7 @@
 > 方針: Accept=branch commit のみ(main 不触)は維持。**衝突は main の外（隔離 worktree）で解決**してから merge する安全層を足す（DEC-008/G1' の精神を保つ）。
 
 ## 0. 課題
-各 Issue branch は「Implement 時点の main」から枝分かれ。別路線(直接 main commit) や他 Issue で main が進む → 後で merge する時に同一ファイルで衝突。今 continuum は **merge を助ける仕組みが無い**。
+各 Issue branch は「Implement 時点の main」から枝分かれ。別路線(直接 main commit) や他 Issue で main が進む → 後で merge する時に同一ファイルで衝突。今 Bezier は **merge を助ける仕組みが無い**。
 
 ## 1. Rust git コマンド（`src-tauri/src/lib.rs`・既存 git_* に追加）
 - `git_behind_ahead(worktree, base) -> {behind:u32, ahead:u32}`：`rev-list --count <branch>..<base>`（behind）/ `<base>..<branch>`（ahead）。base 既定="main"。

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// continuum CLI エントリポイント（スパイク版）
+// bezier CLI エントリポイント（スパイク版）
 // 使い方:
 //   node cli.mjs extract <repoPath> [outName]
 //   node cli.mjs generate <indexName> "<intent>"
@@ -22,7 +22,7 @@ const [, , command, ...args] = process.argv;
 
 function usage() {
   console.log(`
-continuum — ローカルエンジン CLI（スパイク版）
+bezier — ローカルエンジン CLI（スパイク版）
 
 使い方:
   node cli.mjs extract <repoPath> [outName]
@@ -36,9 +36,9 @@ continuum — ローカルエンジン CLI（スパイク版）
 
   node cli.mjs gen-preview <indexName>
       out/<indexName>.json + out/gen-<indexName>.json を入力に
-      対象 repo の src/app/continuum-preview/ を動的生成（汎用ジェネレータ）
+      対象 repo の src/app/bezier-preview/ を動的生成（汎用ジェネレータ）
       例: node cli.mjs gen-preview template
-      出力: <repoPath>/src/app/continuum-preview/page.tsx + layout.tsx
+      出力: <repoPath>/src/app/bezier-preview/page.tsx + layout.tsx
 
   node cli.mjs preview <indexName> ["<intent>"] [--port <n>] [--no-shim]
       [generate →] shim apply → gen-preview → dev server 起動 → screenshot → shim revert
@@ -76,7 +76,7 @@ if (command === "extract") {
     process.exit(1);
   }
   const extractScript = path.join(__dirname, "extract.mjs");
-  console.log(`[continuum extract] repo: ${repoPath}  out: out/${outName}.json`);
+  console.log(`[bezier extract] repo: ${repoPath}  out: out/${outName}.json`);
   const result = spawnSync("node", [extractScript, repoPath, outName], {
     cwd: __dirname,
     stdio: "inherit",
@@ -99,7 +99,7 @@ if (command === "generate") {
     process.exit(1);
   }
   const generateScript = path.join(__dirname, "generate-sdk.mjs");
-  console.log(`[continuum generate] index: ${indexName}  intent: ${intent}`);
+  console.log(`[bezier generate] index: ${indexName}  intent: ${intent}`);
   const result = spawnSync("node", [generateScript, indexName, intent], {
     cwd: __dirname,
     stdio: "inherit",
@@ -196,7 +196,7 @@ if (command === "preview") {
 
   // Step 1: generate (skip if gen already exists and no intent given)
   if (intent) {
-    console.log(`[continuum preview] Step 1/5 — generate (${indexName}: "${intent}")`);
+    console.log(`[bezier preview] Step 1/5 — generate (${indexName}: "${intent}")`);
     const generateScript = path.join(__dirname, "generate-sdk.mjs");
     const genResult = spawnSync("node", [generateScript, indexName, intent], {
       cwd: __dirname,
@@ -211,12 +211,12 @@ if (command === "preview") {
     console.error(`intent 引数を渡すか、先に: node cli.mjs generate ${indexName} "<intent>"`);
     await cleanup(1);
   } else {
-    console.log(`[continuum preview] Step 1/5 — generate skip (既存 gen-${indexName}.json を使用)`);
+    console.log(`[bezier preview] Step 1/5 — generate skip (既存 gen-${indexName}.json を使用)`);
   }
 
   // Step 2: shim apply（AuthGate bypass + gitignore + previewDir 確保）
   if (!noShim) {
-    console.log(`[continuum preview] Step 2/5 — shim apply`);
+    console.log(`[bezier preview] Step 2/5 — shim apply`);
     if (!repoPath || !fs.existsSync(repoPath)) {
       console.error(`repo が存在しません: ${repoPath}`);
       await cleanup(2);
@@ -228,11 +228,11 @@ if (command === "preview") {
       await cleanup(1);
     }
   } else {
-    console.log(`[continuum preview] Step 2/5 — shim skip (--no-shim)`);
+    console.log(`[bezier preview] Step 2/5 — shim skip (--no-shim)`);
   }
 
   // Step 3: gen-preview (汎用プレビュールート生成)
-  console.log(`[continuum preview] Step 3/5 — gen-preview`);
+  console.log(`[bezier preview] Step 3/5 — gen-preview`);
   const generatePreviewScript = path.join(__dirname, "generate-preview.mjs");
   const gpResult = spawnSync("node", [generatePreviewScript, indexName], {
     cwd: __dirname,
@@ -253,9 +253,9 @@ if (command === "preview") {
 
   // Step 4: dev server 自動起動（起動済みならスキップ）
   const baseUrl = `http://localhost:${port}`;
-  const previewUrl = `${baseUrl}/continuum-preview`;
+  const previewUrl = `${baseUrl}/bezier-preview`;
 
-  console.log(`[continuum preview] Step 4/5 — dev server (${baseUrl})`);
+  console.log(`[bezier preview] Step 4/5 — dev server (${baseUrl})`);
 
   // ポートが応答するか確認
   async function isPortReady(url, timeoutMs = 1000) {
@@ -318,7 +318,7 @@ if (command === "preview") {
   }
 
   // Step 5: screenshot
-  console.log(`[continuum preview] Step 5/5 — screenshot`);
+  console.log(`[bezier preview] Step 5/5 — screenshot`);
   const screenshotScript = path.join(__dirname, "screenshot-generic.mjs");
   const shotResult = spawnSync("node", [screenshotScript, indexName, baseUrl], {
     cwd: __dirname,
@@ -333,7 +333,7 @@ if (command === "preview") {
   const summaryPath = path.join(__dirname, "out", `preview-summary-${indexName}.json`);
   const summary = fs.existsSync(summaryPath) ? JSON.parse(fs.readFileSync(summaryPath, "utf8")) : null;
 
-  console.log(`\n[continuum preview] 完了`);
+  console.log(`\n[bezier preview] 完了`);
   console.log(`  scene-graph : ${genOutPath}`);
   console.log(`  screenshot  : ${path.join(__dirname, "out", `render-${indexName}.png`)}`);
   console.log(`  browser     : ${previewUrl}`);
@@ -357,7 +357,7 @@ if (command === "shim-restore") {
     console.error("使い方: node cli.mjs shim-restore <indexName>");
     process.exit(1);
   }
-  console.log(`[continuum shim-restore] ${indexName}`);
+  console.log(`[bezier shim-restore] ${indexName}`);
   const result = await revertByManifest(indexName, { verbose: true });
   if (result.skipped) {
     console.log(`no manifest found for ${indexName} — nothing to restore`);
@@ -367,7 +367,7 @@ if (command === "shim-restore") {
     console.error(`restore had errors: ${result.errors?.join(", ")}`);
     process.exit(1);
   }
-  console.log(`[continuum shim-restore] done`);
+  console.log(`[bezier shim-restore] done`);
   process.exit(0);
 }
 

@@ -1,13 +1,13 @@
 [package]
-name = "continuum"
+name = "bezier"
 version = "0.1.0"
-description = "continuum — local-folder workspace editor"
+description = "Bezier — agent workbench for designers and PMs"
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
 # The desktop entrypoint links against this lib; name must be a valid ident.
-name = "continuum_lib"
+name = "bezier_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

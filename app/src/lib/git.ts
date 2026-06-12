@@ -32,7 +32,7 @@ export function gitRepoStatus(path: string): Promise<RepoStatus> {
   return invoke<RepoStatus>("git_repo_status", { path });
 }
 
-/** `git init` + initial commit, so a plain folder becomes continuum-usable. */
+/** `git init` + initial commit, so a plain folder becomes Bezier-usable. */
 export function gitInit(path: string): Promise<void> {
   return invoke<void>("git_init", { path });
 }

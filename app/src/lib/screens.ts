@@ -1,5 +1,5 @@
 // FROZEN CONTRACT — Canvas SoR (System of Record) for v0.3.
-// Persisted to <root>/.continuum/screens.json via ipc readFile/writeFile.
+// Persisted to <root>/.bezier/screens.json via ipc readFile/writeFile.
 // Shapes and signatures are frozen. Do NOT redefine. All Canvas modules
 // import from this file.
 
@@ -32,11 +32,11 @@ export interface ScreensDoc {
 /** Path to the screens SoR within a workspace root. */
 function screensPath(root: string): string {
   // POSIX-style join; root has no trailing slash by convention.
-  return `${root}/.continuum/screens.json`;
+  return `${root}/.bezier/screens.json`;
 }
 
 /**
- * Read <root>/.continuum/screens.json.
+ * Read <root>/.bezier/screens.json.
  * If missing (or unreadable), return an empty doc {schema:"1",screens:[]}.
  */
 export async function loadScreens(root: string): Promise<ScreensDoc> {
@@ -53,9 +53,9 @@ export async function loadScreens(root: string): Promise<ScreensDoc> {
 }
 
 /**
- * Write the screens doc to <root>/.continuum/screens.json (pretty-printed,
+ * Write the screens doc to <root>/.bezier/screens.json (pretty-printed,
  * stable key order so it round-trips cleanly in Git). writeFile is expected
- * to create the .continuum directory if needed.
+ * to create the .bezier directory if needed.
  */
 export async function saveScreens(root: string, doc: ScreensDoc): Promise<void> {
   const ordered: ScreensDoc = {

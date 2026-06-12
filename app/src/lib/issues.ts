@@ -1,7 +1,7 @@
 // Issues data layer (v0.5 slice 1 — pre-git, local).
 //
-// Every issue is a folder under <root>/.continuum/drafts/<ulid>-<slug>/ (the
-// .continuum tree is gitignored). issue.md holds the metadata (frontmatter) +
+// Every issue is a folder under <root>/.bezier/drafts/<ulid>-<slug>/ (the
+// .bezier tree is gitignored). issue.md holds the metadata (frontmatter) +
 // description (body); the spec / decision "slots" are convention-path
 // files that exist only once created ("presence-driven", §3.5 / P5).
 //
@@ -99,9 +99,9 @@ export interface Issue {
 // Path helpers
 // ---------------------------------------------------------------------------
 
-/** <root>/.continuum/drafts — the local working store for issues (slice 1). */
+/** <root>/.bezier/drafts — the local working store for issues (slice 1). */
 export function draftsDir(root: string): string {
-  return `${stripTrailingSlash(root)}/.continuum/drafts`;
+  return `${stripTrailingSlash(root)}/.bezier/drafts`;
 }
 
 /** Absolute path to a slot file for an issue. */
@@ -237,7 +237,7 @@ async function readIssueAt(
   };
 }
 
-/** List all issues under .continuum/drafts, newest first (ULID is time-sortable). */
+/** List all issues under .bezier/drafts, newest first (ULID is time-sortable). */
 export async function listIssues(root: string): Promise<Issue[]> {
   const base = draftsDir(root);
   let entries;
@@ -326,21 +326,21 @@ export async function updateIssueMeta(
   await writeFile(path, `${serializeIssueFm(meta)}${body}`);
 }
 
-/** <root>/.continuum — the local working store root (drafts + issues + trash). */
-function continuumDir(root: string): string {
-  return `${stripTrailingSlash(root)}/.continuum`;
+/** <root>/.bezier — the local working store root (drafts + issues + trash). */
+function bezierDir(root: string): string {
+  return `${stripTrailingSlash(root)}/.bezier`;
 }
 
 // ---------------------------------------------------------------------------
 // Trash (recoverable delete + 30-day auto-purge, DEC-020)
 // ---------------------------------------------------------------------------
 //
-// Deleting an issue MOVES it to .continuum/trash/ instead of erasing it — git
+// Deleting an issue MOVES it to .bezier/trash/ instead of erasing it — git
 // (worktree + branch) is left untouched, so a trashed issue is fully restorable.
 // Only an explicit "完全に削除" or the 30-day auto-purge does the destructive
 // teardown. Layout mirrors the live store:
-//   .continuum/trash/drafts/<id>-<slug>/   (incl. .trashed.json marker)
-//   .continuum/trash/issues/<id>/          (the activity thread, if any)
+//   .bezier/trash/drafts/<id>-<slug>/   (incl. .trashed.json marker)
+//   .bezier/trash/issues/<id>/          (the activity thread, if any)
 
 /** Default days a trashed issue is kept (the settings default; DEC-020). The
  * effective value is user-configurable — read `trashTtlDays()` for the live one. */
@@ -366,16 +366,16 @@ export interface TrashMeta {
 }
 
 function trashDraftsDir(root: string): string {
-  return `${continuumDir(root)}/trash/drafts`;
+  return `${bezierDir(root)}/trash/drafts`;
 }
 function trashIssuesDir(root: string): string {
-  return `${continuumDir(root)}/trash/issues`;
+  return `${bezierDir(root)}/trash/issues`;
 }
 
 /**
  * Move an issue to the trash (the default "delete"). Records a .trashed.json
  * marker (incl. branch/worktree for later teardown), then moves the issue folder
- * and its thread dir under .continuum/trash/. git is NOT touched — restore is a
+ * and its thread dir under .bezier/trash/. git is NOT touched — restore is a
  * pure move-back. The worktree ref is read for the marker but left intact.
  */
 export async function trashIssue(root: string, issue: Issue): Promise<void> {
@@ -394,7 +394,7 @@ export async function trashIssue(root: string, issue: Issue): Promise<void> {
   await movePath(issue.dir, `${trashDraftsDir(root)}/${folderName}`);
   // Thread dir (may not exist) — best-effort.
   await movePath(
-    `${continuumDir(root)}/issues/${issue.id}`,
+    `${bezierDir(root)}/issues/${issue.id}`,
     `${trashIssuesDir(root)}/${issue.id}`,
   ).catch(() => {});
 }
@@ -504,12 +504,12 @@ export async function restoreFromTrash(root: string, meta: TrashMeta): Promise<v
   await removePath(`${draft}/.trashed.json`).catch(() => {});
   await movePath(
     `${trashIssuesDir(root)}/${meta.id}`,
-    `${continuumDir(root)}/issues/${meta.id}`,
+    `${bezierDir(root)}/issues/${meta.id}`,
   ).catch(() => {});
 }
 
 /**
- * Permanently remove a trashed issue's folders (.continuum/trash/...). Does NOT
+ * Permanently remove a trashed issue's folders (.bezier/trash/...). Does NOT
  * tear down git — the caller purges the worktree/branch (it has meta.branch /
  * meta.worktreePath) before/after calling this, like purgeIssue does.
  */
@@ -567,7 +567,7 @@ export async function createSlot(
 
 /**
  * Volatile reference to an Issue's git worktree. Persisted as JSON beside the
- * issue (issue.dir/worktree.json) — gitignored, like the rest of .continuum.
+ * issue (issue.dir/worktree.json) — gitignored, like the rest of .bezier.
  */
 export interface WorktreeRef {
   /** branch name (issue/<ulid>-<slug>). */
@@ -575,7 +575,7 @@ export interface WorktreeRef {
   /**
    * Absolute worktree path. Since slice 2.5.1 this lives OUTSIDE the repo, under
    * <appData>/worktrees/<repo-id>/<ulid> (see worktreeDir). Older refs may point
-   * inside the repo (<root>/.continuum/worktrees/<ulid>); both are honored on
+   * inside the repo (<root>/.bezier/worktrees/<ulid>); both are honored on
    * resume — the stored path is the source of truth for diff/commit/remove.
    */
   path: string;
@@ -589,7 +589,7 @@ export interface WorktreeRef {
   prUrl?: string;
 }
 
-/** branch name convention (DEC-009 G2): `issue/<ulid>-<slug>`. */
+/** branch name convention (DEC-047 G2): `issue/<ulid>-<slug>`. */
 export function branchName(issue: Pick<Issue, "id" | "slug">): string {
   return `issue/${issue.id}-${issue.slug || "untitled"}`;
 }
@@ -616,7 +616,7 @@ function repoId(repoRoot: string): string {
  * Absolute worktree path for an issue, OUTSIDE the repo:
  * <appData>/worktrees/<repo-id>/<ulid>.
  *
- * A worktree nested inside the repo (the old <root>/.continuum/worktrees/...)
+ * A worktree nested inside the repo (the old <root>/.bezier/worktrees/...)
  * breaks workspace-root inference: Next.js/Turbopack and package managers walk
  * UP and find the PARENT repo's lockfile/node_modules, then refuse to compile
  * the nested copy ("files outside of the project directory will not be
@@ -686,7 +686,7 @@ export async function clearWorktreeRef(
 
 /**
  * Build the agent handoff: issue.md + spec.md + an instruction to implement the
- * spec inside the given worktree. Written to <root>/.continuum/handoff/<id>.md
+ * spec inside the given worktree. Written to <root>/.bezier/handoff/<id>.md
  * (outside the worktree so it never shows up in the diff) for the record, and
  * the same text is returned as `content` so the caller can pass it directly as
  * the agent's prompt argument (the agent runs in the external worktree and may
@@ -711,7 +711,7 @@ export async function buildImplementHandoff(
   } catch {
     specMd = "(spec.md がありません)";
   }
-  const outPath = `${stripTrailingSlash(root)}/.continuum/handoff/${issue.id}.md`;
+  const outPath = `${stripTrailingSlash(root)}/.bezier/handoff/${issue.id}.md`;
   const specPath = slotPath(issue, "spec");
   // On a re-run the worktree already holds the previous iteration's changes; ask
   // the agent to adjust them to the updated spec rather than start over (DEC-012
@@ -739,7 +739,7 @@ export async function buildImplementHandoff(
           "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
         ];
   // The Spec is the LIVING spec for this issue. It lives OUTSIDE the worktree
-  // (in the main repo's .continuum tree) but is made readable+writable to the
+  // (in the main repo's .bezier tree) but is made readable+writable to the
   // agent via `claude --add-dir <issue.dir>`. Telling the agent to (1) re-read it
   // before every implementation and (2) update it when the conversation changes
   // the intent keeps Spec⇆code in sync without the human manually saying
@@ -791,8 +791,8 @@ export async function buildImplementHandoff(
 // v0.5 slice 3 — durable activity thread (chat-first loop, DEC-012)
 // ---------------------------------------------------------------------------
 //
-// A per-issue, structured event log persisted to <root>/.continuum/issues/<ulid>/
-// thread.json (the local .continuum store, gitignored). The live agent terminal
+// A per-issue, structured event log persisted to <root>/.bezier/issues/<ulid>/
+// thread.json (the local .bezier store, gitignored). The live agent terminal
 // is a volatile pty that dies on leave/restart — this log gives the LEFT thread a
 // durable, visible history (起票 / Implement / Re-run / Sync / Accept / Merge /
 // Discard / session resumed) that survives even a Discard. It is NOT a chat
@@ -824,9 +824,9 @@ export interface ThreadEvent {
   branch?: string;
 }
 
-/** <root>/.continuum/issues/<ulid>/thread.json — the durable activity log. */
+/** <root>/.bezier/issues/<ulid>/thread.json — the durable activity log. */
 function threadPath(root: string, issue: Pick<Issue, "id">): string {
-  return `${stripTrailingSlash(root)}/.continuum/issues/${issue.id}/thread.json`;
+  return `${stripTrailingSlash(root)}/.bezier/issues/${issue.id}/thread.json`;
 }
 
 /** Read the issue's activity thread, newest-appended last. [] when none. */
@@ -904,7 +904,7 @@ function summarizeThread(thread: ThreadEvent[]): string {
  * Build the PR body (DEC-015 / DEC-008: the "why" rides WITH the PR). Combines
  * the Issue title, the living spec (なぜ / 何を / 受け入れ条件), and a short activity
  * summary from the durable thread. Written to
- * <root>/.continuum/issues/<ulid>/pr-body.md (local, gitignored) and returned so
+ * <root>/.bezier/issues/<ulid>/pr-body.md (local, gitignored) and returned so
  * the caller can hand the path to `gh pr create --body-file` (safe for a large
  * multi-line markdown body).
  */
@@ -922,7 +922,7 @@ export async function buildPrBody(
   const content = [
     `# ${issue.title}`,
     "",
-    "<!-- Generated by continuum (DEC-015). Spec と経緯を PR に同梱（DEC-008: why が what と同じ PR）。 -->",
+    "<!-- Generated by Bezier (DEC-015). Spec と経緯を PR に同梱（DEC-008: why が what と同じ PR）。 -->",
     "",
     "## Spec",
     "",
@@ -933,7 +933,7 @@ export async function buildPrBody(
     summarizeThread(thread),
     "",
   ].join("\n");
-  const path = `${stripTrailingSlash(root)}/.continuum/issues/${issue.id}/pr-body.md`;
+  const path = `${stripTrailingSlash(root)}/.bezier/issues/${issue.id}/pr-body.md`;
   await writeFile(path, content);
   return { path, content };
 }

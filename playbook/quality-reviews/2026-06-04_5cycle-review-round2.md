@@ -1,7 +1,7 @@
 <!-- 作成日: 2026-06-04 / Owner: COO（5サイクル自律レビュー集約） -->
-# 5サイクル改善レビュー（Round2）— continuum WF
+# 5サイクル改善レビュー（Round2）— Bezier WF
 
-Workflow `continuum-5cycle-review`（36エージェント / 各サイクル COO横断→Eng+Designer→Mai/Kenji/Priya→統合）の結果。各サイクル 6適用 / 2-3判断。
+Workflow `Bezier-5cycle-review`（36エージェント / 各サイクル COO横断→Eng+Designer→Mai/Kenji/Priya→統合）の結果。各サイクル 6適用 / 2-3判断。
 
 ## ペルソナ評価の推移
 - **Mai**（maker）: 当初 hate/meh（「ライブプレビュー即時更新は嘘」「タブ=ウォーターフォール」「AIが静止画」）→ 虚偽コピー修正と「採用→収束→Build解放」結線で上向き。残不満= AiRail送信操作 と Buildゲートの線形感。

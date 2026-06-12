@@ -381,7 +381,7 @@ function SlotEditorInner({
           className="truncate font-mono text-[11px] text-muted-foreground"
           title={path}
         >
-          {path.slice(path.lastIndexOf("/.continuum/") + 1) || path}
+          {path.slice(path.lastIndexOf("/.bezier/") + 1) || path}
         </span>
         <div className="ml-auto flex items-center gap-1.5 text-[11px]">
           {saving ? (

@@ -57,7 +57,7 @@ function runTool(name, input) {
 
 const client = new Anthropic();
 const system = [
-  { type: "text", text: "あなたは continuum の生成エンジン。与えられた repo の『既存パーツだけ』を流用して新しい画面の scene-graph を組む。新規UIは最小限。必ず emit_screen で終える。" },
+  { type: "text", text: "あなたは bezier の生成エンジン。与えられた repo の『既存パーツだけ』を流用して新しい画面の scene-graph を組む。新規UIは最小限。必ず emit_screen で終える。" },
   { type: "text", text: catalog, cache_control: { type: "ephemeral" } },
 ];
 let messages = [{ role: "user", content: `intent: ${intent}\nまず search_components/get_component で使える実パーツを調べ、最後に emit_screen を呼べ。` }];

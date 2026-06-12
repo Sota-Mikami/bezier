@@ -1,5 +1,5 @@
 <!-- 作成日: 2026-06-04 / Owner: COO -->
-# continuum — 運営プロトコル（軽量・一人運営）
+# Bezier — 運営プロトコル（軽量・一人運営）
 
 作業単位 = **Design Issue（`ISSUE-###`）**。一人運営なので官僚化しない。会議＝「構造化された情報の集約と再配分」。
 
@@ -58,5 +58,5 @@ COO ── DEC-### を decisions-log に記録、STATUS.md ハンドオフ更新
 
 - ペルソナ agent 群 → 将来プロダクトの自動 UX テストスイート。
 - COO の routing logic → プロダクトの orchestration 層。
-- `product/specs/` + `design/design-system.md` → continuum 自身の能動 SoR。
-- 手で回すこのループ = continuum が自動化するループの **プロダクト仕様**。会社OS とプロダクトを2つの別物にしない。
+- `product/specs/` + `design/design-system.md` → Bezier 自身の能動 SoR。
+- 手で回すこのループ = Bezier が自動化するループの **プロダクト仕様**。会社OS とプロダクトを2つの別物にしない。

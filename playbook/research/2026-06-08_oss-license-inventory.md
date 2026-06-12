@@ -1,8 +1,8 @@
-<!-- 作成日: 2026-06-08 / Owner: CEO + Claude / continuum 流用OSSのライセンス地雷チェック -->
-# continuum 流用 OSS ライセンス棚卸し
+<!-- 作成日: 2026-06-08 / Owner: CEO + Claude / Bezier 流用OSSのライセンス地雷チェック -->
+# Bezier 流用 OSS ライセンス棚卸し
 
 > **目的**: 「OSS を元に作り変えて、ゆくゆく fair-code（DEC-002）で配布・収益化」する前提で、**流用してよい / 参照のみ / 避ける** を1枚で確定する。
-> **continuum 自身のライセンス（DEC-002）**: fair-code（n8n Sustainable Use License 型）。ソース公開・self-host 自由・SaaS 再販禁止。
+> **Bezier 自身のライセンス（DEC-002）**: fair-code（n8n Sustainable Use License 型）。ソース公開・self-host 自由・SaaS 再販禁止。
 
 ---
 
@@ -23,17 +23,17 @@
 | **xterm.js** | ターミナル UI | **MIT** | ✅ 流用 | 著作権表示の保持のみ |
 | **portable-pty** | PTY / 並走（Rust, wezterm 由来） | **MIT** | ✅ 流用 | 同上 |
 | **TipTap** | （次点・ブロック土台） | **MIT**（コア） | 🟡 代替候補 | 一部 Pro 拡張は有料。コアのみなら無料 |
-| **BlockNote** | （次点・Notion風） | コア=**MPL-2.0** / **XL=GPL-3.0** + 商用 | 🟡 条件付 | MPLコアは商用OKだが**改変ファイルは公開義務**。**XLパッケージはGPL=viral → 使うと continuum も GPL 開放義務 = fair-code と非互換**。XL は使わない |
+| **BlockNote** | （次点・Notion風） | コア=**MPL-2.0** / **XL=GPL-3.0** + 商用 | 🟡 条件付 | MPLコアは商用OKだが**改変ファイルは公開義務**。**XLパッケージはGPL=viral → 使うと Bezier も GPL 開放義務 = fair-code と非互換**。XL は使わない |
 | **cmux** | （軽さの参照のみ） | **AGPL-3.0** | ⚠️ 参照のみ | **コード流用すると AGPL 感染（ネットワーク利用でもソース開放義務）= fair-code と非互換**。アイデア/UX の参照に留める。Swift+libghostty なので技術的にも流用しない |
 
 ---
 
 ## ライセンス互換性の判断
 
-- **MIT / Apache-2.0（Tauri / Plate / Onlook / xterm.js / portable-pty）**: permissive。**任意のライセンス（fair-code 含む）に取り込み可能**。これらを組み合わせて continuum を fair-code で配布することに障害なし。
+- **MIT / Apache-2.0（Tauri / Plate / Onlook / xterm.js / portable-pty）**: permissive。**任意のライセンス（fair-code 含む）に取り込み可能**。これらを組み合わせて Bezier を fair-code で配布することに障害なし。
 - **Apache-2.0 固有の義務**: ① LICENSE と **NOTICE** を派生物に同梱 ② 変更したファイルに変更告知。→ Onlook をフォークするなら **NOTICE を残す**だけ。実務負荷は軽微。
 - **MPL-2.0（BlockNote コア）**: ファイル単位 copyleft。改変した MPL ファイルのみ公開義務。商用・クローズド本体への組込は可。ただし **Plate(MIT) を採用するので回避**。
-- **GPL-3.0 / AGPL-3.0（BlockNote XL / cmux）**: strong copyleft（AGPLはSaaS提供でも感染）。**fair-code（SaaS再販禁止だがソース公開）とは性質が異なり、取り込むと continuum 全体が (A)GPL に縛られる** → **流用しない**。cmux は「軽さ・並走UX の発想」を参照するのみ。
+- **GPL-3.0 / AGPL-3.0（BlockNote XL / cmux）**: strong copyleft（AGPLはSaaS提供でも感染）。**fair-code（SaaS再販禁止だがソース公開）とは性質が異なり、取り込むと Bezier 全体が (A)GPL に縛られる** → **流用しない**。cmux は「軽さ・並走UX の発想」を参照するのみ。
 
 ---
 

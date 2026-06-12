@@ -68,7 +68,7 @@ const MANUAL_SWITCH_GRACE_MS = 8000;
 const PULSE_MS = 3000;
 
 // Resizable chat|canvas split (DEC-033): persisted chat width + its min.
-const CHAT_WIDTH_KEY = "continuum:chat-width";
+const CHAT_WIDTH_KEY = "bezier:chat-width";
 const CHAT_MIN = 320;
 
 // ---------------------------------------------------------------------------
@@ -362,7 +362,7 @@ function NoFolder({ onOpen }: { onOpen: () => Promise<string | null> }) {
           <div className="text-base font-medium">フォルダを開く</div>
           <p className="max-w-sm text-sm text-muted-foreground">
             Issues は開いたフォルダの{" "}
-            <span className="font-mono">.continuum/</span> に保存されます。対象の
+            <span className="font-mono">.bezier/</span> に保存されます。対象の
             repo フォルダを選んでください。
           </p>
         </div>

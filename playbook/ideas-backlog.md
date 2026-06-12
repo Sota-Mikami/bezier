@@ -1,5 +1,5 @@
 <!-- 作成日: 2026-06-12 / Owner: COO -->
-# continuum — アイデア backlog（未着手・将来検討）
+# Bezier — アイデア backlog（未着手・将来検討）
 
 決定（decisions-log.md）とは別に、「やりたい/やるかも」を温める場所。CEO が後で見返す。
 

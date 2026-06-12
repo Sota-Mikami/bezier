@@ -1,7 +1,7 @@
-<!-- 作成日: 2026-06-08 / Owner: CEO + Claude / continuum 再評価リサーチ -->
-# continuum 再評価 — 競合地図: オーケストレーション層 vs デザイン/プロダクト意思決定SoR層
+<!-- 作成日: 2026-06-08 / Owner: CEO + Claude / Bezier 再評価リサーチ -->
+# Bezier 再評価 — 競合地図: オーケストレーション層 vs デザイン/プロダクト意思決定SoR層
 
-> **背景**: continuum は 2026-06-05 に PAUSED（DEC-004）。理由 = 楔のエンジン（既存repo→実部品でモック生成→render）が **コーディングエージェントにネイティブ吸収される**（Codex が preview を出した = ハーネス競合リスクの現実化）。
+> **背景**: Bezier は 2026-06-05 に PAUSED（DEC-004）。理由 = 楔のエンジン（既存repo→実部品でモック生成→render）が **コーディングエージェントにネイティブ吸収される**（Codex が preview を出した = ハーネス競合リスクの現実化）。
 > **再評価のきっかけ（CEO, 2026-06-08）**: 2つのイノベーターの動き — ① **Superset**（vendor-agnostic な複数エージェント・オーケストレーター、急伸）② **Claude デザイナーの働き方**（Meaghan Choi / Dive Club, "designers ship code"）。
 > **CEO 追加意思**: 「**基本的にこれは自分用のツールにもなるから、しっかり作り切りたい**」= Founder = First User / dogfood-first を明示。
 
@@ -11,10 +11,10 @@
 
 > **価値は「エンジン（生成・モデル）」から逃げ続ける。留まるのは (A) 全エンジンの上に立つ中立な調整層、(B) 働き方＝プロセス/設計記憶の層。**
 
-- **Superset の教訓**: エンジンを一切自作せず、Claude Code/Codex/Cursor/Gemini を git worktree で並列に束ねる「指揮者」に陣取る。ベンダーがネイティブ機能を出すほど **束ねる対象が増える＝燃料**になる。continuum が pause した理由のちょうど裏返しの設計。
+- **Superset の教訓**: エンジンを一切自作せず、Claude Code/Codex/Cursor/Gemini を git worktree で並列に束ねる「指揮者」に陣取る。ベンダーがネイティブ機能を出すほど **束ねる対象が増える＝燃料**になる。Bezier が pause した理由のちょうど裏返しの設計。
 - **Claude デザイナーの教訓**: "designers ship code, engineers design" / pod = 5 AI Builder + エージェント艦隊。価値は**新しい働き方そのもの**。ただし Anthropic は **Claude Design**（2026-04, claude.ai/design）を公式リリース済 = プロト生成→handoff の「エンジン」は本家がネイティブ提供開始。
 
-→ continuum の pause は正しかった（エンジン層に賭けていた）。だが2つの動きは、**未検証で残した SoR層こそ価値の在処**だと外部から裏書きしている。
+→ Bezier の pause は正しかった（エンジン層に賭けていた）。だが2つの動きは、**未検証で残した SoR層こそ価値の在処**だと外部から裏書きしている。
 
 ---
 
@@ -30,17 +30,17 @@
 | **Crystal / Nimbalyst** | — | 並列オーケストレーション |
 | **Claude Squad / Emdash / Baton / Agent Kanban / oh-my-claudecode / Superpowers** | OSS 中心 | いずれも**コード**生成エージェントの並走管理 |
 
-**観察**: この層は「ボトルネック = 複数エージェントの協調」という同一テーゼで**急速にコモディティ化＋混雑**。OSS無料が標準で、**収益化の道筋が全員不透明**。ここに新規で入るのは continuum の pause 理由（コモディティ化）を繰り返すだけ。
+**観察**: この層は「ボトルネック = 複数エージェントの協調」という同一テーゼで**急速にコモディティ化＋混雑**。OSS無料が標準で、**収益化の道筋が全員不透明**。ここに新規で入るのは Bezier の pause 理由（コモディティ化）を繰り返すだけ。
 
 ### レイヤB: デザイン/プロト生成エンジン（= ネイティブが上から侵食）
 
 | プレイヤー | 動き |
 |---|---|
 | **Claude Design**（Anthropic） | 自然言語→マルチページ・プロト/スライド/LP、Claude Code に handoff bundle |
-| **v0 / Lovable / Bolt** | 白紙からの生成（continuum の「文脈生成」が差別化軸だった相手） |
+| **v0 / Lovable / Bolt** | 白紙からの生成（Bezier の「文脈生成」が差別化軸だった相手） |
 | **Codex preview** | エージェントがネイティブに preview を担い始め（DEC-004 のトリガー） |
 
-**観察**: continuum の楔（既存repo→実部品で文脈生成）は技術的に実証済（ISSUE-002〜005 PASS）だが、**この層自体がネイティブ機能に飲まれつつある**。エンジン単体での事業化は非推奨のまま。
+**観察**: Bezier の楔（既存repo→実部品で文脈生成）は技術的に実証済（ISSUE-002〜005 PASS）だが、**この層自体がネイティブ機能に飲まれつつある**。エンジン単体での事業化は非推奨のまま。
 
 ### レイヤC: 設計/プロダクト意思決定の SoR・記憶（= 空白が残っている）★
 
@@ -51,31 +51,31 @@
 | **Spec Kit Agents**（arxiv 2604.05278）= orchestrator(状態機械) + PM agent(要件明確化) + dev agent + **人間の承認チェックポイント**。学術だが「PM主導オーケストレーション + 承認ゲート」型の存在証明 | arxiv |
 | Mem0 の4スコープ記憶（user/agent/session/org）= **org_id 共有組織コンテキスト**が production gap | mem0.ai |
 
-**観察**: コーディングの ADR/メモリは語られ始めたが、**「デザイン/プロダクトの意思決定（spec・採否・QA・ブランド整合）を、どのエージェントを使っても一箇所に貯める SoR」は誰も占有していない**。ここが continuum の未検証 SoR層と一致する空白。
+**観察**: コーディングの ADR/メモリは語られ始めたが、**「デザイン/プロダクトの意思決定（spec・採否・QA・ブランド整合）を、どのエージェントを使っても一箇所に貯める SoR」は誰も占有していない**。ここが Bezier の未検証 SoR層と一致する空白。
 
 ---
 
-## 3. continuum の再ポジショニング案
+## 3. Bezier の再ポジショニング案
 
-| 旧 continuum（PAUSED） | 再定義（landscape を踏まえ） |
+| 旧 Bezier（PAUSED） | 再定義（landscape を踏まえ） |
 |---|---|
 | 自作エンジンでモック生成（レイヤB） | エンジンは Claude Code/Codex/Claude Design に**委譲**（Agent SDK で実証済 = DEC-002） |
 | 1人 maker の Spec→Design→QA ループ | **maker ループ（intent→spec→design→qa→build）を任意エージェント横断でオーケストレーション + 承認ゲート + 設計判断の SoR/記憶**（レイヤC） |
 | 楔 = 「v0 への文脈生成」 | 楔 = **「チームの設計判断・承認・記憶が、どのエージェントを使っても一箇所に貯まるプロセスSoR」**（Sierra「プロセスのSoR」の design/PM 版） |
 
-**Superset との棲み分け**: Superset = **コード**を書く複数エージェントの指揮者。continuum 空白 = **プロダクト/デザインの意思決定**（spec・採否・QA・ブランド整合・なぜそうしたか）を横断で束ねる指揮者 + 台帳。
+**Superset との棲み分け**: Superset = **コード**を書く複数エージェントの指揮者。Bezier 空白 = **プロダクト/デザインの意思決定**（spec・採否・QA・ブランド整合・なぜそうしたか）を横断で束ねる指揮者 + 台帳。
 
 ---
 
 ## 4. Founder = First User の事実確認（dogfood の現実性）
 
-CEO は既に **手作業で continuum の SoR層を運用している**:
+CEO は既に **手作業で Bezier の SoR層を運用している**:
 - `sota-ai-ventures/playbook/decisions-log.md`（DEC-001〜）= 意思決定台帳
 - `approval-queue.md` = 承認ゲート
 - `*_session-handoff.md` / `memory/MEMORY.md` = プロセス記憶
 - 仮想法人（COO + 専門家 + ペルソナ Subagent）= maker ループのオーケストレーション
 
-→ **MEMORY.md が Claude Code メモリ案のプロトタイプだったのと同型**。continuum の SoR層は「CEO が毎日手で回している運用」の製品化＝最短の dogfood。indie-solo doc の成功要因 #1（Founder=First User）に完全合致。
+→ **MEMORY.md が Claude Code メモリ案のプロトタイプだったのと同型**。Bezier の SoR層は「CEO が毎日手で回している運用」の製品化＝最短の dogfood。indie-solo doc の成功要因 #1（Founder=First User）に完全合致。
 
 ---
 
@@ -93,7 +93,7 @@ CEO は既に **手作業で continuum の SoR層を運用している**:
 dogfood-first を前提に、段階を分ける:
 
 - **A. 再定義 thesis を1本書く（DEC化）** — engine→「ベンダー横断のプロダクト意思決定オーケストレーター + 設計記憶SoR」。レイヤC 占有を明文化。
-- **B. 自分用 v0 を最小で作り切る** — まず CEO 自身の sota-ai-ventures 運用（decisions-log/approval-queue/handoff/memory）を continuum app に載せ替え、毎日使う。エンジンは Claude Code 委譲（既存 spike 資産流用）。
+- **B. 自分用 v0 を最小で作り切る** — まず CEO 自身の sota-ai-ventures 運用（decisions-log/approval-queue/handoff/memory）を Bezier app に載せ替え、毎日使う。エンジンは Claude Code 委譲（既存 spike 資産流用）。
 - **C. 窓の監視** — Claude Code の「設計判断記録」ネイティブ統合の有無を定期ウォッチ（時限リスク）。
 
 ---

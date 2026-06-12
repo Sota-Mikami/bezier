@@ -11,7 +11,7 @@
 
 ## なぜ
 
-ISSUE-003 で「見える」は出たが、preview ルートは chom-chom 専用に手書き。CEO が**普段の任意 repo（mikan/Sotas/個人）でそのまま使える**道具にするには、scene-graph から **動的に** preview を組み立てる必要がある。これで continuum が日常 dogfood に乗る。
+ISSUE-003 で「見える」は出たが、preview ルートは chom-chom 専用に手書き。CEO が**普段の任意 repo（mikan/Sotas/個人）でそのまま使える**道具にするには、scene-graph から **動的に** preview を組み立てる必要がある。これで Bezier が日常 dogfood に乗る。
 
 ## スコープ
 

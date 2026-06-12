@@ -1,9 +1,9 @@
 {
   "indexName": "template",
   "repoPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template",
-  "previewDir": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/continuum-preview",
-  "pagePath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/continuum-preview/page.tsx",
-  "layoutPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/continuum-preview/layout.tsx",
+  "previewDir": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/bezier-preview",
+  "pagePath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/bezier-preview/page.tsx",
+  "layoutPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/_template/src/app/bezier-preview/layout.tsx",
   "renderRate": 71,
   "realCount": 5,
   "fallbackCount": 2,

@@ -1,6 +1,6 @@
 /**
- * continuum ISSUE-003 — screenshot preview
- * chom-chom の _continuum_preview を Playwright で撮影する。
+ * bezier ISSUE-003 — screenshot preview
+ * chom-chom の _bezier_preview を Playwright で撮影する。
  *
  * 使い方:
  *   node spike/screenshot-preview.mjs
@@ -42,25 +42,25 @@ async function main() {
   const shots = [
     {
       id: "overview",
-      url: `${BASE_URL}/continuum-preview`,
+      url: `${BASE_URL}/bezier-preview`,
       filename: "render-chomchom.png",
       desc: "overview: 全ノード一覧 + render率表",
     },
     {
       id: "vocabflashcard",
-      url: `${BASE_URL}/continuum-preview?tab=vocabflashcard`,
+      url: `${BASE_URL}/bezier-preview?tab=vocabflashcard`,
       filename: "render-chomchom-flashcard.png",
       desc: "VocabFlashcard: 実コンポーネント全画面",
     },
     {
       id: "tabbar",
-      url: `${BASE_URL}/continuum-preview?tab=tabbar`,
+      url: `${BASE_URL}/bezier-preview?tab=tabbar`,
       filename: "render-chomchom-tabbar.png",
       desc: "TabBar: 実コンポーネント",
     },
     {
       id: "achievement",
-      url: `${BASE_URL}/continuum-preview?tab=achievement`,
+      url: `${BASE_URL}/bezier-preview?tab=achievement`,
       filename: "render-chomchom-achievement.png",
       desc: "AchievementCelebration: ボタン付き",
     },

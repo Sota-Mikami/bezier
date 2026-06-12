@@ -1,4 +1,4 @@
-# continuum — Claude Code Context
+# Bezier — Claude Code Context
 
 AI-native な PdM+Design ツール。PdM/Designer/Engineer/QA の境界を溶かし、一人の「maker」が **Spec → Design → Mock → QA** を連続的に回せる世界の業界標準を目指す。Personal-first → dogfood → SaaS。
 
@@ -33,4 +33,4 @@ AI-native な PdM+Design ツール。PdM/Designer/Engineer/QA の境界を溶か
 
 ## 戦略フレーム（親 CLAUDE.md の shared/knowledge を参照）
 
-固い問題 / Sierra SoA→Interface→SoR / Anthropic AI-Native Playbook。本プロジェクトの適用は `playbook/strategy/2026-06-04_continuum-thesis-v1.md`。
+固い問題 / Sierra SoA→Interface→SoR / Anthropic AI-Native Playbook。本プロジェクトの適用は `playbook/strategy/2026-06-04_Bezier-thesis-v1.md`。

@@ -146,7 +146,7 @@ export default function WorkspacePage() {
   const pendingInputRef = React.useRef<string | null>(null);
 
   // --- v0.3 Canvas -----------------------------------------------------------
-  // `screens` is the in-memory mirror of <root>/.continuum/screens.json (the
+  // `screens` is the in-memory mirror of <root>/.bezier/screens.json (the
   // Git-managed SoR). Every mutation (move/add/remove) updates state AND writes
   // the doc back so layout round-trips. `screensRef` mirrors the latest array so
   // the move/add/remove callbacks compute from fresh data without stale closures
@@ -441,7 +441,7 @@ export default function WorkspacePage() {
  * Canvas pane (v0.3). A toolbar (Board/Gallery sub-toggle + Interact toggle +
  * Add screen) over either the react-flow <CanvasBoard> or the <ScreenGallery>.
  * All mutations bubble to the page, which owns the screens state + persistence
- * to <root>/.continuum/screens.json. CanvasBoard is the dynamic({ssr:false})
+ * to <root>/.bezier/screens.json. CanvasBoard is the dynamic({ssr:false})
  * wrapper declared at module top.
  */
 function CanvasView({

@@ -4,7 +4,7 @@
 > dogfood で CEO: Preview で「変だな」→ spec を更新/会話で指示、の往復がやりにくい。課題=①手で直した spec を「読み直して」と毎回言う手間 ②離脱→復帰でチャットが消える/復元法が不明。理想=チャットだけで Spec も Design も回る。
 
 ## 0. 根因
-- ①: **agent は worktree でコードを編集するが、spec.md は worktree の外**（main repo `.continuum/drafts/<ulid>/`）→ agent が spec を触れず、Spec とチャットが分断。
+- ①: **agent は worktree でコードを編集するが、spec.md は worktree の外**（main repo `.bezier/drafts/<ulid>/`）→ agent が spec を触れず、Spec とチャットが分断。
 - ②: 右の常駐ターミナルは**ライブ pty**＝離脱/再起動で session 揮発、transcript も resume も無い。
 
 ## 1. Spec をチャットに繋ぐ（A+B / 課題①）
@@ -20,7 +20,7 @@
 - **resume（`claude --continue`）**: issue を開いた時に worktree が既にあれば、右パネルの空状態を **「セッションを再開」**（= `claude --continue` を worktree で起動）に。Implement=新規 seed / 再オープン=resume。`--continue` が前回 session 無しで失敗したら新規にフォールバック。
 - **durable な activity thread（左「スレッド」）**: issue の主要イベントを記録して左に時系列表示（pty が死んでても見える）。
   - イベント: 起票 / Implement / Re-run / Sync with main / Accept / Merge / Discard / （agent が spec を更新）。
-  - 保存: `.continuum/issues/<ulid>/thread.json`（gitignore のローカル作業ストア）。各 `{type, at, note}`。
+  - 保存: `.bezier/issues/<ulid>/thread.json`（gitignore のローカル作業ストア）。各 `{type, at, note}`。
   - ※ フルチャット transcript のレンダは**スコープ外**（resume で会話は見える）。thread は構造化イベントログ。
 
 ## 3. UI まとめ（Issue 詳細）

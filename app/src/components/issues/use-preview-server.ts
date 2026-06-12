@@ -344,7 +344,7 @@ export function usePreviewServer(
         if (rel) {
           const res = await ensureWorktreeTauriTarget(root, worktreePath, rel);
           if (!res.cloned && res.note) {
-            setLog((l) => `${l}[continuum] ${res.note}\n`);
+            setLog((l) => `${l}[Bezier] ${res.note}\n`);
           }
         }
         setTauriPort(launchPort);

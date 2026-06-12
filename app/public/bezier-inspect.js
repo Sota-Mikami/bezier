@@ -1,19 +1,19 @@
 /*
- * continuum-inspect — element-pick helper for the continuum design-feedback
+ * bezier-inspect — element-pick helper for the Bezier design-feedback
  * overlay (DEC-046 #3). Drop this into a previewed app (e.g. copy to your
- * project's public/ and add `<script src="/continuum-inspect.js"></script>`, or
- * load it only in dev). It lets continuum's "要素を選択" tool ask the preview to
- * pick a precise element — which continuum cannot do itself, because the preview
+ * project's public/ and add `<script src="/bezier-inspect.js"></script>`, or
+ * load it only in dev). It lets Bezier's "要素を選択" tool ask the preview to
+ * pick a precise element — which Bezier cannot do itself, because the preview
  * iframe is cross-origin.
  *
  * Protocol (postMessage, targetOrigin "*"):
- *   parent → preview: { source:"continuum", type:"ping" | "pick-start" | "pick-cancel" }
- *   preview → parent: { source:"continuum-inspect", type:"pong" }
- *                     { source:"continuum-inspect", type:"picked", payload:{ x,y,selector,tag,classes,text } }
+ *   parent → preview: { source:"Bezier", type:"ping" | "pick-start" | "pick-cancel" }
+ *   preview → parent: { source:"bezier-inspect", type:"pong" }
+ *                     { source:"bezier-inspect", type:"picked", payload:{ x,y,selector,tag,classes,text } }
  * x,y are fractions (0–1) of the preview viewport.
  *
  * No-op if not embedded in an iframe. Safe to ship in production (idle until a
- * continuum "ping" arrives).
+ * Bezier "ping" arrives).
  */
 (function () {
   if (window.parent === window) return; // not in an iframe
@@ -24,7 +24,7 @@
   function ensureHighlight() {
     if (hl) return hl;
     hl = document.createElement("div");
-    hl.setAttribute("data-continuum-inspect", "");
+    hl.setAttribute("data-bezier-inspect", "");
     var s = hl.style;
     s.position = "fixed";
     s.zIndex = "2147483647";
@@ -110,7 +110,7 @@
     };
     stop();
     window.parent.postMessage(
-      { source: "continuum-inspect", type: "picked", payload: payload },
+      { source: "bezier-inspect", type: "picked", payload: payload },
       "*",
     );
   }
@@ -139,9 +139,9 @@
 
   window.addEventListener("message", function (e) {
     var d = e.data;
-    if (!d || d.source !== "continuum") return;
+    if (!d || d.source !== "bezier") return;
     if (d.type === "ping") {
-      window.parent.postMessage({ source: "continuum-inspect", type: "pong" }, "*");
+      window.parent.postMessage({ source: "bezier-inspect", type: "pong" }, "*");
     } else if (d.type === "pick-start") {
       start();
     } else if (d.type === "pick-cancel") {

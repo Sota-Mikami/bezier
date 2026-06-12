@@ -101,6 +101,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bezier"
+version = "0.1.0"
+dependencies = [
+ "deranged",
+ "hashbrown 0.16.1",
+ "idna_adapter",
+ "indexmap 2.13.1",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "serde_spanned 1.0.4",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "time",
+ "time-core",
+ "time-macros",
+ "toml 1.0.7+spec-1.1.0",
+ "toml_datetime 1.0.1+spec-1.1.0",
+ "toml_parser",
+ "toml_writer",
+ "unicode-segmentation",
+ "uuid",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -332,32 +358,6 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
-]
-
-[[package]]
-name = "continuum"
-version = "0.1.0"
-dependencies = [
- "deranged",
- "hashbrown 0.16.1",
- "idna_adapter",
- "indexmap 2.13.1",
- "portable-pty",
- "serde",
- "serde_json",
- "serde_spanned 1.0.4",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "time",
- "time-core",
- "time-macros",
- "toml 1.0.7+spec-1.1.0",
- "toml_datetime 1.0.1+spec-1.1.0",
- "toml_parser",
- "toml_writer",
- "unicode-segmentation",
- "uuid",
 ]
 
 [[package]]

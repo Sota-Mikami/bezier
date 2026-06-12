@@ -112,7 +112,7 @@ export function openInEditor(path: string): Promise<string> {
 
 /**
  * Recursively remove a file or directory. Guarded on the Rust side to only
- * delete paths under a `.continuum` working store (continuum's local issue
+ * delete paths under a `.bezier` working store (Bezier's local issue
  * artifacts), never arbitrary repo files. No-op when the path is absent.
  * -> invoke("remove_path", { path })
  */
@@ -122,7 +122,7 @@ export function removePath(path: string): Promise<void> {
 
 /**
  * Move/rename a file or directory. Guarded on the Rust side to paths under a
- * `.continuum` working store (used to shuffle issues into / out of the trash).
+ * `.bezier` working store (used to shuffle issues into / out of the trash).
  * -> invoke("move_path", { from, to })
  */
 export function movePath(from: string, to: string): Promise<void> {
@@ -130,7 +130,7 @@ export function movePath(from: string, to: string): Promise<void> {
 }
 
 /**
- * The continuum app-data directory (created if absent). Worktrees are hosted
+ * The Bezier app-data directory (created if absent). Worktrees are hosted
  * here, OUTSIDE the user's repo, so workspace-root inference (Next.js/Turbopack)
  * doesn't trip over the parent repo's lockfile. -> invoke("app_data_dir")
  */

@@ -9,6 +9,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { BezierMark } from "@/components/bezier-mark";
 import {
   Plus,
   Search,
@@ -387,7 +388,7 @@ export function AppSidebar() {
   }, []);
 
   // Open a trashed issue's read-only preview in the main pane (switch the active
-  // repo to its owner so the preview reads the right .continuum/trash).
+  // repo to its owner so the preview reads the right .bezier/trash).
   const selectTrash = React.useCallback(
     (repoPath: string, id: string) => {
       if (repoPath !== root) switchTo(repoPath);
@@ -417,10 +418,8 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="gap-2 p-2">
         <div className="flex items-center gap-2 px-1 pt-1">
-          <div className="flex aspect-square size-7 items-center justify-center rounded-md bg-foreground text-background">
-            <span className="text-sm font-bold">c</span>
-          </div>
-          <span className="text-sm font-semibold">continuum</span>
+          <BezierMark className="size-6 text-foreground" />
+          <span className="text-sm font-semibold tracking-tight">Bezier</span>
         </div>
 
         {!showTrash && (
@@ -916,7 +915,7 @@ function notifyAttention(s: AgentStatus): void {
           : "エージェントが完了しました";
     const fire = () => {
       try {
-        new Notification("continuum", { body });
+        new Notification("Bezier", { body });
       } catch {
         /* notifications unavailable */
       }

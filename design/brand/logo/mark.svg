@@ -1,0 +1,15 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+  <!-- The curve = the agent's output (ink). Thinner/harder so it reads as a drawn path, not a ribbon. -->
+  <path d="M11 35 C24 35 24 13 37 13" stroke="#1c1c24" stroke-width="4" stroke-linecap="round"/>
+  <!-- The handles = the tangent lines you hold (handle-indigo). Heavier = intentional, not hairline. -->
+  <g stroke="#4750d4" stroke-width="2.2" stroke-linecap="round">
+    <path d="M11 35 L24 35"/>
+    <path d="M37 13 L24 13"/>
+  </g>
+  <!-- Control points: round, off-curve, equal weight to the anchors (pen-tool grammar). -->
+  <circle cx="24" cy="35" r="2" fill="#4750d4"/>
+  <circle cx="24" cy="13" r="2" fill="#4750d4"/>
+  <!-- Anchor points: square, on-curve. -->
+  <rect x="9" y="33" width="4" height="4" rx="0.8" fill="#1c1c24"/>
+  <rect x="35" y="11" width="4" height="4" rx="0.8" fill="#1c1c24"/>
+</svg>

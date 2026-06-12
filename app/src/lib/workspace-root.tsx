@@ -21,8 +21,8 @@ import { openFolder } from "@/lib/workspace";
 import { gitRepoStatus, gitInit } from "@/lib/git";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
 
-const STORAGE_KEY = "continuum:workspace-root";
-const RECENTS_KEY = "continuum:recent-repos";
+const STORAGE_KEY = "bezier:workspace-root";
+const RECENTS_KEY = "bezier:recent-repos";
 
 export interface RepoEntry {
   /** Absolute path of the repo folder. */
@@ -66,7 +66,7 @@ async function ensureUsableRepo(picked: string): Promise<string | null> {
 
 async function offerInit(picked: string): Promise<string | null> {
   const ok = await confirmDialog(
-    `このフォルダは git リポジトリではありません。continuum で使うには git リポジトリが必要です。今ここで git init し、現在のファイルで初回コミットを作成しますか？`,
+    `このフォルダは git リポジトリではありません。Bezier で使うには git リポジトリが必要です。今ここで git init し、現在のファイルで初回コミットを作成しますか？`,
     {
       title: "git リポジトリにする",
       okLabel: "git init して開く",
@@ -186,7 +186,7 @@ function setRootValue(v: string | null): void {
 }
 
 // Forget a repo from the sidebar list (DEC-041). Non-destructive: the folder +
-// git + its .continuum (issues) are untouched — re-opening it brings it back.
+// git + its .bezier (issues) are untouched — re-opening it brings it back.
 // If it was the active root, switch to another recent (or clear).
 function removeRecent(path: string): void {
   recentsMap.delete(path);
@@ -272,7 +272,7 @@ export function WorkspaceRootProvider({
   );
   const hydrated = React.useSyncExternalStore(subscribe, getTrue, getFalse);
 
-  // Open-folder guardrails (DEC-035 / OPEN-002). continuum works per git repo,
+  // Open-folder guardrails (DEC-035 / OPEN-002). Bezier works per git repo,
   // and worktrees are cut off the repo TOPLEVEL. So when you open a folder:
   //   - repo root         → use it
   //   - subfolder of a repo → opening it would make worktrees span the whole

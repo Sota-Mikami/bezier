@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * continuum ISSUE-005 — Revertable Preview Shim Engine
+ * bezier ISSUE-005 — Revertable Preview Shim Engine
  *
  * 役割:
- *   - 対象 repo に preview shim（AuthGate bypass + continuum-preview ルート）を一時適用する
+ *   - 対象 repo に preview shim（AuthGate bypass + bezier-preview ルート）を一時適用する
  *   - 適用前にバックアップ＋マニフェストを記録し、終了/SIGINT/クラッシュ時に原子的に復元する
  *   - DEC-003 必須安全制約を実装する
  *
  * 安全制約（DEC-003）:
  *   ① gitignore 追記は専用マーカーで識別し、終了時に逆算除去する
  *   ② 追跡済みファイル（AuthGate.tsx 等）はバックアップをとってから変更し、終了時に復元する
- *   ③ 生成ファイル（continuum-preview/）は生成→削除で復元する
+ *   ③ 生成ファイル（bezier-preview/）は生成→削除で復元する
  *   ④ マニフェストは対象 repo の外（spike/out/）に保存する → repo に痕跡を残さない
  *   ⑤ SIGINT/SIGTERM/uncaughtException/exit でも復元ハンドラを登録する
  *   ⑥ マニフェストが残っていれば次回起動時に強制復元できる
@@ -210,10 +210,10 @@ export class ShimEngine {
       // 1. AuthGate bypass 注入
       await this._injectAuthGateBypass();
 
-      // 2. .gitignore に continuum-preview/ を追記（まだなければ）
+      // 2. .gitignore に bezier-preview/ を追記（まだなければ）
       await this._ensureGitignore();
 
-      // 3. continuum-preview/ ディレクトリを生成（generate-preview.mjs が別途ファイルを書く）
+      // 3. bezier-preview/ ディレクトリを生成（generate-preview.mjs が別途ファイルを書く）
       await this._ensurePreviewDir();
 
     } catch (e) {
@@ -312,8 +312,8 @@ export class ShimEngine {
 
     // すでに bypass がある?
     if (
-      content.includes("continuum-preview") ||
-      content.includes("CONTINUUM_PREVIEW")
+      content.includes("bezier-preview") ||
+      content.includes("BEZIER_PREVIEW")
     ) {
       console.log(`[shim] AuthGate bypass already present — skip`);
       return;
@@ -350,11 +350,11 @@ export class ShimEngine {
 
     // 関数先頭に bypass 挿入
     const fnIdx = content.indexOf(fnMatch[0]) + fnMatch[0].length;
-    const BYPASS_MARKER = `// continuum preview bypass — ISSUE-005 (auto-reverted after preview)`;
+    const BYPASS_MARKER = `// bezier preview bypass — ISSUE-005 (auto-reverted after preview)`;
     const bypass = `
   ${BYPASS_MARKER}
-  const __continuumPathname = usePathname();
-  if (__continuumPathname.startsWith('/continuum-preview')) return <>{children}</>;
+  const __bezierPathname = usePathname();
+  if (__bezierPathname.startsWith('/bezier-preview')) return <>{children}</>;
 `;
     content = content.slice(0, fnIdx) + bypass + content.slice(fnIdx);
 
@@ -384,9 +384,9 @@ export class ShimEngine {
   async _ensureGitignore() {
     const gitignorePath = path.join(this.repoPath, ".gitignore");
     const marker = this.hasSrc
-      ? "src/app/continuum-preview/"
-      : "app/continuum-preview/";
-    const SHIM_BLOCK_START = `\n# continuum dogfood preview — ISSUE-005 shim (auto-reverted)\n`;
+      ? "src/app/bezier-preview/"
+      : "app/bezier-preview/";
+    const SHIM_BLOCK_START = `\n# bezier dogfood preview — ISSUE-005 shim (auto-reverted)\n`;
     const shimBlock = `${SHIM_BLOCK_START}${marker}\n`;
 
     if (fs.existsSync(gitignorePath)) {
@@ -401,7 +401,7 @@ export class ShimEngine {
         }
         // ISSUE-004 などが書いた古い追記がある → 今回のシムとして管理する
         // 古いブロックを検索して shim block に置換
-        const oldBlock = /\n# continuum dogfood preview \(throwaway\)\n[^\n]*continuum-preview\/\n/g;
+        const oldBlock = /\n# bezier dogfood preview \(throwaway\)\n[^\n]*bezier-preview\/\n/g;
         if (gi.match(oldBlock)) {
           const backupDir = path.join(BACKUP_BASE, this.indexName);
           fs.mkdirSync(backupDir, { recursive: true });
@@ -461,11 +461,11 @@ export class ShimEngine {
     }
   }
 
-  // ─── continuum-preview ディレクトリ ──────────────────────────────────────────
+  // ─── bezier-preview ディレクトリ ──────────────────────────────────────────
 
   async _ensurePreviewDir() {
     if (!this.appDir) return;
-    const previewDir = path.join(this.appDir, "continuum-preview");
+    const previewDir = path.join(this.appDir, "bezier-preview");
 
     if (fs.existsSync(previewDir)) {
       // 既存の場合も管理下に置く（削除で復元）

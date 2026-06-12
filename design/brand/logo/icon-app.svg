@@ -1,0 +1,14 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier app icon">
+  <rect width="512" height="512" rx="115" fill="#16161c"/>
+  <g transform="translate(16 16) scale(10)">
+    <path d="M11 35 C24 35 24 13 37 13" stroke="#f6f6f8" stroke-width="3.8" stroke-linecap="round"/>
+    <g stroke="#7b84ef" stroke-width="2.2" stroke-linecap="round">
+      <path d="M11 35 L24 35"/>
+      <path d="M37 13 L24 13"/>
+    </g>
+    <circle cx="24" cy="35" r="2" fill="#7b84ef"/>
+    <circle cx="24" cy="13" r="2" fill="#7b84ef"/>
+    <rect x="9" y="33" width="4" height="4" rx="0.8" fill="#f6f6f8"/>
+    <rect x="35" y="11" width="4" height="4" rx="0.8" fill="#f6f6f8"/>
+  </g>
+</svg>

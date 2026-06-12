@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "continuum",
+  "productName": "Bezier",
   "version": "0.1.0",
-  "identifier": "com.continuum.app",
+  "identifier": "com.bezier.app",
   "build": {
     "beforeDevCommand": "npm run dev -- -p 3210",
     "devUrl": "http://localhost:3210",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "continuum",
+        "title": "Bezier",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

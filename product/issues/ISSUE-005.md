@@ -7,7 +7,7 @@
 | **Owner** | Principal Engineer |
 | **状態** | ✅ 完了 (2026-06-05) |
 | **由来** | ISSUE-004 で判明した recurring な壁。DEC-003（revertable shim 許可） |
-| **目的** | continuum preview が、対象 repo の **auth gate / provider 依存**を、gitignore・自動復元の一時 shim で超え、実 repo の clean render 率を上げる |
+| **目的** | Bezier preview が、対象 repo の **auth gate / provider 依存**を、gitignore・自動復元の一時 shim で超え、実 repo の clean render 率を上げる |
 
 ## なぜ（DEC-003）
 
@@ -16,7 +16,7 @@
 ## スコープ
 
 1. **shim 注入エンジン**: preview 実行時に、対象 repo へ最小の preview-mode shim を**一時適用**：
-   - **auth bypass**: `AuthGate` 等の認証/パスワード gate を preview ルートでだけ通過（env フラグ `CONTINUUM_PREVIEW` 検知 or 一時パッチ）。
+   - **auth bypass**: `AuthGate` 等の認証/パスワード gate を preview ルートでだけ通過（env フラグ `BEZIER_PREVIEW` 検知 or 一時パッチ）。
    - **provider wrap**: 対象 repo の root layout/providers を検出し preview ルートを wrap。
 2. **安全機構（DEC-003 必須制約）**:
    - 触る前に**バックアップ**、終了時に**原子的に復元**。SIGINT/クラッシュでも復元する（finally / 復元マニフェスト方式）。

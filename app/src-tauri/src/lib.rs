@@ -132,7 +132,7 @@ fn write_file(path: String, contents: String) -> Result<(), String> {
         .parent()
         .ok_or_else(|| format!("write_file {path}: path has no parent directory"))?;
     // Create the parent tree if it does not exist yet (e.g. the workspace SoR
-    // dir <root>/.continuum on first save). `target` already passed the `..`
+    // dir <root>/.bezier on first save). `target` already passed the `..`
     // traversal guard above, so every parent component is safe to materialize.
     // canonicalize (below) then resolves symlinks and validates the real path.
     if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -208,7 +208,7 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
 /// Uses macOS `screencapture -x -R x,y,w,h` (no sound, non-interactive). The
 /// region is in POINTS in the global display coordinate space (top-left origin);
 /// the caller computes it from the window position + the preview element rect.
-/// `out_path` must be under a `.continuum` store. Requires Screen Recording
+/// `out_path` must be under a `.bezier` store. Requires Screen Recording
 /// permission (macOS prompts on first use; a denied capture yields a blank/err).
 #[tauri::command]
 fn capture_region(
@@ -222,9 +222,9 @@ fn capture_region(
     reject_traversal(target)?;
     if !target
         .components()
-        .any(|c| c.as_os_str() == ".continuum")
+        .any(|c| c.as_os_str() == ".bezier")
     {
-        return Err("refusing to write a capture outside a .continuum store".to_string());
+        return Err("refusing to write a capture outside a .bezier store".to_string());
     }
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)
@@ -291,8 +291,8 @@ fn open_in_editor(path: String) -> Result<String, String> {
 }
 
 /// Recursively remove a file or directory. Guarded: rejects `..` traversal and
-/// requires the resolved path to live under a `.continuum` working store, so it
-/// can only delete continuum's local issue artifacts — never arbitrary repo
+/// requires the resolved path to live under a `.bezier` working store, so it
+/// can only delete Bezier's local issue artifacts — never arbitrary repo
 /// files. No-op (Ok) when the path does not exist.
 #[tauri::command]
 fn remove_path(path: String) -> Result<(), String> {
@@ -306,10 +306,10 @@ fn remove_path(path: String) -> Result<(), String> {
     reject_traversal(&canonical)?;
     let under_store = canonical
         .components()
-        .any(|c| c.as_os_str() == ".continuum");
+        .any(|c| c.as_os_str() == ".bezier");
     if !under_store {
         return Err(format!(
-            "refusing to remove path outside a .continuum store: {}",
+            "refusing to remove path outside a .bezier store: {}",
             canonical.display()
         ));
     }
@@ -322,7 +322,7 @@ fn remove_path(path: String) -> Result<(), String> {
 
 /// Move/rename a file or directory. Guarded like remove_path: rejects `..` and
 /// requires BOTH the source and the destination's parent to live under a
-/// `.continuum` working store (so it can only shuffle continuum's own artifacts,
+/// `.bezier` working store (so it can only shuffle Bezier's own artifacts,
 /// e.g. into / out of the trash). Creates the destination's parent tree.
 #[tauri::command]
 fn move_path(from: String, to: String) -> Result<(), String> {
@@ -337,10 +337,10 @@ fn move_path(from: String, to: String) -> Result<(), String> {
         fs::canonicalize(src).map_err(|e| format!("move_path resolve from {from}: {e}"))?;
     if !canon_src
         .components()
-        .any(|c| c.as_os_str() == ".continuum")
+        .any(|c| c.as_os_str() == ".bezier")
     {
         return Err(format!(
-            "refusing to move from outside a .continuum store: {}",
+            "refusing to move from outside a .bezier store: {}",
             canon_src.display()
         ));
     }
@@ -355,10 +355,10 @@ fn move_path(from: String, to: String) -> Result<(), String> {
         .map_err(|e| format!("move_path resolve dst parent {to}: {e}"))?;
     if !canon_dst_parent
         .components()
-        .any(|c| c.as_os_str() == ".continuum")
+        .any(|c| c.as_os_str() == ".bezier")
     {
         return Err(format!(
-            "refusing to move to outside a .continuum store: {}",
+            "refusing to move to outside a .bezier store: {}",
             canon_dst_parent.display()
         ));
     }
@@ -514,7 +514,7 @@ fn pty_spawn(
     builder.cwd(&opts.cwd);
 
     // Strip env vars that make a spawned agent (Claude / Codex) believe it is a
-    // NESTED child session. When continuum is launched from inside a cmux or
+    // NESTED child session. When Bezier is launched from inside a cmux or
     // Claude-Code terminal, CLAUDECODE / CLAUDE_CODE_* / CMUX_* / AI_AGENT are
     // inherited; the agent then "bridges" its session to the parent instead of
     // writing a local transcript — which breaks `claude --continue` (no local
@@ -1076,7 +1076,7 @@ fn git_repo_status(path: String) -> Result<RepoStatus, String> {
 
 /// `git init` a folder AND create an initial commit of its current files (the
 /// open-folder guardrail's "make this a repo" path). The initial commit is
-/// required because continuum's worktrees are cut off HEAD — without it, the
+/// required because Bezier's worktrees are cut off HEAD — without it, the
 /// repo has an unborn HEAD and `git worktree add` fails, and the worktree would
 /// be empty (it only contains committed files). Falls back to a generic commit
 /// identity if the user has none configured, so it works for git newcomers.
@@ -1110,9 +1110,9 @@ fn git_init(path: String) -> Result<(), String> {
     if needs_identity {
         let retry = run(&[
             "-c",
-            "user.name=continuum",
+            "user.name=bezier",
             "-c",
-            "user.email=continuum@localhost",
+            "user.email=bezier@localhost",
             "commit",
             "--allow-empty",
             "-m",
@@ -1202,7 +1202,7 @@ fn git_commit_all(worktree_path: String, message: String) -> Result<String, Stri
     git_run(&["-C", &worktree_path, "add", "-A"])?;
     // `-m` with an empty message is rejected by git; guard with a fallback.
     let msg = if message.trim().is_empty() {
-        "continuum: implement issue"
+        "bezier: implement issue"
     } else {
         message.as_str()
     };
@@ -1784,8 +1784,8 @@ fn clone_dir(src: String, dst: String) -> Result<(), String> {
     Ok(())
 }
 
-/// The continuum app-data directory (e.g. ~/Library/Application Support/
-/// com.continuum.app on macOS). Created if absent. Used to host git worktrees
+/// The Bezier app-data directory (e.g. ~/Library/Application Support/
+/// com.bezier.app on macOS). Created if absent. Used to host git worktrees
 /// OUTSIDE the user's repo — a worktree nested inside the repo makes tools that
 /// infer their workspace root by walking up (Next.js/Turbopack, package
 /// managers) find the PARENT repo's lockfile/node_modules and refuse to compile

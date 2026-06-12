@@ -3,12 +3,12 @@
 
 > 「いつでも作業再開」用の要約。1日でゼロ→ここまで来た。次セッションはこれを読めば即合流できる。
 
-## 1. continuum とは（30秒）
+## 1. Bezier とは（30秒）
 AI-native な PdM+Design ツール。一人の maker が **Spec → Design → QA → 実装** を連続的に回す。楔=「既存 repo の実部品を流用したモック生成」（v0/Lovable の白紙生成に対する**文脈生成**）。Personal-first → dogfood → SaaS。ステージ=Idea。
 
 ## 2. 今日やったこと（時系列）
-1. **会社OS 立ち上げ** — docs（COMPANY/STATUS/org-chart/playbook/product/design）+ `.claude/agents/`（COO+専門家5+ペルソナ4）。戦略 `2026-06-04_continuum-thesis-v1.md`（固い問題/Sierra/Anthropic）。
-2. **セルフモック#0** — `design/mocks/2026-06-04_continuum-self-mock/`（HTML 2画面・Retina。mikan SRS復習に接地）。
+1. **会社OS 立ち上げ** — docs（COMPANY/STATUS/org-chart/playbook/product/design）+ `.claude/agents/`（COO+専門家5+ペルソナ4）。戦略 `2026-06-04_Bezier-thesis-v1.md`（固い問題/Sierra/Anthropic）。
+2. **セルフモック#0** — `design/mocks/2026-06-04_Bezier-self-mock/`（HTML 2画面・Retina。mikan SRS復習に接地）。
 3. **本体 `app/` 着工** — Next.js16+React19+Tailwind v4+shadcn(neutral)。グレースケールWF。
 4. **IA Round1（5体レビュー）** — 6→4タブ `Spec·Design·QA·Build`。`quality-reviews/2026-06-04_ia-review-round1.md`。
 5. **Kiro 由来強化** — モデル選択/Autopilot/@参照/差分カード/spec-as-fileパス。
@@ -47,12 +47,12 @@ AI-native な PdM+Design ツール。一人の maker が **Spec → Design → Q
 
 ## 7. 再開手順
 ```
-cd ~/Workspaces/Personal/projects/continuum/app && npm run dev -- -p 3100
+cd ~/Workspaces/Personal/projects/bezier/app && npm run dev -- -p 3100
 # → http://localhost:3100 （ISSUE-218=Spec / ISSUE-214=Design / SOTAS-76?tab=build）
 ```
 COO（`.claude/agents/coo.md`）が単一窓口。「続きから」と言われたら STATUS→本doc を読む。
 
 ## 8. 類似プロジェクトの整理（2026-06-04 対応済み）
-- continuum の前身は **alloy**（「境界を溶かす次世代開発プラットフォーム」＝双子）と **design-with-claude-code**（Claude Codeデザインテンプレ）の2件と特定。
+- Bezier の前身は **alloy**（「境界を溶かす次世代開発プラットフォーム」＝双子）と **design-with-claude-code**（Claude Codeデザインテンプレ）の2件と特定。
 - **alloy** → **完全削除済み**（CEO確認「もういらない」、2026-06-04・約2.2G解放）。未コミット/未pushのローカル作業も含め消去（復元不可）。spike の抽出データ `spike/out/alloy.json` は残存するが、alloy 本体は無いため再抽出は不可（_template/chom-chom で代替可）。
 - **design-with-claude-code** → **保持**。個別 OSS として公開予定（公開リポ + ブログあり）。触らない。

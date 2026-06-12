@@ -1,9 +1,9 @@
 {
   "indexName": "chomchom",
   "repoPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom",
-  "previewDir": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/continuum-preview",
-  "pagePath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/continuum-preview/page.tsx",
-  "layoutPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/continuum-preview/layout.tsx",
+  "previewDir": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/bezier-preview",
+  "pagePath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/bezier-preview/page.tsx",
+  "layoutPath": "/Users/sota/Workspaces/Personal/prototypes-monorepo/prototypes/chom-chom/src/app/bezier-preview/layout.tsx",
   "renderRate": 83,
   "realCount": 5,
   "fallbackCount": 1,

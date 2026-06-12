@@ -11,7 +11,7 @@
 
 ## なぜ（dogfood / Personal-first）
 
-CLAUDE.md「Personal-first → dogfood → SaaS」。マネタイズ・配布の前に、**CEO 自身が continuum を使って "自分の repo の実部品で組まれた新画面" を目で見られる**ことを最優先する。ISSUE-001 でやり残した **L3 render（clean render 率）** をここで決着させる。
+CLAUDE.md「Personal-first → dogfood → SaaS」。マネタイズ・配布の前に、**CEO 自身が Bezier を使って "自分の repo の実部品で組まれた新画面" を目で見られる**ことを最優先する。ISSUE-001 でやり残した **L3 render（clean render 率）** をここで決着させる。
 
 これは楔の "説得力" の核心：v0/Lovable の白紙生成と違い、**「これは MY app の部品だ」**という体験が出るか。
 
@@ -19,7 +19,7 @@ CLAUDE.md「Personal-first → dogfood → SaaS」。マネタイズ・配布の
 
 対象 = `chom-chom`（`out/gen-chomchom.json` 既存。実部品 ReviewSession / VocabFlashcard / AchievementCelebration / TabBar を流用）。
 
-1. **scene-graph → 実レンダリング**: scene-graph の `existing_component` ノードを、**対象 repo の環境で実マウント**する。最も安いのは「対象 repo 内に throwaway の preview ルート（例 `app/_continuum_preview/page.tsx`、.gitignore）を生成 → その repo の `npm run dev` で配信」。`generated` ノードは最小のラッパー（見出し/レイアウト）として素朴に描く。
+1. **scene-graph → 実レンダリング**: scene-graph の `existing_component` ノードを、**対象 repo の環境で実マウント**する。最も安いのは「対象 repo 内に throwaway の preview ルート（例 `app/_Bezier_preview/page.tsx`、.gitignore）を生成 → その repo の `npm run dev` で配信」。`generated` ノードは最小のラッパー（見出し/レイアウト）として素朴に描く。
 2. **props / data 合成**: 実部品は props（例 VocabFlashcard: lesson_id/meta/vocab/freeplay）や context を要求する。prop 名・型から **plausible なモックデータを合成**、または repo 内の既存使用例を読んで拝借。必要な provider（theme 等）は repo の root layout/providers を再利用。
 3. **context/provider 解決**: コンポーネントが context を要求する場合、repo の既存 root providers でラップ。
 4. **可視化**: `npm run dev` 起動 → Playwright で screenshot（`_template/scripts/capture-screens.ts` パターン流用）＋ ブラウザで開けるURLを出す。

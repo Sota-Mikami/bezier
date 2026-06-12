@@ -54,12 +54,12 @@ export async function detectAgents(): Promise<AgentTool[]> {
 
 /**
  * Assemble a markdown handoff context from the given docs and write it to
- * `<root>/.continuum/handoff/<stamp>.md`. Each doc is read via `readFile` and
+ * `<root>/.bezier/handoff/<stamp>.md`. Each doc is read via `readFile` and
  * concatenated under a header; a final instruction line tells the agent to read
  * this file and implement. Returns the written file's absolute path.
  *
  * NOTE: the Rust `write_file` command canonicalizes the parent directory, so the
- * `<root>/.continuum/handoff/` directory must already exist. Callers that may
+ * `<root>/.bezier/handoff/` directory must already exist. Callers that may
  * write into a fresh workspace should ensure that directory exists first (a
  * dedicated ensure-dir command is out of scope for the v0.2 contract).
  */
@@ -70,10 +70,10 @@ export async function buildHandoff(
 ): Promise<string> {
   const sep = root.includes("\\") ? "\\" : "/";
   const trimmedRoot = root.replace(/[/\\]+$/, "");
-  const outPath = [trimmedRoot, ".continuum", "handoff", `${stamp}.md`].join(sep);
+  const outPath = [trimmedRoot, ".bezier", "handoff", `${stamp}.md`].join(sep);
 
   const sections: string[] = [
-    `# Continuum handoff — ${stamp}`,
+    `# Bezier handoff — ${stamp}`,
     "",
     `Workspace root: \`${trimmedRoot}\``,
     "",

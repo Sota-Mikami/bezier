@@ -17,7 +17,7 @@ DEC-002 で「ローカルエンジン + クラウド SoR / OSS open-core（fair
 
 ## スコープ
 
-1. **CLI 昇格**: `spike/extract.mjs`（L1抽出, 既PASS・pure Node）を CLI エントリポイント `continuum extract <repo>` に昇格。出力は現行 `spike/out/*.json` 形式を維持。
+1. **CLI 昇格**: `spike/extract.mjs`（L1抽出, 既PASS・pure Node）を CLI エントリポイント `Bezier extract <repo>` に昇格。出力は現行 `spike/out/*.json` 形式を維持。
 2. **Agent SDK 生成委譲**: `spike/generate.mjs`（現状 `@anthropic-ai/sdk` 直叩き・鍵待ち）を **Claude Agent SDK（`@anthropic-ai/claude-agent-sdk`）経由**に置換。
    - `component_index` を **MCP または custom tool**（`search_components` / `get_component`）で agent に渡す。
    - ユーザーの Claude Code 認証で実行（third-party 鍵プロビジョニング不要 = OSS/local 前提と整合）。

@@ -1,7 +1,7 @@
 <!-- 作成日: 2026-06-04 / Owner: Head of Product + CEO -->
-# continuum 事業命題 v1 — 固い問題 × Sierra × Anthropic ステージ
+# Bezier 事業命題 v1 — 固い問題 × Sierra × Anthropic ステージ
 
-> このドキュメントは continuum の **根拠**。ロードマップ・優先順位の全判断はここに照らす。
+> このドキュメントは Bezier の **根拠**。ロードマップ・優先順位の全判断はここに照らす。
 > フレーム: `shared/knowledge/{business-selection-criteria, sierra-soa-strategy, ai-native-startup-playbook}.md`
 
 ---
@@ -16,7 +16,7 @@
 
 ### 需要・経済性（軸1-4）
 
-| # | 軸 | continuum の状況 | 評価 |
+| # | 軸 | Bezier の状況 | 評価 |
 |---|---|---|---|
 | 1 | Pain 定量化 | spec→design→mock のリードタイムと手戻り。PdM が Figma で固まる / デザイナー待ち / 「伝言ゲーム」で1機能の合意に数日。デザインツール+PMツールの二重メンテ | ◎ 時間で定量化可 |
 | 2 | 既存予算 | Figma（席課金）/ Notion / Linear / 外注デザイン費に既に予算枠がある。v0/Lovable/Cursor にも支払いが始まっている | ◎ 予算枠は明確に存在 |
@@ -25,7 +25,7 @@
 
 ### 競合・到達性（軸5-7）— **ここが生死を分ける**
 
-| # | 軸 | continuum の状況 | 評価 |
+| # | 軸 | Bezier の状況 | 評価 |
 |---|---|---|---|
 | 5 | AI-Native 競合の密度・資金 | **激戦区**。v0(Vercel) / Lovable / Figma Make / Subframe / Cursor / Bolt 等が資金潤沢で密集 | △ 要・明確な差別化 |
 | 6 | 既存 SaaS の AI化速度 | Figma（Make/AI）・Notion（AI）が自社AI化を高速で進行。「既存大手が機能追加」リスク高い | △ 窓は期限付き |
@@ -39,30 +39,30 @@
 
 ### 二重賭けの回避（中核思想）
 
-- **技術不確実 × 需要不確実の二重賭けを避ける。** continuum の需要（モック制作の痛み）は比較的確実。**不確実なのは技術**（任意repo→実パーツ流用モック生成が、cloud で・許容コストで・十分な品質で成立するか）。
+- **技術不確実 × 需要不確実の二重賭けを避ける。** Bezier の需要（モック制作の痛み）は比較的確実。**不確実なのは技術**（任意repo→実パーツ流用モック生成が、cloud で・許容コストで・十分な品質で成立するか）。
 - ゆえに **Idea Stage の全エネルギーをこの技術不確実性の解消（ISSUE-001 Week1スパイク）に集中**する。需要側は並行で discovery（ペルソナ面談）。
 
 ---
 
-## 2. Sierra フレーム — continuum はどこに立つか
+## 2. Sierra フレーム — Bezier はどこに立つか
 
-| Sierra 概念 | continuum への適用 |
+| Sierra 概念 | Bezier への適用 |
 |---|---|
 | 既存 SoR | Figma / Linear / 既存コードベース・デザインシステム |
-| **SoA（差し込む新層）** | continuum = 既存 repo/DS を **読み込み参照するが置換しない** 推論レイヤー。spec→design→mock→QA を実行 |
+| **SoA（差し込む新層）** | Bezier = 既存 repo/DS を **読み込み参照するが置換しない** 推論レイヤー。spec→design→mock→QA を実行 |
 | Interface（最も深いチャネル） | maker の **日々の制作作業面**（毎日触る単一サーフェス）。ここを取ると組織のワークフローが統合される |
 | 目指す新 SoR | 「過去の記録」でなく「**設計図 + 実行履歴**」型の能動的記録（scene-graph + 生成/編集トレース + QA連動） |
 
 ### なぜ「既存を崩しに行かない」のが正解か
 
-- v0/Lovable は **白紙生成**＝既存を無視。continuum は **既存の上に立つ**＝置換リスクなし、部門/個人の裁量で導入される「軽さ」。
+- v0/Lovable は **白紙生成**＝既存を無視。Bezier は **既存の上に立つ**＝置換リスクなし、部門/個人の裁量で導入される「軽さ」。
 - **既存 DS を尊重する** ことが Priya（DSリード）ペルソナの最大関心 → enterprise 攻略の入口にもなる。
 - 基盤モデルの進化（Claude の世代更新）を、データ統合でなく推論で受けるので、製品力向上として直接顕現。
 
 ### moat 候補（Scale で効く堀）
 
 1. **ドメイン知識**: 「既存repoを正しく読む」抽出ロジックの蓄積（フレームワーク横断）。
-2. **ワークフロー・ロックイン**: continuum を外す = spec/design/mock/QA の作業面総入れ替え。
+2. **ワークフロー・ロックイン**: Bezier を外す = spec/design/mock/QA の作業面総入れ替え。
 3. **能動 SoR**: scene-graph + 生成/編集/QA履歴がベンダー固有フォーマットで蓄積。
 
 ---
@@ -70,8 +70,8 @@
 ## 3. Anthropic ステージ現在地
 
 - **現在 = Idea Stage。**「作ること = 検証」と勘違いしない。プロトタイプ ≠ 検証。
-- **MVP の合格条件 = dogfood で自分が手放せない**（自分の機能開発を週内に2本、continuum内だけで通す）。
-- **強化された確証バイアス対策**: 「continuum が失敗する理由10個」を別 doc で挙げ、各反論への応答を準備する（Discovery の一部として UX Researcher / persona に当てる）。
+- **MVP の合格条件 = dogfood で自分が手放せない**（自分の機能開発を週内に2本、Bezier内だけで通す）。
+- **強化された確証バイアス対策**: 「Bezier が失敗する理由10個」を別 doc で挙げ、各反論への応答を準備する（Discovery の一部として UX Researcher / persona に当てる）。
 
 ---
 
@@ -90,7 +90,7 @@
 
 ## 5. オープン質問 / 次の discovery
 
-1. **WTP（軸4）**: maker は continuum にいくら払うか? Figma/v0 の席に相乗りか置換か。→ 5人 discovery。
+1. **WTP（軸4）**: maker は Bezier にいくら払うか? Figma/v0 の席に相乗りか置換か。→ 5人 discovery。
 2. **差別化の閾値（軸5）**: 「文脈生成」は、ユーザーが v0 を捨てるほど明確に良いか? → ISSUE-001 の side-by-side。
 3. **窓の期限（軸6）**: Figma Make / Cursor が「既存repo流用モック」を取りに来るまでの時間は? → 競合監視を operations に。
 4. **入口チャネル（軸7）**: 個人maker vs PM vs DSリード、どの入口が最も pull が強いか? → ペルソナ反応の比較。

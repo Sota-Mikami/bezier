@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * continuum ISSUE-004 — 汎用スクリーンショット
+ * bezier ISSUE-004 — 汎用スクリーンショット
  *
  * 使い方:
  *   node screenshot-generic.mjs <indexName> <baseUrl>
@@ -61,7 +61,7 @@ async function main() {
     const page = await browser.newPage({ viewport: VIEWPORT_DESKTOP });
     const outFile = `render-${indexName}.png`;
     const outPath = path.join(OUT_DIR, outFile);
-    const url = `${BASE_URL}/continuum-preview`;
+    const url = `${BASE_URL}/bezier-preview`;
     console.log(`  [screenshot] ${indexName} desktop: ${url}`);
     try {
       await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
@@ -82,7 +82,7 @@ async function main() {
     const page = await browser.newPage({ viewport: VIEWPORT_MOBILE });
     const outFile = `render-${indexName}-mobile.png`;
     const outPath = path.join(OUT_DIR, outFile);
-    const url = `${BASE_URL}/continuum-preview`;
+    const url = `${BASE_URL}/bezier-preview`;
     console.log(`  [screenshot] ${indexName} mobile: ${url}`);
     try {
       await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });

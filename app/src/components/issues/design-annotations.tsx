@@ -13,7 +13,7 @@
 // before/after (DEC-046 #2): the annotated shot sent to the agent doubles as the
 // "before"; a clean shot taken when the turn ends is the "after" — both shown on
 // the done card. element pick (DEC-046 #3): postMessage to a cooperating preview
-// (public/continuum-inspect.js); degrades to coordinates when absent.
+// (public/bezier-inspect.js); degrades to coordinates when absent.
 
 import * as React from "react";
 import {
@@ -214,10 +214,10 @@ export function DesignAnnotations({
     let ponged = false;
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
-      if (!d || d.source !== "continuum-inspect") return;
+      if (!d || d.source !== "bezier-inspect") return;
       if (d.type === "pong") {
         ponged = true;
-        win.postMessage({ source: "continuum", type: "pick-start" }, "*");
+        win.postMessage({ source: "bezier", type: "pick-start" }, "*");
       } else if (d.type === "picked" && d.payload) {
         const pl = d.payload;
         const a = newAnnotation("element", clamp01(pl.x ?? 0.5), clamp01(pl.y ?? 0.5), {
@@ -234,11 +234,11 @@ export function DesignAnnotations({
       }
     };
     window.addEventListener("message", onMsg);
-    win.postMessage({ source: "continuum", type: "ping" }, "*");
+    win.postMessage({ source: "bezier", type: "ping" }, "*");
     const t = window.setTimeout(() => {
       if (!ponged) {
         setHint(
-          "このプレビューは要素ピックに未対応です（public/continuum-inspect.js を読み込むと有効化）。コメント/矩形で指定してください。",
+          "このプレビューは要素ピックに未対応です（public/bezier-inspect.js を読み込むと有効化）。コメント/矩形で指定してください。",
         );
         setTool("comment");
       }
@@ -246,7 +246,7 @@ export function DesignAnnotations({
     return () => {
       window.removeEventListener("message", onMsg);
       window.clearTimeout(t);
-      win.postMessage({ source: "continuum", type: "pick-cancel" }, "*");
+      win.postMessage({ source: "bezier", type: "pick-cancel" }, "*");
     };
   }, [tool, iframeRef, addAnnotation]);
 

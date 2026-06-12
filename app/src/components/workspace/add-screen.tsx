@@ -173,7 +173,7 @@ export default function AddScreen({ existing, onAdd }: AddScreenProps) {
           />
           <p className="text-xs text-muted-foreground">
             Local repo root for Onlook-style AST write-back. Must be instrumented
-            (data-oid) and load the continuum preview bridge to be editable.
+            (data-oid) and load the Bezier preview bridge to be editable.
           </p>
         </div>
       ) : null}

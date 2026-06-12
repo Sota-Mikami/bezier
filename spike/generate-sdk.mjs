@@ -24,12 +24,12 @@ const idx = JSON.parse(fs.readFileSync(indexPath, "utf8"));
 const parts = idx.components.filter((c) => c.kind === "part");
 
 // emit_screen の結果を受け取るための一時ファイル
-const emitOutPath = path.join(os.tmpdir(), `continuum-emit-${Date.now()}.json`);
+const emitOutPath = path.join(os.tmpdir(), `bezier-emit-${Date.now()}.json`);
 
 // MCP catalog サーバーの設定
 const mcpCatalogPath = path.join(__dirname, "mcp-catalog.mjs");
 
-const systemPrompt = `あなたは continuum の生成エンジン。
+const systemPrompt = `あなたは bezier の生成エンジン。
 与えられた repo の既存パーツだけを流用して、新しい画面の scene-graph を組む。
 新規 UI は最小限に留める。必ず emit_screen ツールで終える。
 
@@ -46,7 +46,7 @@ intent: ${intent}
 
 まず search_components("") で使えるパーツ一覧を確認し、関連パーツを get_component で詳細確認して、最後に emit_screen で scene-graph を提出せよ。`;
 
-console.log(`\n=== continuum generate (経路A: Agent SDK) ===`);
+console.log(`\n=== bezier generate (経路A: Agent SDK) ===`);
 console.log(`index: ${indexName}  parts: ${parts.length}  intent: ${intent}`);
 console.log(`emit out: ${emitOutPath}\n`);
 
@@ -61,16 +61,16 @@ try {
       systemPrompt,
       tools: [], // built-in tools 無効化（MCP ツールのみ使用）
       allowedTools: [
-        `mcp__continuum-catalog__search_components`,
-        `mcp__continuum-catalog__get_component`,
-        `mcp__continuum-catalog__get_tokens`,
-        `mcp__continuum-catalog__emit_screen`,
+        `mcp__bezier-catalog__search_components`,
+        `mcp__bezier-catalog__get_component`,
+        `mcp__bezier-catalog__get_tokens`,
+        `mcp__bezier-catalog__emit_screen`,
       ],
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       persistSession: false,
       mcpServers: {
-        "continuum-catalog": {
+        "bezier-catalog": {
           type: "stdio",
           command: "node",
           args: [mcpCatalogPath, indexPath],

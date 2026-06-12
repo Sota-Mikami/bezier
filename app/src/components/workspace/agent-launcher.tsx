@@ -28,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface AgentLauncherProps {
-  /** Workspace root; handoff is written under `<root>/.continuum/handoff/`. */
+  /** Workspace root; handoff is written under `<root>/.bezier/handoff/`. */
   root: string;
   /** Currently-open doc path(s) to hand off. */
   docPaths: string[];

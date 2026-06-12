@@ -83,7 +83,7 @@ export type SessionAction =
   | "pr"
   | null;
 
-/** The base branch Issue branches are cut from / merged back into (DEC-009). */
+/** The base branch Issue branches are cut from / merged back into (DEC-047). */
 const BASE = "main";
 
 export interface TermSpawn {
@@ -128,7 +128,7 @@ export interface ImplementSession {
   handleTermExit: (code: number | null) => void;
 
   // Durable activity thread (chat-first loop): structured events rendered in the
-  // LEFT thread, persisted to .continuum/issues/<id>/thread.json (survives the
+  // LEFT thread, persisted to .bezier/issues/<id>/thread.json (survives the
   // volatile pty + Discard).
   thread: ThreadEvent[];
 
@@ -180,7 +180,7 @@ export function useImplementSession(
 ): ImplementSession {
   // The agent's hook-events file: Claude appends here (Stop/Notification hooks)
   // when it awaits the user; the backend watches it for "waiting" (DEC-028).
-  const eventsPath = `${root.replace(/\/+$/, "")}/.continuum/agent-events/${issue.id}`;
+  const eventsPath = `${root.replace(/\/+$/, "")}/.bezier/agent-events/${issue.id}`;
 
   const [gitRepo, setGitRepo] = React.useState<boolean | null>(null);
   // Monorepo support (DEC-039): when the opened folder (`root`) is a SUBFOLDER
@@ -489,7 +489,7 @@ export function useImplementSession(
       //
       // For claude specifically we also pass `--add-dir <issue.dir>` so the agent
       // can read+write the issue's spec.md (which lives in the MAIN repo's
-      // .continuum tree, OUTSIDE this worktree) — that closes the chat⇆spec loop.
+      // .bezier tree, OUTSIDE this worktree) — that closes the chat⇆spec loop.
       // `--continue` resumes the prior conversation (the exit handler falls back
       // to a fresh seed if there is none).
       //

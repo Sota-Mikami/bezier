@@ -6,7 +6,7 @@
 // cleared from here.
 //
 // Coordinates are stored as FRACTIONS (0–1) of the preview box so they track on
-// resize. Persisted to <root>/.continuum/issues/<id>/annotations.json (local,
+// resize. Persisted to <root>/.bezier/issues/<id>/annotations.json (local,
 // gitignored), so pins survive navigation / restart while in flight.
 
 import { readFile, writeFile, readFileBytes } from "@/lib/ipc";
@@ -71,12 +71,12 @@ function strip(p: string): string {
 }
 
 function annotationsPath(root: string, issueId: string): string {
-  return `${strip(root)}/.continuum/issues/${issueId}/annotations.json`;
+  return `${strip(root)}/.bezier/issues/${issueId}/annotations.json`;
 }
 
 /** The dir handed to the agent (`--add-dir`) holding the feedback screenshots. */
 export function annotationsDir(root: string, issueId: string): string {
-  return `${strip(root)}/.continuum/issues/${issueId}/feedback`;
+  return `${strip(root)}/.bezier/issues/${issueId}/feedback`;
 }
 
 /** A new annotation (draft) of any kind. */

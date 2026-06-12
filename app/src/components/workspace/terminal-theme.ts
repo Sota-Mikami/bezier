@@ -1,57 +1,59 @@
-// xterm.js themes that follow the app's light/dark scheme (DEC-033). The
-// terminal used to be hardcoded dark (#0a0a0a) regardless of the app theme,
-// which read as a black slab between the light sidebar and the light Spec/Design
-// panes. These palettes blend with each mode. ANSI 16 are tuned for legibility
-// on each background (Claude Code emits ANSI colors).
+// xterm.js themes that follow the app's light/dark scheme (DEC-033). Bezier's
+// brand principle #4 (PRINCIPLES §4 "dissolve the terminal"): the agent's work
+// is never a hostile black slab — its surface sits one step under the app's ink
+// background (--background/--card), and its accent (blue) IS the handle-indigo,
+// so the terminal reads as part of the workbench, not a console bolted on. ANSI
+// 16 stay legible (Claude Code emits ANSI colors); only the slab-black bg, the
+// selection, and the blue/magenta accents shift onto the brand.
 
 import type { ITheme } from "@xterm/xterm";
 import { resolveDark } from "@/lib/settings";
 
 export const DARK_TERMINAL: ITheme = {
-  background: "#0a0a0a",
-  foreground: "#e4e4e7", // zinc-200
-  cursor: "#e4e4e7",
-  cursorAccent: "#0a0a0a",
-  selectionBackground: "#3f3f46", // zinc-700
-  black: "#27272a",
-  red: "#f87171",
-  green: "#4ade80",
-  yellow: "#fbbf24",
-  blue: "#60a5fa",
-  magenta: "#c084fc",
-  cyan: "#22d3ee",
-  white: "#e4e4e7",
-  brightBlack: "#52525b",
+  background: "#1a1a22", // ink, between --background and --card — not pure black
+  foreground: "#e6e6ea",
+  cursor: "#7b84ef", // handle-indigo
+  cursorAccent: "#1a1a22",
+  selectionBackground: "#2f3050", // dim indigo wash
+  black: "#2a2a33",
+  red: "#f28b82",
+  green: "#7dd99a",
+  yellow: "#e8c275",
+  blue: "#7b84ef", // handle-indigo (agent accent)
+  magenta: "#b99cf0",
+  cyan: "#6fd3e0",
+  white: "#e6e6ea",
+  brightBlack: "#52525f",
   brightRed: "#fca5a5",
-  brightGreen: "#86efac",
-  brightYellow: "#fde047",
-  brightBlue: "#93c5fd",
-  brightMagenta: "#d8b4fe",
-  brightCyan: "#67e8f9",
+  brightGreen: "#9ae6b4",
+  brightYellow: "#f3d79a",
+  brightBlue: "#9aa2f5",
+  brightMagenta: "#d2bdf6",
+  brightCyan: "#8fe1ec",
   brightWhite: "#fafafa",
 };
 
 export const LIGHT_TERMINAL: ITheme = {
-  background: "#fbfbfb",
-  foreground: "#27272a", // zinc-800
-  cursor: "#27272a",
-  cursorAccent: "#fbfbfb",
-  selectionBackground: "#e4e4e7", // zinc-200
+  background: "#fcfcfb", // warm off-white = --card, not a tinted slab
+  foreground: "#2a2a31",
+  cursor: "#4750d4", // handle-indigo
+  cursorAccent: "#fcfcfb",
+  selectionBackground: "#e7e8fb", // faint handle tint
   black: "#3f3f46",
-  red: "#dc2626",
-  green: "#16a34a",
-  yellow: "#b45309", // darker so it reads on light
-  blue: "#2563eb",
-  magenta: "#9333ea",
-  cyan: "#0891b2",
+  red: "#cf4b3f",
+  green: "#2f8f57",
+  yellow: "#9a6b16",
+  blue: "#4750d4", // handle-indigo (agent accent)
+  magenta: "#7c4fcf",
+  cyan: "#0e8aa3",
   white: "#52525b",
   brightBlack: "#71717a",
-  brightRed: "#b91c1c",
-  brightGreen: "#15803d",
-  brightYellow: "#92400e",
-  brightBlue: "#1d4ed8",
-  brightMagenta: "#7e22ce",
-  brightCyan: "#0e7490",
+  brightRed: "#b3392f",
+  brightGreen: "#1f7a45",
+  brightYellow: "#7c5310",
+  brightBlue: "#3a43c2",
+  brightMagenta: "#6a3fb8",
+  brightCyan: "#0c6e82",
   brightWhite: "#27272a",
 };
 

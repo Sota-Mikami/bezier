@@ -10,9 +10,9 @@
 
 ## なぜ（固い問題 / Idea Stage）
 
-`playbook/strategy/2026-06-04_continuum-thesis-v1.md` の通り、continuum の固さは需要側でなく **楔の差別化（軸5）= 技術不確実性の解消** にある。auth/RLS/editor/billing/Liveblocks は自分のコードで解決済み。**未解決かつ moat の核**は:
+`playbook/strategy/2026-06-04_Bezier-thesis-v1.md` の通り、Bezier の固さは需要側でなく **楔の差別化（軸5）= 技術不確実性の解消** にある。auth/RLS/editor/billing/Liveblocks は自分のコードで解決済み。**未解決かつ moat の核**は:
 
-> 任意 repo を「Claude が実コンポーネントを忠実に流用するモックを生成できる」だけ豊かな component index に変換でき、それを headless render で証明できるか。**ここが弱いと continuum はただの v0。**
+> 任意 repo を「Claude が実コンポーネントを忠実に流用するモックを生成できる」だけ豊かな component index に変換でき、それを headless render で証明できるか。**ここが弱いと Bezier はただの v0。**
 
 build ≠ 検証。**これは使い捨てスパイクであり、本体ではない。** 生産的に見えるからと canvas を作らない。
 

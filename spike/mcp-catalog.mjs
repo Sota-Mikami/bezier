@@ -20,7 +20,7 @@ const parts = idx.components.filter((c) => c.kind === "part");
 const screens = idx.components.filter((c) => c.kind === "screen");
 
 const server = new Server(
-  { name: "continuum-catalog", version: "0.1.0" },
+  { name: "bezier-catalog", version: "0.1.0" },
   { capabilities: { tools: {} } }
 );
 
