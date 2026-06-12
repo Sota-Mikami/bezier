@@ -62,6 +62,42 @@ class BulletWidget extends WidgetType {
 }
 const bulletWidget = new BulletWidget();
 
+/** A rendered, CLICKABLE checkbox that replaces a `[ ]`/`[x]` task marker
+ * off-cursor. Clicking toggles the marker text in the document (DEC-042). */
+class CheckboxWidget extends WidgetType {
+  constructor(
+    readonly checked: boolean,
+    readonly from: number,
+    readonly to: number,
+  ) {
+    super();
+  }
+  eq(other: CheckboxWidget) {
+    return other.checked === this.checked && other.from === this.from;
+  }
+  toDOM(view: EditorView) {
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = this.checked;
+    input.className = "cm-md-checkbox";
+    input.addEventListener("mousedown", (e) => e.preventDefault());
+    input.addEventListener("change", () => {
+      view.dispatch({
+        changes: {
+          from: this.from,
+          to: this.to,
+          insert: this.checked ? "[ ]" : "[x]",
+        },
+      });
+    });
+    return input;
+  }
+  // Handle our own clicks (don't let CM move the caret onto the marker).
+  ignoreEvent() {
+    return true;
+  }
+}
+
 /** A rendered horizontal rule that replaces `---`/`***`/`___` off-cursor. */
 class HrWidget extends WidgetType {
   eq() {
@@ -302,6 +338,21 @@ function compute(state: EditorState): LivePreview {
           // Non-atomic (see hideOrDim) so the caret moves naturally across the
           // bullet glyph.
           const w = Decoration.replace({ widget: bulletWidget });
+          deco.push(w.range(from, to));
+        }
+        return;
+      }
+
+      // --- GFM task list: render a clickable checkbox for `[ ]` / `[x]`
+      // off-cursor; show the raw marker (dimmed) on-cursor so it stays editable.
+      if (name === "TaskMarker") {
+        if (isActive(from, to)) {
+          deco.push(dimMark.range(from, to));
+        } else {
+          const checked = /x/i.test(doc.sliceString(from, to));
+          const w = Decoration.replace({
+            widget: new CheckboxWidget(checked, from, to),
+          });
           deco.push(w.range(from, to));
         }
         return;

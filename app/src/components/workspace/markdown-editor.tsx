@@ -342,6 +342,13 @@ const editorTheme = EditorView.theme({
 
   // Lists.
   ".cm-md-bullet": { color: "var(--muted-foreground)" },
+  // GFM task-list checkbox (DEC-042): align with the text, accent the check.
+  ".cm-md-checkbox": {
+    cursor: "pointer",
+    margin: "0 0.15em 0 0",
+    verticalAlign: "-0.08em",
+    accentColor: "var(--primary)",
+  },
 
   // Fenced code (line band) + dimmed fences.
   ".cm-md-codeblock": {
