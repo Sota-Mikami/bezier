@@ -4,7 +4,6 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   CircleDot,
-  ScrollText,
   FolderGit2,
   ChevronsUpDown,
   Check,
@@ -34,12 +33,11 @@ import {
 import { useWorkspaceRoot, repoName } from "@/lib/workspace-root";
 import { cn } from "@/lib/utils";
 
-// Improvement-loop axis (要件 §1, Concept A): Issues / Decisions / Repo.
-// Issues is the spine (slice 1). Repo is the existing IDE workspace.
-// (Product returns at slice 3.)
+// Nav (DEC-014): Issues / Repo. Issues is the spine. Repo is the workspace.
+// The cross-cutting Decisions view was removed — per-issue logs live in each
+// issue's thread; there's no need to browse decisions across issues.
 const nav = [
   { key: "issues", label: "Issues", icon: CircleDot, href: "/issues" },
-  { key: "decisions", label: "Decisions", icon: ScrollText, href: "/decisions" },
   { key: "repo", label: "Repo", icon: FolderGit2, href: "/workspace" },
 ];
 

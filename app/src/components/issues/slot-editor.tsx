@@ -52,13 +52,102 @@ function fullText(doc: Pick<OpenDoc, "rawFrontmatter" | "body">): string {
   return `${doc.rawFrontmatter ?? ""}${doc.body}`;
 }
 
-export function SlotEditor({ path, label }: { path: string; label?: string }) {
-  // Remount only on path change so each load re-baselines from disk. Saves do
-  // NOT remount (that would jump the caret) — autosave just writes in place.
-  return <SlotEditorInner key={path} path={path} label={label} />;
+/**
+ * Line-level diff for the live change flash (DEC-012 §7): return the 1-based line
+ * numbers in `next` that are ADDED or CHANGED vs `prev`. An LCS over lines marks
+ * the unchanged (matched) lines; everything else in `next` is what visually
+ * changed. Hand-rolled (no dep) and lightweight — spec.md is small. For
+ * pathologically large inputs we fall back to a cheap multiset diff to avoid an
+ * O(n·m) table blow-up.
+ */
+function changedLineNumbers(prev: string, next: string): number[] {
+  const a = prev.split("\n");
+  const b = next.split("\n");
+  const n = a.length;
+  const m = b.length;
+  if (m === 0) return [];
+
+  // Cheap fallback for huge inputs: a `next` line is "changed" if `prev` has no
+  // remaining (unconsumed) copy of it. Order-insensitive but bounded + correct
+  // enough for a flash.
+  if ((n + 1) * (m + 1) > 4_000_000) {
+    const counts = new Map<string, number>();
+    for (const line of a) counts.set(line, (counts.get(line) ?? 0) + 1);
+    const out: number[] = [];
+    for (let k = 0; k < m; k++) {
+      const c = counts.get(b[k]) ?? 0;
+      if (c > 0) counts.set(b[k], c - 1);
+      else out.push(k + 1);
+    }
+    return out;
+  }
+
+  // LCS length table, then backtrack to mark which `b` lines are part of the LCS.
+  const dp: number[][] = Array.from({ length: n + 1 }, () =>
+    new Array<number>(m + 1).fill(0),
+  );
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] =
+        a[i] === b[j]
+          ? dp[i + 1][j + 1] + 1
+          : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const matchedB = new Set<number>();
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      matchedB.add(j);
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+  const out: number[] = [];
+  for (let k = 0; k < m; k++) if (!matchedB.has(k)) out.push(k + 1);
+  return out;
 }
 
-function SlotEditorInner({ path, label }: { path: string; label?: string }) {
+export function SlotEditor({
+  path,
+  label,
+  onExternalChange,
+}: {
+  path: string;
+  label?: string;
+  /**
+   * Fired when the watch poll adopts an EXTERNAL (agent) rewrite of spec.md on
+   * the CLEAN path — lets the parent auto-switch the center tab to Spec + pulse
+   * it (DEC-012 §7). NOT fired on the dirty-conflict path (the user is mid-edit).
+   */
+  onExternalChange?: () => void;
+}) {
+  // Remount only on path change so each load re-baselines from disk. Saves do
+  // NOT remount (that would jump the caret) — autosave just writes in place.
+  return (
+    <SlotEditorInner
+      key={path}
+      path={path}
+      label={label}
+      onExternalChange={onExternalChange}
+    />
+  );
+}
+
+function SlotEditorInner({
+  path,
+  label,
+  onExternalChange,
+}: {
+  path: string;
+  label?: string;
+  onExternalChange?: () => void;
+}) {
   const [doc, setDoc] = React.useState<OpenDoc | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -71,8 +160,18 @@ function SlotEditorInner({ path, label }: { path: string; label?: string }) {
   // Set when disk diverged from our baseline WHILE the editor is dirty — a real
   // conflict the user must resolve (adopt external vs keep mine).
   const [conflict, setConflict] = React.useState(false);
+  // 1-based line numbers to FLASH on the next remount (the live change viz). Set
+  // when adopting an external rewrite on the CLEAN path; the re-keyed
+  // MarkdownEditor paints + fades them. [] = no flash (e.g. dirty-path reload).
+  const [flashLines, setFlashLines] = React.useState<number[]>([]);
 
   const mdRef = React.useRef<MarkdownEditorHandle>(null);
+  // Latest onExternalChange in a ref so applyExternal stays stable (it's a watch
+  // effect dep).
+  const onExternalChangeRef = React.useRef(onExternalChange);
+  React.useEffect(() => {
+    onExternalChangeRef.current = onExternalChange;
+  }, [onExternalChange]);
   const timerRef = React.useRef<number | null>(null);
   const savingRef = React.useRef(false);
   const doSaveRef = React.useRef<() => Promise<void>>(async () => {});
@@ -170,23 +269,40 @@ function SlotEditorInner({ path, label }: { path: string; label?: string }) {
   // content. Caller must ensure no local edits will be lost — either the editor
   // is CLEAN, or its dirty flag was cleared first (so the remount's flushOnUnmount
   // is a no-op and won't write the discarded edits back over the external one).
-  const applyExternal = React.useCallback(async () => {
-    clearTimer();
-    try {
-      const fresh = await readDoc(path);
-      baselineRef.current = fullText(fresh);
-      frontmatterRef.current = fresh.rawFrontmatter ?? "";
-      setDoc(fresh);
-      setConflict(false);
-      setReloadNonce((n) => n + 1); // remount -> re-baseline from fresh.body
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [path, clearTimer]);
+  //
+  // `flash` (CLEAN path only): compute a line diff old→new BEFORE swapping the
+  // baseline, stage the changed line numbers so the re-keyed MarkdownEditor
+  // flashes them, and notify the parent (auto-switch + pulse). The dirty-path
+  // reload skips both — the user is mid-edit and shouldn't be yanked away.
+  const applyExternal = React.useCallback(
+    async (flash: boolean) => {
+      clearTimer();
+      try {
+        // Old body = baseline minus its (verbatim) frontmatter block. CM edits
+        // only the body, so line numbers are body-relative.
+        const oldBody = baselineRef.current.slice(frontmatterRef.current.length);
+        const fresh = await readDoc(path);
+        setFlashLines(flash ? changedLineNumbers(oldBody, fresh.body) : []);
+        baselineRef.current = fullText(fresh);
+        frontmatterRef.current = fresh.rawFrontmatter ?? "";
+        setDoc(fresh);
+        setConflict(false);
+        setReloadNonce((n) => n + 1); // remount -> re-baseline from fresh.body
+        if (flash) onExternalChangeRef.current?.();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [path, clearTimer],
+  );
 
   // Auto-adopt (editor CLEAN): the unmount-flush is a no-op when not dirty, so a
-  // direct remount is safe and immediate.
-  const adoptExternal = applyExternal;
+  // direct remount is safe and immediate. This is the live-change path: flash +
+  // notify the parent.
+  const adoptExternal = React.useCallback(
+    () => applyExternal(true),
+    [applyExternal],
+  );
 
   // Explicit「リロード（外部を採用）」from the conflict banner (editor DIRTY):
   // drop the dirty flag first so the remount's flushOnUnmount won't write the
@@ -194,7 +310,7 @@ function SlotEditorInner({ path, label }: { path: string; label?: string }) {
   const discardAndReload = React.useCallback(() => {
     clearTimer();
     mdRef.current?.clearDirty();
-    void applyExternal();
+    void applyExternal(false); // dirty path: no flash, no auto-switch
   }, [clearTimer, applyExternal]);
 
   // Keep the user's in-editor edits and stop nagging: adopt disk as the new
@@ -324,6 +440,7 @@ function SlotEditorInner({ path, label }: { path: string; label?: string }) {
             frontmatterDirty={false}
             onDirtyChange={setDirty}
             onEdit={handleEdit}
+            flashLines={flashLines}
             flushOnUnmount
           />
         )}
