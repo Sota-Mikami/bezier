@@ -80,6 +80,15 @@ export function removePath(path: string): Promise<void> {
 }
 
 /**
+ * Move/rename a file or directory. Guarded on the Rust side to paths under a
+ * `.continuum` working store (used to shuffle issues into / out of the trash).
+ * -> invoke("move_path", { from, to })
+ */
+export function movePath(from: string, to: string): Promise<void> {
+  return invoke<void>("move_path", { from, to });
+}
+
+/**
  * The continuum app-data directory (created if absent). Worktrees are hosted
  * here, OUTSIDE the user's repo, so workspace-root inference (Next.js/Turbopack)
  * doesn't trip over the parent repo's lockfile. -> invoke("app_data_dir")

@@ -10,7 +10,14 @@
 // parsed/emitted via the `yaml` package directly so fields beyond the typed
 // Frontmatter shape (id / labels / screens) survive round-trips.
 
-import { listDir, readFile, writeFile, removePath, appDataDir } from "@/lib/ipc";
+import {
+  listDir,
+  readFile,
+  writeFile,
+  removePath,
+  movePath,
+  appDataDir,
+} from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
@@ -275,24 +282,124 @@ export async function updateIssueMeta(
   await writeFile(path, `${serializeIssueFm(meta)}${body}`);
 }
 
-/**
- * Permanently delete an issue: removes its folder (.continuum/drafts/<id>-<slug>
- * — incl. issue.md / spec.md / worktree.json) and its activity thread dir
- * (.continuum/issues/<id>). Does NOT tear down a git worktree/branch — a caller
- * holding an active worktree must remove it (Discard) first to avoid orphaning
- * it. removePath is a no-op when a path is already absent.
- */
-export async function deleteIssue(
-  root: string,
-  issue: Pick<Issue, "id" | "dir">,
-): Promise<void> {
-  await removePath(issue.dir);
-  await removePath(`${draftsStoreDir(root)}/issues/${issue.id}`);
+/** <root>/.continuum — the local working store root (drafts + issues + trash). */
+function continuumDir(root: string): string {
+  return `${stripTrailingSlash(root)}/.continuum`;
 }
 
-/** <root>/.continuum — the local working store root (drafts + issues live here). */
-function draftsStoreDir(root: string): string {
-  return `${stripTrailingSlash(root)}/.continuum`;
+// ---------------------------------------------------------------------------
+// Trash (recoverable delete + 30-day auto-purge, DEC-020)
+// ---------------------------------------------------------------------------
+//
+// Deleting an issue MOVES it to .continuum/trash/ instead of erasing it — git
+// (worktree + branch) is left untouched, so a trashed issue is fully restorable.
+// Only an explicit "完全に削除" or the 30-day auto-purge does the destructive
+// teardown. Layout mirrors the live store:
+//   .continuum/trash/drafts/<id>-<slug>/   (incl. .trashed.json marker)
+//   .continuum/trash/issues/<id>/          (the activity thread, if any)
+
+/** Issues are purged from the trash this many days after deletion. */
+export const TRASH_TTL_DAYS = 30;
+
+/** Deletion marker written inside a trashed issue's folder (.trashed.json). */
+export interface TrashMeta {
+  id: string;
+  slug: string;
+  title: string;
+  /** ISO timestamp of when it was moved to the trash. */
+  deletedAt: string;
+  /** The issue's branch + worktree, if it had one (for purge-time teardown). */
+  branch?: string;
+  worktreePath?: string;
+}
+
+function trashDraftsDir(root: string): string {
+  return `${continuumDir(root)}/trash/drafts`;
+}
+function trashIssuesDir(root: string): string {
+  return `${continuumDir(root)}/trash/issues`;
+}
+
+/**
+ * Move an issue to the trash (the default "delete"). Records a .trashed.json
+ * marker (incl. branch/worktree for later teardown), then moves the issue folder
+ * and its thread dir under .continuum/trash/. git is NOT touched — restore is a
+ * pure move-back. The worktree ref is read for the marker but left intact.
+ */
+export async function trashIssue(root: string, issue: Issue): Promise<void> {
+  const ref = await readWorktreeRef(issue).catch(() => null);
+  const folderName = `${issue.id}-${issue.slug}`;
+  const meta: TrashMeta = {
+    id: issue.id,
+    slug: issue.slug,
+    title: issue.title,
+    deletedAt: new Date().toISOString(),
+    ...(ref ? { branch: ref.branch, worktreePath: ref.path } : {}),
+  };
+  // Marker is written into the live folder BEFORE the move, so it travels with it.
+  await writeFile(`${issue.dir}/.trashed.json`, `${JSON.stringify(meta, null, 2)}\n`);
+  await movePath(issue.dir, `${trashDraftsDir(root)}/${folderName}`);
+  // Thread dir (may not exist) — best-effort.
+  await movePath(
+    `${continuumDir(root)}/issues/${issue.id}`,
+    `${trashIssuesDir(root)}/${issue.id}`,
+  ).catch(() => {});
+}
+
+/** List trashed issues, newest-deleted first. Reads each .trashed.json marker. */
+export async function listTrash(root: string): Promise<TrashMeta[]> {
+  let entries;
+  try {
+    entries = await listDir(trashDraftsDir(root));
+  } catch {
+    return [];
+  }
+  const out: TrashMeta[] = [];
+  for (const e of entries) {
+    if (!e.isDir) continue;
+    try {
+      const raw = await readFile(`${e.path}/.trashed.json`);
+      const m = JSON.parse(raw) as TrashMeta;
+      if (m && typeof m.id === "string" && typeof m.deletedAt === "string") {
+        out.push(m);
+      }
+    } catch {
+      /* missing/corrupt marker — skip */
+    }
+  }
+  out.sort((a, b) => (a.deletedAt < b.deletedAt ? 1 : a.deletedAt > b.deletedAt ? -1 : 0));
+  return out;
+}
+
+/** Restore a trashed issue back into the live store (move-back). */
+export async function restoreFromTrash(root: string, meta: TrashMeta): Promise<void> {
+  const folderName = `${meta.id}-${meta.slug}`;
+  const draft = `${draftsDir(root)}/${folderName}`;
+  await movePath(`${trashDraftsDir(root)}/${folderName}`, draft);
+  await removePath(`${draft}/.trashed.json`).catch(() => {});
+  await movePath(
+    `${trashIssuesDir(root)}/${meta.id}`,
+    `${continuumDir(root)}/issues/${meta.id}`,
+  ).catch(() => {});
+}
+
+/**
+ * Permanently remove a trashed issue's folders (.continuum/trash/...). Does NOT
+ * tear down git — the caller purges the worktree/branch (it has meta.branch /
+ * meta.worktreePath) before/after calling this, like purgeIssue does.
+ */
+export async function removeTrashEntry(root: string, meta: TrashMeta): Promise<void> {
+  await removePath(`${trashDraftsDir(root)}/${meta.id}-${meta.slug}`);
+  await removePath(`${trashIssuesDir(root)}/${meta.id}`);
+}
+
+/** Trashed entries past the TTL (candidates for the auto-purge on load). */
+export function expiredTrash(trash: TrashMeta[], now: number): TrashMeta[] {
+  const ttlMs = TRASH_TTL_DAYS * 24 * 60 * 60 * 1000;
+  return trash.filter((m) => {
+    const t = Date.parse(m.deletedAt);
+    return Number.isFinite(t) && now - t >= ttlMs;
+  });
 }
 
 // Spec is the only hand-created slot (DEC-011 / DEC-014/A).

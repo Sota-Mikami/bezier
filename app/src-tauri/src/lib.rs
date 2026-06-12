@@ -183,6 +183,57 @@ fn remove_path(path: String) -> Result<(), String> {
     }
 }
 
+/// Move/rename a file or directory. Guarded like remove_path: rejects `..` and
+/// requires BOTH the source and the destination's parent to live under a
+/// `.continuum` working store (so it can only shuffle continuum's own artifacts,
+/// e.g. into / out of the trash). Creates the destination's parent tree.
+#[tauri::command]
+fn move_path(from: String, to: String) -> Result<(), String> {
+    let src = Path::new(&from);
+    let dst = Path::new(&to);
+    reject_traversal(src)?;
+    reject_traversal(dst)?;
+    if !src.exists() {
+        return Err(format!("move_path: source does not exist: {from}"));
+    }
+    let canon_src =
+        fs::canonicalize(src).map_err(|e| format!("move_path resolve from {from}: {e}"))?;
+    if !canon_src
+        .components()
+        .any(|c| c.as_os_str() == ".continuum")
+    {
+        return Err(format!(
+            "refusing to move from outside a .continuum store: {}",
+            canon_src.display()
+        ));
+    }
+    let dst_parent = dst
+        .parent()
+        .ok_or_else(|| format!("move_path: dst has no parent: {to}"))?;
+    if !dst_parent.exists() {
+        fs::create_dir_all(dst_parent)
+            .map_err(|e| format!("move_path create dst parent {to}: {e}"))?;
+    }
+    let canon_dst_parent = fs::canonicalize(dst_parent)
+        .map_err(|e| format!("move_path resolve dst parent {to}: {e}"))?;
+    if !canon_dst_parent
+        .components()
+        .any(|c| c.as_os_str() == ".continuum")
+    {
+        return Err(format!(
+            "refusing to move to outside a .continuum store: {}",
+            canon_dst_parent.display()
+        ));
+    }
+    let file_name = dst
+        .file_name()
+        .ok_or_else(|| format!("move_path: dst has no file name: {to}"))?;
+    let mut resolved_dst = canon_dst_parent;
+    resolved_dst.push(file_name);
+    fs::rename(&canon_src, &resolved_dst)
+        .map_err(|e| format!("move_path {from} -> {to}: {e}"))
+}
+
 // ============================================================================
 // v0.2 — embedded terminal (portable-pty) + agent delegation backend.
 //
@@ -1227,6 +1278,7 @@ pub fn run() {
             read_file,
             write_file,
             remove_path,
+            move_path,
             pty_spawn,
             pty_write,
             pty_resize,

@@ -44,8 +44,12 @@ import {
   readIssue,
   createSlot,
   updateIssueMeta,
-  deleteIssue,
-  readWorktreeRef,
+  trashIssue,
+  listTrash,
+  restoreFromTrash,
+  removeTrashEntry,
+  expiredTrash,
+  TRASH_TTL_DAYS,
   slotPath,
   ISSUE_STATUSES,
   type Issue,
@@ -53,6 +57,7 @@ import {
   type IssueSlot,
   type ThreadEvent,
   type ThreadEventType,
+  type TrashMeta,
 } from "@/lib/issues";
 import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
@@ -60,16 +65,17 @@ import { DesignReview } from "@/components/issues/design-review";
 import { useImplementSession } from "@/components/issues/use-implement-session";
 import { gitStatus, gitWorktreeRemove, gitBranchDelete } from "@/lib/git";
 
-// Permanently delete an issue + tear down its git worktree/branch if one exists
-// (so deleting an in-progress issue doesn't orphan a worktree). git teardown is
-// best-effort: a missing worktree/branch must not block removing the folder.
-async function purgeIssue(root: string, issue: Issue): Promise<void> {
-  const ref = await readWorktreeRef(issue).catch(() => null);
-  if (ref) {
-    await gitWorktreeRemove(root, ref.path).catch(() => {});
-    await gitBranchDelete(root, ref.branch).catch(() => {});
+// Permanently remove a TRASHED issue: tear down its git worktree/branch (kept
+// alive while trashed so restore is clean) then delete the trash folders. git
+// teardown is best-effort — a missing worktree/branch must not block removal.
+async function purgeTrashed(root: string, meta: TrashMeta): Promise<void> {
+  if (meta.worktreePath) {
+    await gitWorktreeRemove(root, meta.worktreePath).catch(() => {});
   }
-  await deleteIssue(root, issue);
+  if (meta.branch) {
+    await gitBranchDelete(root, meta.branch).catch(() => {});
+  }
+  await removeTrashEntry(root, meta);
 }
 
 // Live change visualization (DEC-012 §7).
@@ -221,8 +227,18 @@ function Header({
 function IssueList({ root }: { root: string }) {
   const router = useRouter();
   const [issues, setIssues] = React.useState<Issue[] | null>(null);
+  const [trash, setTrash] = React.useState<TrashMeta[]>([]);
+  const [showTrash, setShowTrash] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [creating, setCreating] = React.useState(false);
+
+  const refreshTrash = React.useCallback(async () => {
+    try {
+      setTrash(await listTrash(root));
+    } catch {
+      setTrash([]);
+    }
+  }, [root]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -233,6 +249,17 @@ function IssueList({ root }: { root: string }) {
       .catch(() => {
         if (!cancelled) setIssues([]);
       });
+    // Load the trash + auto-purge anything past the 30-day TTL.
+    (async () => {
+      const all = await listTrash(root).catch(() => [] as TrashMeta[]);
+      const expired = expiredTrash(all, Date.now());
+      for (const m of expired) {
+        await purgeTrashed(root, m).catch(() => {});
+      }
+      if (!cancelled) {
+        setTrash(expired.length ? all.filter((m) => !expired.includes(m)) : all);
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -250,20 +277,60 @@ function IssueList({ root }: { root: string }) {
     }
   }, [title, creating, root, router]);
 
+  // Delete = move to the trash (recoverable; git untouched). DEC-020.
   const handleDelete = React.useCallback(
     async (issue: Issue) => {
       const ok = await confirmDialog(
-        `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。`,
-        { title: "Issue を削除", okLabel: "削除", cancelLabel: "キャンセル" },
+        `Issue「${issue.title}」をゴミ箱に移動します。${TRASH_TTL_DAYS}日後に完全削除されます（それまでは復元できます）。`,
+        { title: "ゴミ箱へ移動", okLabel: "ゴミ箱へ移動", cancelLabel: "キャンセル" },
       );
       if (!ok) return;
       try {
-        await purgeIssue(root, issue);
+        await trashIssue(root, issue);
         setIssues((prev) => prev?.filter((i) => i.id !== issue.id) ?? prev);
+        await refreshTrash();
       } catch (e) {
         await messageDialog(
           `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
           { title: "削除エラー" },
+        );
+      }
+    },
+    [root, refreshTrash],
+  );
+
+  // Restore a trashed issue back into the live list.
+  const handleRestore = React.useCallback(
+    async (meta: TrashMeta) => {
+      try {
+        await restoreFromTrash(root, meta);
+        setTrash((prev) => prev.filter((m) => m.id !== meta.id));
+        setIssues(await listIssues(root).catch(() => null));
+      } catch (e) {
+        await messageDialog(
+          `復元に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+          { title: "復元エラー" },
+        );
+      }
+    },
+    [root],
+  );
+
+  // Permanently remove a trashed issue now (worktree + branch + folders).
+  const handlePurge = React.useCallback(
+    async (meta: TrashMeta) => {
+      const ok = await confirmDialog(
+        `「${meta.title}」を完全に削除します。worktree / branch も削除され、元に戻せません。`,
+        { title: "完全に削除", okLabel: "完全に削除", cancelLabel: "キャンセル" },
+      );
+      if (!ok) return;
+      try {
+        await purgeTrashed(root, meta);
+        setTrash((prev) => prev.filter((m) => m.id !== meta.id));
+      } catch (e) {
+        await messageDialog(
+          `完全削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+          { title: "完全削除エラー" },
         );
       }
     },
@@ -279,37 +346,68 @@ function IssueList({ root }: { root: string }) {
         >
           {root}
         </span>
+        <button
+          type="button"
+          onClick={() => setShowTrash((v) => !v)}
+          className={cn(
+            "ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+            showTrash
+              ? "bg-secondary text-secondary-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+          title={showTrash ? "Issue 一覧へ戻る" : "ゴミ箱を開く"}
+        >
+          {showTrash ? (
+            <>
+              <ArrowLeft className="size-3.5" />
+              Issues
+            </>
+          ) : (
+            <>
+              <Trash2 className="size-3.5" />
+              ゴミ箱{trash.length > 0 ? `（${trash.length}）` : ""}
+            </>
+          )}
+        </button>
       </Header>
 
-      {/* New issue */}
-      <div className="flex items-center gap-2 border-b px-4 py-3">
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void handleCreate();
-            }
-          }}
-          placeholder="新しい Issue のタイトル…"
-          className="h-9 max-w-md"
+      {showTrash ? (
+        <TrashView
+          trash={trash}
+          onRestore={handleRestore}
+          onPurge={handlePurge}
         />
-        <Button
-          className="gap-1.5"
-          disabled={!title.trim() || creating}
-          onClick={() => void handleCreate()}
-        >
-          {creating ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          New issue
-        </Button>
-      </div>
+      ) : (
+        <>
+          {/* New issue */}
+          <div className="flex items-center gap-2 border-b px-4 py-3">
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleCreate();
+                }
+              }}
+              placeholder="新しい Issue のタイトル…"
+              className="h-9 max-w-md"
+            />
+            <Button
+              className="gap-1.5"
+              disabled={!title.trim() || creating}
+              onClick={() => void handleCreate()}
+            >
+              {creating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              New issue
+            </Button>
+          </div>
 
-      <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0 flex-1">
         {issues == null ? (
           <p className="p-6 text-sm text-muted-foreground">Loading…</p>
         ) : issues.length === 0 ? (
@@ -390,9 +488,89 @@ function IssueList({ root }: { root: string }) {
             })}
           </ul>
         )}
-      </ScrollArea>
+          </ScrollArea>
+        </>
+      )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Trash view — restore or permanently delete trashed issues (DEC-020).
+// ---------------------------------------------------------------------------
+
+function TrashView({
+  trash,
+  onRestore,
+  onPurge,
+}: {
+  trash: TrashMeta[];
+  onRestore: (m: TrashMeta) => Promise<void>;
+  onPurge: (m: TrashMeta) => Promise<void>;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-2 border-b px-4 py-3 text-xs text-muted-foreground">
+        <Trash2 className="size-3.5" />
+        ゴミ箱の Issue は削除から {TRASH_TTL_DAYS} 日後に自動で完全削除されます。
+      </div>
+      <ScrollArea className="min-h-0 flex-1">
+        {trash.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 px-6 py-20 text-center">
+            <Trash2 className="size-6 text-muted-foreground" />
+            <div className="text-sm font-medium">ゴミ箱は空です</div>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              削除した Issue はここに {TRASH_TTL_DAYS} 日間保管され、復元できます。
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y">
+            {trash.map((m) => {
+              const left = daysLeft(m.deletedAt);
+              return (
+                <li key={m.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{m.title}</div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      削除: {fmtDateTime(m.deletedAt)} ·{" "}
+                      {left > 0 ? `あと ${left} 日で完全削除` : "まもなく完全削除"}
+                      {m.branch ? ` · branch あり` : ""}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => void onRestore(m)}
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    復元
+                  </Button>
+                  <button
+                    type="button"
+                    title="完全に削除"
+                    aria-label="完全に削除"
+                    onClick={() => void onPurge(m)}
+                    className="shrink-0 rounded p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </ScrollArea>
+    </>
+  );
+}
+
+// Whole days remaining before a trashed issue is auto-purged.
+function daysLeft(deletedAt: string): number {
+  const t = Date.parse(deletedAt);
+  if (!Number.isFinite(t)) return 0;
+  const ms = t + TRASH_TTL_DAYS * 24 * 60 * 60 * 1000 - Date.now();
+  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
 }
 
 // ---------------------------------------------------------------------------
@@ -568,22 +746,24 @@ function IssueWorkbench({
   // (terminal + controls) and the center Design tab (Preview + Diff).
   const session = useImplementSession(root, issue, handleStatusChange);
 
-  // Delete this issue from the detail view: stop the preview (so nothing holds
-  // the worktree open), purge the issue + its worktree/branch, then return to
-  // the list (unmounting the workbench tears the terminal down).
+  // Delete this issue from the detail view → move to the trash (recoverable).
+  // Stop the preview first (so nothing holds the worktree open), move the issue
+  // to the trash (git untouched), then return to the list (unmounting the
+  // workbench tears the terminal down).
   const handleDeleteIssue = React.useCallback(async () => {
     const ok = await confirmDialog(
-      `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。`,
-      { title: "Issue を削除", okLabel: "削除", cancelLabel: "キャンセル" },
+      `Issue「${issue.title}」をゴミ箱に移動します。${TRASH_TTL_DAYS}日後に完全削除されます（それまでは復元できます）。`,
+      { title: "ゴミ箱へ移動", okLabel: "ゴミ箱へ移動", cancelLabel: "キャンセル" },
     );
     if (!ok) return;
     try {
       await session.preview.stop().catch(() => {});
-      await purgeIssue(root, issue);
+      await trashIssue(root, issue);
       router.push("/issues");
     } catch (e) {
-      window.alert(
+      await messageDialog(
         `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+        { title: "削除エラー" },
       );
     }
   }, [issue, root, session, router]);
