@@ -1,0 +1,4 @@
+# exploration render scratch — generators (*.mjs) and svgs are kept, renders are not
+*.png
+*.html
+_old/

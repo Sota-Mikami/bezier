@@ -1,7 +1,14 @@
-<!-- 最終更新: 2026-06-11 / DEC-007/008 確定・Onlook廃止→Annotation転換・B監査済 -->
-# Bezier — 現在地（2026-06-11 / ▶ DEC-007/008 確定, dogfood pending）
+<!-- 最終更新: 2026-06-12 / DEC-048 ロゴ確定(D1)＋完全モノクロ化 -->
+# Bezier — 現在地（2026-06-12 / ▶ DEC-048 ロゴ確定＋モノクロ）
 
 > ⭐ **再開時はまず `playbook/strategy/2026-06-11_coevolution-positioning-and-repo-sor-model.md` を読む**（共進化コア価値・repo-as-SoR データモデル・B監査・v0.5作業リスト）。次に `playbook/operations/2026-06-08_session-handoff.md`（v0.1〜v0.4 実装の全状況）。
+
+## ▶ 2026-06-12 セッション（DEC-048 — ロゴ確定＋完全モノクロ化）
+- **ロゴ確定 = D1**（抽象ペンツール：中空ダイヤ＋ハンドル線＋中空サークル＋collinear 曲線、W13、モノクロ "lit black" sheen）。多数の探索を経て CEO が D1 で確定。探索一式＝`design/brand/logo/explore/`、生成＝`explore/build-locked.mjs`。
+- **ブランド完全モノクロ化（indigo 全廃）**：app/site の `globals.css` の hue266 を全ニュートラル化、`--primary`=ink/near-white、唯一の色相=機能色 `--destructive`。`terminal-theme.ts` の cursor/selection もニュートラル化（ANSI 16 は維持）。
+- **アセット/アイコン**：`design/brand/logo/` に mark/mono/favicon/wordmark/icon-app-{white,dark}/icon.svg 書き出し。`BezierMark`（app+site, client+useId, テーマ追従 sheen）差し替え。`npx tauri icon` で全 tauri アイコン再生成。site に favicon.ico/icon.svg/apple-icon.png、app に favicon.ico 配置。favicon は塗り版＋mid-tone .ico で light/dark 両タブ対応。
+- **doc 更新**：`design-tokens.md`（全面モノクロ）/`PRINCIPLES.md`/`brand-strategy.md`(§7.5)/`logo/README.md`/`decisions-log.md`(DEC-048)。**app/site とも tsc green**。LP(:3310) にモノクロ＋新ロゴ反映済を目視確認。
+- **未了**：app の **Rust ネイティブ窓の目視 dogfood**（人間ゲート・`cd app && npm run tauri dev`、リブランド後の Rust 再ビルド込み）。LP ヒーローの mesh 化（当初依頼・据え置き）。コミットは未実施（CEO 指示待ち）。
 
 ## ▶ 2026-06-11 セッション（DEC-007 / DEC-008）
 - **DEC-007 Onlook 廃止 → 完全 LLM 駆動 + Annotation 入力**: GUI 直接編集をやめ、UI 変更は LLM 経由。入力 = 要素ピック注釈（agentation 流）＋ペン注釈（マルチモーダル）。`vendor/onlook/` 他は除去対象。AST 書き戻し（最大の技術負債）を捨てる。

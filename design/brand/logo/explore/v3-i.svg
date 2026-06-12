@@ -1,0 +1,25 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+    <path d="M46 82 C47.19 48.02 8.78 41.8 2.55 12.46" fill="none" stroke="#1c1c24" stroke-width="0.55" stroke-linecap="round" opacity="0.74"/>
+    <path d="M46 82 C47.19 48.02 12.63 39.91 8.77 10.16" fill="none" stroke="#1c1c24" stroke-width="0.62" stroke-linecap="round" opacity="0.76"/>
+    <path d="M46 82 C47.19 48.02 16.46 38.39 14.95 8.43" fill="none" stroke="#1c1c24" stroke-width="0.7" stroke-linecap="round" opacity="0.78"/>
+    <path d="M46 82 C47.19 48.02 20.22 37.24 21.01 7.25" fill="none" stroke="#1c1c24" stroke-width="0.77" stroke-linecap="round" opacity="0.81"/>
+    <path d="M46 82 C47.19 48.02 23.88 36.41 26.92 6.57" fill="none" stroke="#1c1c24" stroke-width="0.84" stroke-linecap="round" opacity="0.83"/>
+    <path d="M46 82 C47.19 48.02 27.44 35.89 32.64 6.34" fill="none" stroke="#1c1c24" stroke-width="0.91" stroke-linecap="round" opacity="0.85"/>
+    <path d="M46 82 C47.19 48.02 30.85 35.64 38.14 6.54" fill="none" stroke="#1c1c24" stroke-width="0.97" stroke-linecap="round" opacity="0.88"/>
+    <path d="M46 82 C47.19 48.02 34.11 35.64 43.38 7.1" fill="none" stroke="#1c1c24" stroke-width="1.04" stroke-linecap="round" opacity="0.9"/>
+    <path d="M46 82 C47.19 48.02 37.21 35.85 48.36 8" fill="none" stroke="#1c1c24" stroke-width="1.1" stroke-linecap="round" opacity="0.92"/>
+    <path d="M46 82 C47.19 48.02 40.28 34.59 53.21 7.52" fill="none" stroke="#1c1c24" stroke-width="1.04" stroke-linecap="round" opacity="0.9"/>
+    <path d="M46 82 C47.19 48.02 43.39 33.49 57.98 7.28" fill="none" stroke="#1c1c24" stroke-width="0.99" stroke-linecap="round" opacity="0.88"/>
+    <path d="M46 82 C47.19 48.02 46.48 32.63 62.62 7.35" fill="none" stroke="#1c1c24" stroke-width="0.93" stroke-linecap="round" opacity="0.86"/>
+    <path d="M46 82 C47.19 48.02 49.54 31.99 67.11 7.68" fill="none" stroke="#1c1c24" stroke-width="0.88" stroke-linecap="round" opacity="0.84"/>
+    <path d="M46 82 C47.19 48.02 52.53 31.56 71.42 8.25" fill="none" stroke="#1c1c24" stroke-width="0.82" stroke-linecap="round" opacity="0.83"/>
+    <path d="M46 82 C47.19 48.02 55.43 31.32 75.52 9.03" fill="none" stroke="#1c1c24" stroke-width="0.78" stroke-linecap="round" opacity="0.81"/>
+    <path d="M46 82 C47.19 48.02 58.22 31.24 79.38 9.98" fill="none" stroke="#1c1c24" stroke-width="0.73" stroke-linecap="round" opacity="0.8"/>
+    <path d="M46 82 C47.19 48.02 60.86 31.31 83 11.06" fill="none" stroke="#1c1c24" stroke-width="0.69" stroke-linecap="round" opacity="0.78"/>
+    <path d="M46 82 C47.19 48.02 63.34 31.49 86.33 12.22" fill="none" stroke="#1c1c24" stroke-width="0.65" stroke-linecap="round" opacity="0.77"/>
+    <path d="M46 82 C47.19 48.02 65.61 31.77 89.35 13.42" fill="none" stroke="#1c1c24" stroke-width="0.61" stroke-linecap="round" opacity="0.76"/>
+    <path d="M46 82 C47.19 48.02 67.64 32.1 92.01 14.6" fill="none" stroke="#1c1c24" stroke-width="0.58" stroke-linecap="round" opacity="0.74"/>
+    <path d="M46 82 C47.19 48.02 69.33 32.44 94.2 15.66" fill="none" stroke="#1c1c24" stroke-width="0.55" stroke-linecap="round" opacity="0.74"/>
+    <line x1="46" y1="82" x2="46.28" y2="74" stroke="#4750d4" stroke-width="1.3" stroke-linecap="round"/>
+    <circle cx="46" cy="82" r="2.4" fill="#4750d4"/>
+</svg>

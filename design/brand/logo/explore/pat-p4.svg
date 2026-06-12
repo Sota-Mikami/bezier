@@ -1,0 +1,9 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+    <path d="M32.05 16.14 C56.37 17.84 77.03 34.57 83.75 58.01" fill="none" stroke="#1c1c24" stroke-width="3.2" stroke-linecap="round" opacity="1"/>
+    <line x1="32.05" y1="16.14" x2="46.05" y2="14.14" stroke="#4750d4" stroke-width="1.6" stroke-linecap="round"/>
+    <line x1="83.75" y1="58.01" x2="71.75" y2="66.01" stroke="#4750d4" stroke-width="1.6" stroke-linecap="round"/>
+    <rect x="29.55" y="13.64" width="5" height="5" rx="0.8" fill="#1c1c24"/>
+    <rect x="81.25" y="55.51" width="5" height="5" rx="0.8" fill="#1c1c24"/>
+    <circle cx="46.05" cy="14.14" r="2.4" fill="#4750d4"/>
+    <circle cx="71.75" cy="66.01" r="2.4" fill="#4750d4"/>
+</svg>

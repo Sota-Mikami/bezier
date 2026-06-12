@@ -1,0 +1,17 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+    <path d="M9.42 23.5 C21.73 7.74 83.24 107.82 72 80" fill="none" stroke="#1c1c24" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
+    <path d="M27.71 17.69 C48.07 5.3 85.53 113.5 72 80" fill="none" stroke="#1c1c24" stroke-width="2.03" stroke-linecap="round" opacity="0.69"/>
+    <path d="M37 20.67 C61.84 12.34 86.95 117.01 72 80" fill="none" stroke="#1c1c24" stroke-width="2.78" stroke-linecap="round" opacity="0.81"/>
+    <path d="M40.94 24.13 C68.13 19.03 87.83 119.18 72 80" fill="none" stroke="#1c1c24" stroke-width="3.25" stroke-linecap="round" opacity="0.88"/>
+    <path d="M42.57 26.61 C70.99 23.75 88.37 120.53 72 80" fill="none" stroke="#1c1c24" stroke-width="3.54" stroke-linecap="round" opacity="0.93"/>
+    <path d="M43.25 28.19 C72.34 26.81 88.71 121.35 72 80" fill="none" stroke="#1c1c24" stroke-width="3.72" stroke-linecap="round" opacity="0.96"/>
+    <path d="M43.55 29.18 C73.02 28.74 88.92 121.87 72 80" fill="none" stroke="#1c1c24" stroke-width="3.83" stroke-linecap="round" opacity="0.97"/>
+    <path d="M43.69 29.79 C73.37 29.94 89.04 122.18 72 80" fill="none" stroke="#1c1c24" stroke-width="3.9" stroke-linecap="round" opacity="0.98"/>
+    <path d="M43.76 30.16 C73.57 30.69 89.12 122.38 72 80" fill="none" stroke="#1c1c24" stroke-width="3.94" stroke-linecap="round" opacity="0.99"/>
+    <path d="M43.79 30.39 C73.68 31.15 89.17 122.5 72 80" fill="none" stroke="#1c1c24" stroke-width="3.97" stroke-linecap="round" opacity="0.99"/>
+    <path d="M43.81 30.53 C73.75 31.43 89.2 122.58 72 80" fill="none" stroke="#1c1c24" stroke-width="3.98" stroke-linecap="round" opacity="1"/>
+    <path d="M43.82 30.62 C73.79 31.61 89.22 122.62 72 80" fill="none" stroke="#1c1c24" stroke-width="3.99" stroke-linecap="round" opacity="1"/>
+    <path d="M43.83 30.67 C73.81 31.72 89.23 122.65 72 80" fill="none" stroke="#1c1c24" stroke-width="4" stroke-linecap="round" opacity="1"/>
+    <line x1="43.83" y1="30.67" x2="54.82" y2="31.06" stroke="#4750d4" stroke-width="1.4" stroke-linecap="round" opacity="0.9"/>
+    <circle cx="54.82" cy="31.06" r="2.2" fill="#4750d4"/>
+</svg>

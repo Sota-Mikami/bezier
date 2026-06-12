@@ -1,0 +1,13 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+    <path d="M11.95 18.15 C26.34 4.25 84.08 104.49 70 78" fill="none" stroke="#1c1c24" stroke-width="0.9" stroke-linecap="round" opacity="0.5"/>
+    <path d="M29.28 16.01 C51.08 6.31 86.98 109.93 70 78" fill="none" stroke="#1c1c24" stroke-width="2.25" stroke-linecap="round" opacity="0.69"/>
+    <path d="M37.5 19.71 C63.2 14.44 88.76 113.29 70 78" fill="none" stroke="#1c1c24" stroke-width="3.08" stroke-linecap="round" opacity="0.81"/>
+    <path d="M40.98 23.21 C68.62 21.3 89.87 115.37 70 78" fill="none" stroke="#1c1c24" stroke-width="3.6" stroke-linecap="round" opacity="0.89"/>
+    <path d="M42.44 25.61 C71.05 26 90.55 116.65 70 78" fill="none" stroke="#1c1c24" stroke-width="3.91" stroke-linecap="round" opacity="0.93"/>
+    <path d="M43.08 27.15 C72.19 29.03 90.97 117.45 70 78" fill="none" stroke="#1c1c24" stroke-width="4.11" stroke-linecap="round" opacity="0.96"/>
+    <path d="M43.36 28.1 C72.75 30.93 91.24 117.94 70 78" fill="none" stroke="#1c1c24" stroke-width="4.23" stroke-linecap="round" opacity="0.98"/>
+    <path d="M43.5 28.68 C73.04 32.11 91.4 118.24 70 78" fill="none" stroke="#1c1c24" stroke-width="4.31" stroke-linecap="round" opacity="0.99"/>
+    <path d="M43.57 29.04 C73.2 32.84 91.5 118.43 70 78" fill="none" stroke="#1c1c24" stroke-width="4.35" stroke-linecap="round" opacity="0.99"/>
+    <path d="M43.61 29.27 C73.29 33.3 91.56 118.54 70 78" fill="none" stroke="#1c1c24" stroke-width="4.38" stroke-linecap="round" opacity="1"/>
+    <path d="M43.63 29.4 C73.34 33.58 91.6 118.62 70 78" fill="none" stroke="#1c1c24" stroke-width="4.4" stroke-linecap="round" opacity="1"/>
+</svg>

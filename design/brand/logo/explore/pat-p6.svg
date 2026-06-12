@@ -1,0 +1,7 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+    <path d="M34 80 C35.2 55.55 38.4 35.09 44.4 31.09" fill="none" stroke="#1c1c24" stroke-width="2.4" stroke-linecap="round" opacity="1"/>
+    <path d="M34 80 C41.84 54.99 51.68 33.99 57.68 29.99" fill="none" stroke="#1c1c24" stroke-width="2.4" stroke-linecap="round" opacity="1"/>
+    <path d="M34 80 C47.29 58.4 62.57 40.8 68.57 36.8" fill="none" stroke="#1c1c24" stroke-width="2.4" stroke-linecap="round" opacity="1"/>
+    <path d="M34 80 C49.7 64.61 67.4 53.22 73.4 49.22" fill="none" stroke="#1c1c24" stroke-width="2.4" stroke-linecap="round" opacity="1"/>
+    <circle cx="34" cy="80" r="3.4" fill="#4750d4"/>
+</svg>

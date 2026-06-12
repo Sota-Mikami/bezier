@@ -1,0 +1,14 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+    <path d="M0.77 27.76 C16.53 15.45 91.63 94.27 74 70" fill="none" stroke="#1c1c24" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
+    <path d="M23.48 16.93 C46.15 9.55 95.24 99.24 74 70" fill="none" stroke="#1c1c24" stroke-width="2.34" stroke-linecap="round" opacity="0.69"/>
+    <path d="M35.65 20.15 C61.73 17.55 97.48 102.31 74 70" fill="none" stroke="#1c1c24" stroke-width="3.28" stroke-linecap="round" opacity="0.81"/>
+    <path d="M40.64 24.57 C68.31 25.5 98.85 104.21 74 70" fill="none" stroke="#1c1c24" stroke-width="3.87" stroke-linecap="round" opacity="0.88"/>
+    <path d="M42.55 27.75 C70.95 31.06 99.71 105.38 74 70" fill="none" stroke="#1c1c24" stroke-width="4.23" stroke-linecap="round" opacity="0.93"/>
+    <path d="M43.27 29.78 C72.02 34.61 100.23 106.11 74 70" fill="none" stroke="#1c1c24" stroke-width="4.46" stroke-linecap="round" opacity="0.96"/>
+    <path d="M43.55 31.02 C72.46 36.82 100.56 106.56 74 70" fill="none" stroke="#1c1c24" stroke-width="4.6" stroke-linecap="round" opacity="0.97"/>
+    <path d="M43.65 31.78 C72.65 38.19 100.76 106.83 74 70" fill="none" stroke="#1c1c24" stroke-width="4.68" stroke-linecap="round" opacity="0.99"/>
+    <path d="M43.69 32.24 C72.74 39.03 100.88 107 74 70" fill="none" stroke="#1c1c24" stroke-width="4.73" stroke-linecap="round" opacity="0.99"/>
+    <path d="M43.7 32.52 C72.79 39.55 100.96 107.11 74 70" fill="none" stroke="#1c1c24" stroke-width="4.77" stroke-linecap="round" opacity="1"/>
+    <path d="M43.71 32.7 C72.81 39.87 101.01 107.17 74 70" fill="none" stroke="#1c1c24" stroke-width="4.79" stroke-linecap="round" opacity="1"/>
+    <path d="M43.71 32.81 C72.82 40.07 101.04 107.21 74 70" fill="none" stroke="#1c1c24" stroke-width="4.8" stroke-linecap="round" opacity="1"/>
+</svg>

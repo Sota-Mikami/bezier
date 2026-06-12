@@ -1,0 +1,10 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
+    <path d="M33 78 C41.89 53.57 5.11 47.69 6.16 17.71" fill="none" stroke="#1c1c24" stroke-width="2" stroke-linecap="round" opacity="0.78"/>
+    <path d="M33 78 C41.89 53.57 17.76 35.14 29.59 7.57" fill="none" stroke="#1c1c24" stroke-width="2.68" stroke-linecap="round" opacity="0.85"/>
+    <path d="M33 78 C41.89 53.57 34.91 26.51 55.34 4.54" fill="none" stroke="#1c1c24" stroke-width="3.3" stroke-linecap="round" opacity="0.91"/>
+    <path d="M33 78 C41.89 53.57 51.12 29.02 77.33 14.43" fill="none" stroke="#1c1c24" stroke-width="2.93" stroke-linecap="round" opacity="0.87"/>
+    <path d="M33 78 C41.89 53.57 59.95 39.09 89.16 32.26" fill="none" stroke="#1c1c24" stroke-width="2.42" stroke-linecap="round" opacity="0.82"/>
+    <path d="M33 78 C41.89 53.57 64.33 48.09 94.33 48.09" fill="none" stroke="#1c1c24" stroke-width="2" stroke-linecap="round" opacity="0.78"/>
+    <line x1="33" y1="78" x2="35.74" y2="70.48" stroke="#4750d4" stroke-width="1.3" stroke-linecap="round"/>
+    <circle cx="33" cy="78" r="3.4" fill="#4750d4"/>
+</svg>

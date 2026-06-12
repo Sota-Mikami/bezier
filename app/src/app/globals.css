@@ -48,45 +48,45 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Bezier design tokens (DEC-047). Neutral canvas + one "handle" accent
-   (blue-indigo ≈ hue 266 = the pen-tool handle color). Accent is reserved for
-   3 uses only: primary action / active control point / agent-change mark.
-   See design/brand/2026-06-12_design-tokens.md. */
+/* Bezier design tokens (DEC-048). MONOCHROME rule: ink + greys only, no hue.
+   The logo is monochrome "lit black"; the UI follows — primary = ink (near-black
+   on light, near-white on dark). The only non-neutral hue left is `destructive`
+   (a functional red). See design/brand/2026-06-12_design-tokens.md. */
 :root {
   --background: oklch(0.993 0.0015 95); /* barely-warm white, not pure #fff */
-  --foreground: oklch(0.22 0.01 266); /* ink near-black, not pure #000 */
-  /* Handle accent — primary action / active control point / agent-change mark. */
-  --ai: oklch(0.52 0.2 266);
+  --foreground: oklch(0.22 0 0); /* ink near-black, not pure #000 */
+  /* Agent-change / active-control mark — a strong neutral (monochrome). */
+  --ai: oklch(0.32 0 0);
   --card: oklch(0.997 0.001 95); /* barely-off-white, not pure #fff (PRINCIPLES §7) */
-  --card-foreground: oklch(0.22 0.01 266);
+  --card-foreground: oklch(0.22 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.01 266);
-  --primary: oklch(0.5 0.21 266); /* handle-indigo */
-  --primary-foreground: oklch(0.99 0.01 266);
+  --popover-foreground: oklch(0.22 0 0);
+  --primary: oklch(0.24 0 0); /* ink — monochrome primary */
+  --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.965 0.003 95);
-  --secondary-foreground: oklch(0.26 0.012 266);
+  --secondary-foreground: oklch(0.26 0 0);
   --muted: oklch(0.965 0.003 95);
-  --muted-foreground: oklch(0.5 0.012 266);
-  --accent: oklch(0.955 0.022 266); /* faint handle tint (hover / selected) */
-  --accent-foreground: oklch(0.44 0.16 266);
+  --muted-foreground: oklch(0.5 0 0);
+  --accent: oklch(0.955 0 0); /* faint handle tint (hover / selected) */
+  --accent-foreground: oklch(0.44 0 0);
   --destructive: oklch(0.56 0.2 25);
   --border: oklch(0.915 0.004 95);
   --input: oklch(0.915 0.004 95);
-  --ring: oklch(0.55 0.18 266); /* focus ring = handle color */
-  --chart-1: oklch(0.5 0.21 266);
-  --chart-2: oklch(0.62 0.13 266);
+  --ring: oklch(0.55 0 0); /* focus ring = handle color */
+  --chart-1: oklch(0.5 0 0);
+  --chart-2: oklch(0.62 0 0);
   --chart-3: oklch(0.556 0 0);
   --chart-4: oklch(0.439 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0.002 95);
-  --sidebar-foreground: oklch(0.22 0.01 266);
-  --sidebar-primary: oklch(0.5 0.21 266);
-  --sidebar-primary-foreground: oklch(0.99 0.01 266);
-  --sidebar-accent: oklch(0.955 0.022 266);
-  --sidebar-accent-foreground: oklch(0.44 0.16 266);
+  --sidebar-foreground: oklch(0.22 0 0);
+  --sidebar-primary: oklch(0.24 0 0);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.955 0 0);
+  --sidebar-accent-foreground: oklch(0.44 0 0);
   --sidebar-border: oklch(0.915 0.004 95);
-  --sidebar-ring: oklch(0.55 0.18 266);
+  --sidebar-ring: oklch(0.55 0 0);
   /* Motion — every easing is a bézier (the name, made literal). No linear. */
   --ease-handle: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -97,39 +97,39 @@
 }
 
 .dark {
-  --background: oklch(0.175 0.008 266); /* true dark + a faint ink tint */
+  --background: oklch(0.175 0 0); /* true dark + a faint ink tint */
   --foreground: oklch(0.97 0.004 95);
   /* Handle accent — brighter on dark so it reads against the editor. */
-  --ai: oklch(0.7 0.17 266);
-  --card: oklch(0.21 0.009 266);
+  --ai: oklch(0.7 0 0);
+  --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.97 0.004 95);
-  --popover: oklch(0.21 0.009 266);
+  --popover: oklch(0.21 0 0);
   --popover-foreground: oklch(0.97 0.004 95);
-  --primary: oklch(0.5 0.21 266); /* same handle-indigo in both modes (brand-constant) */
-  --primary-foreground: oklch(0.99 0.01 266);
-  --secondary: oklch(0.27 0.01 266);
+  --primary: oklch(0.92 0 0); /* near-white — monochrome primary on dark */
+  --primary-foreground: oklch(0.2 0 0);
+  --secondary: oklch(0.27 0 0);
   --secondary-foreground: oklch(0.97 0.004 95);
-  --muted: oklch(0.27 0.01 266);
-  --muted-foreground: oklch(0.71 0.012 266);
-  --accent: oklch(0.3 0.035 266);
-  --accent-foreground: oklch(0.86 0.05 266);
+  --muted: oklch(0.27 0 0);
+  --muted-foreground: oklch(0.71 0 0);
+  --accent: oklch(0.3 0 0);
+  --accent-foreground: oklch(0.86 0 0);
   --destructive: oklch(0.66 0.18 25);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.62 0.17 266);
-  --chart-1: oklch(0.62 0.18 266);
-  --chart-2: oklch(0.7 0.13 266);
+  --ring: oklch(0.62 0 0);
+  --chart-1: oklch(0.62 0 0);
+  --chart-2: oklch(0.7 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.195 0.009 266);
+  --sidebar: oklch(0.195 0 0);
   --sidebar-foreground: oklch(0.97 0.004 95);
-  --sidebar-primary: oklch(0.62 0.18 266);
-  --sidebar-primary-foreground: oklch(0.99 0.01 266);
-  --sidebar-accent: oklch(0.3 0.035 266);
-  --sidebar-accent-foreground: oklch(0.86 0.05 266);
+  --sidebar-primary: oklch(0.92 0 0);
+  --sidebar-primary-foreground: oklch(0.2 0 0);
+  --sidebar-accent: oklch(0.3 0 0);
+  --sidebar-accent-foreground: oklch(0.86 0 0);
   --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.62 0.17 266);
+  --sidebar-ring: oklch(0.62 0 0);
 }
 
 @layer base {

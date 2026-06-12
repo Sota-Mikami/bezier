@@ -1,15 +1,1 @@
-<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier">
-  <!-- The curve = the agent's output (ink). Thinner/harder so it reads as a drawn path, not a ribbon. -->
-  <path d="M11 35 C24 35 24 13 37 13" stroke="#1c1c24" stroke-width="4" stroke-linecap="round"/>
-  <!-- The handles = the tangent lines you hold (handle-indigo). Heavier = intentional, not hairline. -->
-  <g stroke="#4750d4" stroke-width="2.2" stroke-linecap="round">
-    <path d="M11 35 L24 35"/>
-    <path d="M37 13 L24 13"/>
-  </g>
-  <!-- Control points: round, off-curve, equal weight to the anchors (pen-tool grammar). -->
-  <circle cx="24" cy="35" r="2" fill="#4750d4"/>
-  <circle cx="24" cy="13" r="2" fill="#4750d4"/>
-  <!-- Anchor points: square, on-curve. -->
-  <rect x="9" y="33" width="4" height="4" rx="0.8" fill="#1c1c24"/>
-  <rect x="35" y="11" width="4" height="4" rx="0.8" fill="#1c1c24"/>
-</svg>
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bezier"><defs><linearGradient id="bz" gradientUnits="userSpaceOnUse" x1="22" y1="14" x2="78" y2="92"><stop offset="0" stop-color="#5a5a69"/><stop offset="0.5" stop-color="#26262f"/><stop offset="1" stop-color="#08080c"/></linearGradient></defs><g transform="translate(-1.88 -2.63)"><line x1="40.75" y1="34" x2="67.5" y2="34" stroke="url(#bz)" stroke-width="13" stroke-linecap="round"/><path d="M40.75 34 C60.75 34 74.75 68 70.75 86" fill="none" stroke="url(#bz)" stroke-width="13" stroke-linecap="round"/><path d="M24 19.25 L38.75 34 L24 48.75 L9.25 34 Z" fill="none" stroke="url(#bz)" stroke-width="13" stroke-linejoin="round"/><circle cx="82" cy="34" r="12.5" fill="none" stroke="url(#bz)" stroke-width="13"/></g></svg>
