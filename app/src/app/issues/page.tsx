@@ -22,6 +22,8 @@ import {
   GitBranch,
   GitPullRequest,
   ExternalLink,
+  History,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -64,6 +66,10 @@ const CODE_WATCH_MS = 1800;
 const MANUAL_SWITCH_GRACE_MS = 8000;
 // How long the "● updating" pulse stays on a tab after a change.
 const PULSE_MS = 3000;
+
+// Resizable chat|canvas split (DEC-033): persisted chat width + its min.
+const CHAT_WIDTH_KEY = "continuum:chat-width";
+const CHAT_MIN = 320;
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -471,6 +477,48 @@ function IssueWorkbench({
   const router = useRouter();
   const [tab, setTab] = React.useState<DetailTab>("spec");
   const [creatingSpec, setCreatingSpec] = React.useState(false);
+  // History drawer (DEC-033): the activity log is no longer a column — it's a
+  // toggled right-side drawer so the main view is just chat | canvas.
+  const [showHistory, setShowHistory] = React.useState(false);
+  // Resizable chat|canvas split (DEC-033): the chat (left) width in px, dragged
+  // via the divider and persisted. Clamped to the container on drag.
+  const rowRef = React.useRef<HTMLDivElement | null>(null);
+  const [chatWidth, setChatWidth] = React.useState<number>(() => {
+    if (typeof window === "undefined") return 460;
+    const v = Number(window.localStorage.getItem(CHAT_WIDTH_KEY));
+    return Number.isFinite(v) && v >= CHAT_MIN ? v : 460;
+  });
+  const draggingRef = React.useRef(false);
+
+  const onResizeStart = React.useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      draggingRef.current = true;
+      const startX = e.clientX;
+      const startW = chatWidth;
+      const rect = rowRef.current?.getBoundingClientRect();
+      const max = rect ? rect.width * 0.7 : 900;
+      let latest = startW; // captured so pointerup can persist the final width
+      const onMove = (ev: PointerEvent) => {
+        if (!draggingRef.current) return;
+        latest = Math.max(CHAT_MIN, Math.min(max, startW + (ev.clientX - startX)));
+        setChatWidth(latest);
+      };
+      const onUp = () => {
+        draggingRef.current = false;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        try {
+          window.localStorage.setItem(CHAT_WIDTH_KEY, String(latest));
+        } catch {
+          /* ignore */
+        }
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [chatWidth],
+  );
 
   // --- Live change visualization (DEC-012 §7) ------------------------------
   // A change signal (agent rewrote spec.md / wrote code) PULSES the changed tab
@@ -643,6 +691,20 @@ function IssueWorkbench({
           />
           <button
             type="button"
+            title="活動ログ"
+            aria-label="活動ログ"
+            onClick={() => setShowHistory((v) => !v)}
+            className={cn(
+              "rounded p-2 transition-colors hover:bg-muted",
+              showHistory
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <History className="size-4" />
+          </button>
+          <button
+            type="button"
             title="Issue を削除"
             aria-label="Issue を削除"
             onClick={() => void handleDeleteIssue()}
@@ -653,37 +715,35 @@ function IssueWorkbench({
         </div>
       </DetailHeader>
 
-      {/* Responsive layout (DEC-031):
-          - xl+ : 3 columns  thread | center | agent
-          - md–xl : 2 columns center | agent (thread hidden)
-          - <md : single column STACKED — center on top, agent below — so neither
-            pane is ever crushed horizontally; both read at full width.
-          The agent terminal stays mounted across all of these, so the session
-          persists. */}
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        {/* left: minimal activity thread (only on wide — secondary). */}
-        <section className="hidden w-[240px] shrink-0 flex-col border-r xl:flex">
-          <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
-            スレッド
-          </div>
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="space-y-3 p-4">
-              {/* Durable activity timeline (chat-first loop): newest-first, so the
-                  latest activity is on top. 起票 (oldest) sits at the bottom. */}
-              {session.thread.length > 0 && (
-                <ThreadTimeline events={session.thread} />
-              )}
-              <div className="flex items-center gap-2 border-t pt-3 text-[11px] text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-foreground/40" />
-                起票 · {fmtDate(issue.created)}
-              </div>
-            </div>
-          </ScrollArea>
+      {/* Chat-first layout (DEC-033): LEFT = Agent chat (the driver), RIGHT =
+          Spec/Design canvas (the result). The divider between them is draggable
+          (md+); below md they STACK (chat on top) so nothing is crushed. The
+          activity log moved out to a toggled history drawer. The terminal stays
+          mounted across all of this, so the session persists. */}
+      <div
+        ref={rowRef}
+        className="relative flex min-h-0 flex-1 flex-col md:flex-row"
+        style={{ ["--chat-w" as string]: `${chatWidth}px` }}
+      >
+        {/* LEFT: Agent chat — primary. Stacked: top 1/2. Row: resizable width. */}
+        <section className="flex min-h-0 flex-1 flex-col border-b md:w-[var(--chat-w)] md:flex-none md:border-b-0 md:border-r">
+          <IssueAgentPanel issue={issue} session={session} />
         </section>
 
-        {/* center: artifact tabs — Spec (CM editor) | Design (Preview/Diff).
-            Stacked: top, 3/5 of the height. Row: fills the middle column. */}
-        <section className="flex min-h-0 min-w-0 flex-[3] flex-col border-b md:flex-1 md:border-b-0 md:border-r">
+        {/* Drag handle (md+ only) */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={onResizeStart}
+          onDoubleClick={() => setChatWidth(460)}
+          title="ドラッグで幅を調整（ダブルクリックでリセット）"
+          className="group/resize hidden w-1.5 shrink-0 cursor-col-resize items-stretch md:flex"
+        >
+          <div className="mx-auto w-px bg-border transition-colors group-hover/resize:w-0.5 group-hover/resize:bg-primary/50" />
+        </div>
+
+        {/* RIGHT: Spec/Design canvas — the result you're shaping. */}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
             <Button
               variant={tab === "spec" ? "secondary" : "ghost"}
@@ -730,14 +790,62 @@ function IssueWorkbench({
           </div>
         </section>
 
-        {/* right: persistent AI agent panel (picker + controls + terminal).
-            Stacked (<md): bottom, 2/5 of the height — proportional so it never
-            overflows a short window. Row (md+): a side column min/max-clamped. */}
-        <section className="flex min-h-0 flex-[2] flex-col md:w-[42%] md:min-w-[340px] md:max-w-[640px] md:flex-none">
-          <IssueAgentPanel issue={issue} session={session} />
-        </section>
+        {/* History drawer (toggle): the durable activity log, slides in from the
+            right over the canvas. */}
+        {showHistory && (
+          <HistoryDrawer
+            created={issue.created}
+            thread={session.thread}
+            onClose={() => setShowHistory(false)}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+// Right-side slide-over with the issue's durable activity log (DEC-033). Newest
+// activity first; 起票 at the bottom. Closed from its header or the backdrop.
+function HistoryDrawer({
+  created,
+  thread,
+  onClose,
+}: {
+  created: string;
+  thread: ThreadEvent[];
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div
+        className="absolute inset-0 z-20 bg-foreground/5"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside className="absolute inset-y-0 right-0 z-30 flex w-[300px] max-w-[85%] flex-col border-l bg-background shadow-lg">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
+          <History className="size-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium">活動ログ</span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="閉じる"
+            className="ml-auto rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-3 p-4">
+            {thread.length > 0 && <ThreadTimeline events={thread} />}
+            <div className="flex items-center gap-2 border-t pt-3 text-[11px] text-muted-foreground">
+              <span className="size-1.5 rounded-full bg-foreground/40" />
+              起票 · {fmtDate(created)}
+            </div>
+          </div>
+        </ScrollArea>
+      </aside>
+    </>
   );
 }
 
