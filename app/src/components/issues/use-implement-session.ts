@@ -64,6 +64,7 @@ import {
   ptyKillKey,
   ptyStatuses,
   agentHookSettings,
+  type AgentState,
 } from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
@@ -91,6 +92,9 @@ export interface TermSpawn {
 }
 
 export interface ImplementSession {
+  /** The opened repo root + the issue (for design-feedback paths / screenshots). */
+  root: string;
+  issue: Issue;
   gitRepo: boolean | null;
   ref: WorktreeRef | null;
   agents: AgentTool[];
@@ -117,6 +121,9 @@ export interface ImplementSession {
   termEventsPath: string;
   /** A background agent (pty) is currently running for this issue (DEC-027). */
   running: boolean;
+  /** Raw agent state (running / waiting / done / error / null), so callers can
+   * detect a TURN ending (running → waiting) vs the process exiting (DEC-045). */
+  agentState: AgentState | null;
   handleTermReady: (id: string) => void;
   handleTermExit: (code: number | null) => void;
 
@@ -149,6 +156,13 @@ export interface ImplementSession {
   canOpenPR: boolean;
   prUrl: string | null;
   openPR: () => Promise<void>;
+
+  /**
+   * Send design feedback to the agent (DEC-045). `promptText` is the combined
+   * batch of annotations (numbered, with a screenshot reference); it continues
+   * the issue's conversation as a fix turn. Throws if no worktree / agent.
+   */
+  sendDesignFeedback: (promptText: string, note?: string) => Promise<void>;
 
   canImplement: boolean;
   handleImplement: () => Promise<void>;
@@ -330,12 +344,14 @@ export function useImplementSession(
   // pty_statuses so a finished agent (which stays in the map for the inbox)
   // doesn't keep the badge green.
   const [running, setRunning] = React.useState(false);
+  const [agentState, setAgentState] = React.useState<AgentState | null>(null);
   React.useEffect(() => {
     let cancelled = false;
     const tick = async () => {
       const all = await ptyStatuses().catch(() => []);
       if (cancelled) return;
       const mine = all.find((s) => s.key === issue.id);
+      setAgentState(mine?.state ?? null);
       setRunning(mine?.state === "running" || mine?.state === "waiting");
     };
     void tick();
@@ -946,6 +962,27 @@ export function useImplementSession(
     }
   }, [ref, action, root, issue, thread, logEvent, refreshDiff, loadBehind]);
 
+  // Design feedback (DEC-045): continue the issue's conversation with a fix turn
+  // built from the reviewed annotations + an annotated screenshot. Mirrors
+  // handleRerun's launch semantics (kill any live agent for the issue, relaunch
+  // with `--continue` + the prompt as a positional arg — reliable arg-passing).
+  // The screenshot lives under issue.dir, already readable via `--add-dir`.
+  const sendDesignFeedback = React.useCallback(
+    async (promptText: string, note?: string) => {
+      if (!ref) throw new Error("worktree がありません。先に Implement してください。");
+      if (!selectedAgent?.available) {
+        throw new Error("利用可能なエージェント (claude / codex) が見つかりません。");
+      }
+      await ptyKillKey(issue.id).catch(() => {});
+      launchAgent(selectedAgent, workDir(ref.path), {
+        prompt: promptText,
+        resume: true,
+      });
+      void logEvent("design_feedback", note);
+    },
+    [ref, selectedAgent, issue.id, launchAgent, workDir, logEvent],
+  );
+
   const canImplement =
     gitRepo === true && issue.slots.spec && !!selectedAgent?.available && !action;
 
@@ -954,6 +991,8 @@ export function useImplementSession(
   const canResume = !!ref && !termMounted && !!selectedAgent?.available && !action;
 
   return {
+    root,
+    issue,
     gitRepo,
     ref,
     agents,
@@ -976,6 +1015,7 @@ export function useImplementSession(
     running,
     handleTermReady,
     handleTermExit,
+    agentState,
     thread,
     canResume,
     handleResume,
@@ -990,6 +1030,7 @@ export function useImplementSession(
     canOpenPR,
     prUrl,
     openPR,
+    sendDesignFeedback,
     canImplement,
     handleImplement,
     handleStart,

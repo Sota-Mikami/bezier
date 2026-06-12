@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-inner-position",
+    "core:window:allow-scale-factor",
     "dialog:allow-open",
     "dialog:allow-confirm",
     "dialog:allow-message"

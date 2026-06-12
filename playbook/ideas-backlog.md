@@ -5,9 +5,9 @@
 
 ---
 
-## B. Designer/PdM ネイティブな Review（moat・着手予定）
+## B. Designer/PdM ネイティブな Review（moat・**Phase 1 着手＝DEC-045**）
 
-> CEO:「元々やりたいと思っていた」。**最優先の差別化投資**。A の後に着手。
+> CEO:「元々やりたいと思っていた」。**最優先の差別化投資**。**2026-06-12 にプレビュー注釈→Agent修正の Phase 1 を実装（DEC-045）**。残: ペン矩形リージョン / before-after / 要素ピックの精密セレクタ。
 
 - **参照プロダクト**: https://www.agentation.com/ （Agent の作業を visual に review/annotate する体験）
 - **CEO 構想**: agentation 的な体験 ＋ **Figma の Comment のような体験**。プレビュー上の任意の場所にピンを刺してコメント → それが Agent へのフィードバックになる。

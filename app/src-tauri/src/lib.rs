@@ -204,6 +204,58 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
     }
 }
 
+/// Capture a rectangular screen region to a PNG (DEC-045 — design feedback).
+/// Uses macOS `screencapture -x -R x,y,w,h` (no sound, non-interactive). The
+/// region is in POINTS in the global display coordinate space (top-left origin);
+/// the caller computes it from the window position + the preview element rect.
+/// `out_path` must be under a `.continuum` store. Requires Screen Recording
+/// permission (macOS prompts on first use; a denied capture yields a blank/err).
+#[tauri::command]
+fn capture_region(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    out_path: String,
+) -> Result<String, String> {
+    let target = Path::new(&out_path);
+    reject_traversal(target)?;
+    if !target
+        .components()
+        .any(|c| c.as_os_str() == ".continuum")
+    {
+        return Err("refusing to write a capture outside a .continuum store".to_string());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("capture_region mkdir {}: {e}", parent.display()))?;
+    }
+    if width < 1.0 || height < 1.0 {
+        return Err("capture_region: empty region".to_string());
+    }
+    let region = format!(
+        "{},{},{},{}",
+        x.round() as i64,
+        y.round() as i64,
+        width.round() as i64,
+        height.round() as i64
+    );
+    let out = std::process::Command::new("screencapture")
+        .args(["-x", "-R", &region, &out_path])
+        .output()
+        .map_err(|e| format!("screencapture: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "screencapture failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    if !target.exists() {
+        return Err("screencapture produced no file (画面収録の許可が必要かもしれません)".to_string());
+    }
+    Ok(out_path)
+}
+
 /// Open a folder in the user's IDE (DEC-041 "…" menu → IDEで開く). Tries known
 /// editor CLIs on PATH in preference order and launches the first one found with
 /// the folder as its argument. Returns the editor name on success; a clear Err
@@ -1796,6 +1848,7 @@ pub fn run() {
             read_file_bytes,
             reveal_in_finder,
             open_in_editor,
+            capture_region,
             remove_path,
             move_path,
             pty_spawn,

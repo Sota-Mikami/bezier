@@ -806,7 +806,8 @@ export type ThreadEventType =
   | "accept"
   | "merge"
   | "pr_opened"
-  | "discard";
+  | "discard"
+  | "design_feedback";
 
 export interface ThreadEvent {
   type: ThreadEventType;
@@ -884,6 +885,7 @@ const THREAD_LABELS: Record<ThreadEventType, string> = {
   merge: "main に merge",
   pr_opened: "PR を作成",
   discard: "破棄",
+  design_feedback: "デザインFB",
 };
 
 /** Render the durable thread as a compact bulleted activity log. */

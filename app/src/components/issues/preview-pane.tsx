@@ -26,6 +26,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
+import type { ImplementSession } from "./use-implement-session";
+import { DesignAnnotations } from "./design-annotations";
 
 const STATUS_LABEL: Record<PreviewStatus, string> = {
   idle: "未起動",
@@ -55,9 +57,12 @@ function StatusBadge({ status }: { status: PreviewStatus }) {
 export function PreviewPane({
   server,
   hasRef,
+  session,
 }: {
   server: PreviewServer;
   hasRef: boolean;
+  /** When present (web runner), enables the design-feedback overlay (DEC-045). */
+  session?: ImplementSession;
 }) {
   const { status, config, scriptsDev, log, error, url, configLoaded } = server;
 
@@ -161,13 +166,17 @@ export function PreviewPane({
       {/* Body */}
       <div className="relative min-h-0 flex-1">
         {status === "ready" && url ? (
-          <iframe
-            key={reloadNonce}
-            src={url}
-            title="worktree preview"
-            className="h-full w-full border-0 bg-white"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          />
+          <>
+            <iframe
+              key={reloadNonce}
+              src={url}
+              title="worktree preview"
+              className="h-full w-full border-0 bg-white"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            />
+            {/* Figma-style comment/pen feedback over the live preview (DEC-045). */}
+            {session && <DesignAnnotations session={session} />}
+          </>
         ) : status === "starting" ? (
           <StartingOrError
             spinner

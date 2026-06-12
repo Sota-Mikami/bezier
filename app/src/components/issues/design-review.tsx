@@ -69,7 +69,7 @@ export function DesignReview({ session }: { session: ImplementSession }) {
           survive switching tabs. */}
       <div className="relative min-h-0 flex-1">
         <div className={cn("absolute inset-0", reviewTab !== "preview" && "hidden")}>
-          <PreviewPane server={preview} hasRef={!!ref} />
+          <PreviewPane server={preview} hasRef={!!ref} session={session} />
         </div>
         <div className={cn("absolute inset-0", reviewTab !== "diff" && "hidden")}>
           <ScrollArea className="h-full">

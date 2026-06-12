@@ -89,6 +89,20 @@ export function revealInFinder(path: string): Promise<void> {
 }
 
 /**
+ * Capture a screen region (POINTS, global top-left origin) to a PNG (DEC-045 —
+ * design feedback). Returns the written path. -> invoke("capture_region", …)
+ */
+export function captureRegion(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  outPath: string,
+): Promise<string> {
+  return invoke<string>("capture_region", { x, y, width, height, outPath });
+}
+
+/**
  * Open a folder in the user's IDE (first installed of cursor/code/…). Returns the
  * editor's display name. -> invoke("open_in_editor", { path })
  */
