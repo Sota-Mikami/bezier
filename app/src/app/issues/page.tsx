@@ -400,7 +400,7 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
         <DetailHeader />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <div className="text-base font-medium">Issue が見つかりません</div>
-          <Button render={<Link href="/issues" />} variant="outline" className="gap-2">
+          <Button render={<Link href="/issues" />} nativeButton={false} variant="outline" className="gap-2">
             <ArrowLeft className="size-4" />
             一覧へ戻る
           </Button>
@@ -727,6 +727,7 @@ function DetailHeader({ children }: { children?: React.ReactNode }) {
       <Separator orientation="vertical" className="mx-1 h-5" />
       <Button
         render={<Link href="/issues" />}
+        nativeButton={false}
         variant="ghost"
         size="icon"
         className="size-7"
