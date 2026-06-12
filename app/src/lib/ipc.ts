@@ -131,3 +131,20 @@ export async function pickFolder(): Promise<string | null> {
   // With multiple:false the dialog plugin returns a single string path.
   return Array.isArray(selected) ? (selected[0] ?? null) : selected;
 }
+
+/** Open a native image-file picker (multi-select). Returns the chosen paths
+ * (empty when cancelled). Used by the "/Image" slash command (DEC-044). */
+export async function pickImageFiles(): Promise<string[]> {
+  const selected = await open({
+    directory: false,
+    multiple: true,
+    filters: [
+      {
+        name: "画像",
+        extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp"],
+      },
+    ],
+  });
+  if (selected == null) return [];
+  return Array.isArray(selected) ? selected : [selected];
+}

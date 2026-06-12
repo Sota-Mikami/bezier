@@ -33,7 +33,12 @@ import {
 import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
-import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
+import {
+  autocompletion,
+  completionKeymap,
+  completionStatus,
+  acceptCompletion,
+} from "@codemirror/autocomplete";
 import {
   markdown,
   markdownLanguage,
@@ -44,13 +49,18 @@ import { languages } from "@codemirror/language-data";
 import { stringify as yamlStringify } from "yaml";
 
 import type { OpenDoc } from "@/lib/ipc";
-import { writeFile, writeFileBytes, messageDialog } from "@/lib/ipc";
+import { writeFile } from "@/lib/ipc";
 import type { Frontmatter } from "@/lib/frontmatter";
 import { livePreview } from "@/components/workspace/markdown-live-preview";
 import {
-  slashCommands,
+  makeSlashCommands,
   slashAddToOptions,
 } from "@/components/workspace/markdown-slash-commands";
+import {
+  insertImageFiles,
+  dirOf,
+  dragHasFiles,
+} from "@/components/workspace/markdown-images";
 import { cn } from "@/lib/utils";
 
 export interface MarkdownEditorHandle {
@@ -124,35 +134,90 @@ function emitFrontmatter(fm: Frontmatter | undefined): string {
   return `---\n${yamlStringify(data)}---\n`;
 }
 
-// --- Spec image insertion (DEC-043 #1) -----------------------------------
-// Pasted/dropped images are saved next to the doc under `assets/` and a
-// `![](assets/<name>)` reference is inserted at the caret; the live preview then
-// renders them inline (markdown-live-preview.ts).
+// --- List / block indentation (DEC-044): Tab / Shift-Tab ------------------
+// Tab indents the current line(s) by one unit (two spaces), Shift-Tab outdents.
+// Works for any line but is tuned for markdown lists (bullet / numbered / task),
+// letting you nest items the usual way. Capped at MAX_INDENT_LEVELS so a stray
+// Tab can't run away. When the slash-command popup is open, Tab accepts it.
 
-/** Directory portion of an absolute file path. */
-function dirOf(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i > 0 ? path.slice(0, i) : "";
+const INDENT_UNIT = "  "; // two spaces per nesting level
+const MAX_INDENT_LEVELS = 4;
+const LIST_RE = /^(\s*)(?:[-*+]|\d+[.)])(?:\s+\[[ xX]\])?(?:\s|$)/;
+
+/** Line numbers touched by any selection range. */
+function affectedLineNumbers(state: EditorState): number[] {
+  const nums = new Set<number>();
+  for (const r of state.selection.ranges) {
+    const a = state.doc.lineAt(r.from).number;
+    const b = state.doc.lineAt(r.to).number;
+    for (let n = a; n <= b; n++) nums.add(n);
+  }
+  return [...nums];
 }
 
-/** File extension for an image File (from its MIME type, then its name). */
-function imageExt(file: File): string {
-  const fromType: Record<string, string> = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/gif": "gif",
-    "image/webp": "webp",
-    "image/svg+xml": "svg",
-    "image/avif": "avif",
-    "image/bmp": "bmp",
-  };
-  return fromType[file.type] || file.name.split(".").pop()?.toLowerCase() || "png";
+/** Visual width of a line's leading whitespace (tab counts as two). */
+function leadWidth(text: string): number {
+  const lead = /^[ \t]*/.exec(text)?.[0] ?? "";
+  let w = 0;
+  for (const ch of lead) w += ch === "\t" ? 2 : 1;
+  return w;
 }
 
-/** A filesystem-safe basename stem from a pasted file (often "image"). */
-function imageStem(name: string): string {
-  const stem = name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]+/g, "-");
-  return stem.replace(/^-+|-+$/g, "").slice(0, 40) || "image";
+function indentCommand(view: EditorView): boolean {
+  // Tab accepts an open slash-command completion (Notion-style).
+  if (completionStatus(view.state) === "active") return acceptCompletion(view);
+
+  const { state } = view;
+  const sel = state.selection.main;
+  // A single caret on a NON-list line → just insert an indent unit (plain tab),
+  // so Tab is still useful in prose.
+  if (state.selection.ranges.length === 1 && sel.empty) {
+    const line = state.doc.lineAt(sel.head);
+    if (!LIST_RE.test(line.text)) {
+      view.dispatch(
+        state.update({
+          changes: { from: sel.head, insert: INDENT_UNIT },
+          selection: { anchor: sel.head + INDENT_UNIT.length },
+          userEvent: "input.indent",
+        }),
+      );
+      return true;
+    }
+  }
+  // Otherwise indent each affected line at its start (capped). Empty lines and
+  // lines already at the depth cap are skipped.
+  const changes: { from: number; insert: string }[] = [];
+  for (const n of affectedLineNumbers(state)) {
+    const line = state.doc.line(n);
+    if (line.length === 0) continue;
+    if (leadWidth(line.text) >= MAX_INDENT_LEVELS * INDENT_UNIT.length) continue;
+    changes.push({ from: line.from, insert: INDENT_UNIT });
+  }
+  if (changes.length > 0) {
+    view.dispatch(state.update({ changes, userEvent: "input.indent" }));
+  }
+  return true; // swallow Tab either way (never blur the editor)
+}
+
+function dedentCommand(view: EditorView): boolean {
+  if (completionStatus(view.state) === "active") return acceptCompletion(view);
+
+  const { state } = view;
+  const changes: { from: number; to: number; insert: string }[] = [];
+  for (const n of affectedLineNumbers(state)) {
+    const line = state.doc.line(n);
+    const m = /^([ \t]+)/.exec(line.text);
+    if (!m) continue;
+    // Remove one unit: a leading tab, or up to two leading spaces.
+    const remove = line.text[0] === "\t" ? 1 : Math.min(INDENT_UNIT.length, m[1].length);
+    if (remove > 0) {
+      changes.push({ from: line.from, to: line.from + remove, insert: "" });
+    }
+  }
+  if (changes.length > 0) {
+    view.dispatch(state.update({ changes, userEvent: "delete.dedent" }));
+  }
+  return true;
 }
 
 /**
@@ -235,6 +300,14 @@ const editorTheme = EditorView.theme({
     "--cm-name": "var(--foreground)",
   },
   "&.cm-editor.cm-focused": { outline: "none" },
+  // Image drag-drop target highlight (DEC-044): a dashed ring + faint tint while
+  // an image is dragged over the editor, so the drop has an obvious target.
+  "&.cm-drag-over": {
+    outline: "2px dashed var(--primary)",
+    outlineOffset: "-8px",
+    borderRadius: "10px",
+    backgroundColor: "color-mix(in oklab, var(--primary) 5%, transparent)",
+  },
   ".cm-scroller": {
     fontFamily:
       "var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif)",
@@ -373,12 +446,50 @@ const editorTheme = EditorView.theme({
 
   // Lists.
   ".cm-md-bullet": { color: "var(--muted-foreground)" },
-  // GFM task-list checkbox (DEC-042): align with the text, accent the check.
+  // GFM task-list checkbox (DEC-042 / DEC-044): a custom span styled as a
+  // larger, tappable rounded box with a CSS checkmark (the raw `-` bullet is
+  // hidden for task items). Sized in em so it tracks the body font.
   ".cm-md-checkbox": {
+    // inline-block + a FIXED em box, with the checkmark absolutely positioned
+    // (out of flow) so the box height is identical whether checked or not — no
+    // line-height jump on toggle.
+    position: "relative",
+    display: "inline-block",
+    boxSizing: "border-box",
+    width: "1.2em",
+    height: "1.2em",
+    lineHeight: "1.2em",
+    margin: "0 0.5em 0 0",
+    verticalAlign: "-0.25em",
+    border: "1.5px solid var(--muted-foreground)",
+    borderRadius: "5px",
+    backgroundColor: "var(--background)",
     cursor: "pointer",
-    margin: "0 0.15em 0 0",
-    verticalAlign: "-0.08em",
-    accentColor: "var(--primary)",
+    transition: "background-color 0.12s ease, border-color 0.12s ease",
+  },
+  ".cm-md-checkbox:hover": {
+    borderColor: "var(--primary)",
+    backgroundColor: "color-mix(in oklab, var(--primary) 10%, var(--background))",
+  },
+  ".cm-md-checkbox-checked": {
+    borderColor: "var(--primary)",
+    backgroundColor: "var(--primary)",
+  },
+  ".cm-md-checkbox-checked:hover": {
+    backgroundColor: "var(--primary)",
+  },
+  // The checkmark — a rotated border-corner, absolutely centered so it never
+  // affects the box's layout/height.
+  ".cm-md-checkbox-checked::after": {
+    content: "''",
+    position: "absolute",
+    left: "50%",
+    top: "46%",
+    width: "0.3em",
+    height: "0.56em",
+    border: "solid var(--primary-foreground)",
+    borderWidth: "0 2px 2px 0",
+    transform: "translate(-50%, -55%) rotate(45deg)",
   },
 
   // Inline images (DEC-043 #1) — rendered from `![](assets/…)` off-cursor.
@@ -618,37 +729,9 @@ function MarkdownEditorInner(
     // pasted/dropped images are saved (DEC-043 #1). Fixed for this mounted doc.
     const baseDir = dirOf(docRef.current.path);
 
-    // Save pasted/dropped image files under <baseDir>/assets/ and insert a
-    // `![](assets/<name>)` reference at the caret (or drop point).
-    const insertImageFiles = async (
-      ev: EditorView,
-      files: File[],
-      atPos?: number,
-    ) => {
-      if (!baseDir) return;
-      for (const file of files) {
-        try {
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          const rel = `assets/${imageStem(file.name)}-${Date.now().toString(36)}-${Math.floor(
-            Math.random() * 1e4,
-          ).toString(36)}.${imageExt(file)}`;
-          await writeFileBytes(`${baseDir}/${rel}`, bytes);
-          const snippet = `![](${rel})`;
-          const pos = atPos ?? ev.state.selection.main.head;
-          ev.dispatch({
-            changes: { from: pos, insert: `${snippet}\n` },
-            selection: { anchor: pos + snippet.length },
-          });
-        } catch (e) {
-          await messageDialog(
-            `画像を保存できませんでした: ${e instanceof Error ? e.message : String(e)}`,
-            { title: "画像の挿入エラー" },
-          );
-        }
-      }
-    };
-
-    // Paste an image from the clipboard / drop an image file → insert it.
+    // Paste / drag-drop image insertion (markdown-images.ts), plus a drop-zone
+    // highlight so a drag has a clear target. dragover MUST preventDefault for
+    // the drop to fire (otherwise WebView swallows / navigates to the file).
     const imageHandlers = EditorView.domEventHandlers({
       paste(event, ev) {
         const items = event.clipboardData?.items;
@@ -662,10 +745,31 @@ function MarkdownEditorInner(
         }
         if (files.length === 0) return false;
         event.preventDefault();
-        void insertImageFiles(ev, files);
+        void insertImageFiles(ev, baseDir, files);
         return true;
       },
+      dragenter(event, ev) {
+        if (!dragHasFiles(event)) return false;
+        event.preventDefault();
+        ev.dom.classList.add("cm-drag-over");
+        return false;
+      },
+      dragover(event, ev) {
+        if (!dragHasFiles(event)) return false;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+        ev.dom.classList.add("cm-drag-over");
+        return false;
+      },
+      dragleave(event, ev) {
+        // Only clear when the pointer actually leaves the editor (not when it
+        // crosses between child elements).
+        const to = event.relatedTarget as Node | null;
+        if (!to || !ev.dom.contains(to)) ev.dom.classList.remove("cm-drag-over");
+        return false;
+      },
       drop(event, ev) {
+        ev.dom.classList.remove("cm-drag-over");
         const dt = event.dataTransfer;
         if (!dt || dt.files.length === 0) return false;
         const files = Array.from(dt.files).filter((f) =>
@@ -674,7 +778,7 @@ function MarkdownEditorInner(
         if (files.length === 0) return false;
         event.preventDefault();
         const pos = ev.posAtCoords({ x: event.clientX, y: event.clientY });
-        void insertImageFiles(ev, files, pos ?? undefined);
+        void insertImageFiles(ev, baseDir, files, pos ?? undefined);
         return true;
       },
     });
@@ -695,7 +799,7 @@ function MarkdownEditorInner(
           // Notion-style "/" slash menu. Slash menu's own keys (Enter/arrows)
           // come first via completionKeymap so they win while the popup is open.
           autocompletion({
-            override: [slashCommands],
+            override: [makeSlashCommands(baseDir)],
             addToOptions: slashAddToOptions,
             icons: false,
             defaultKeymap: false,
@@ -703,6 +807,9 @@ function MarkdownEditorInner(
           }),
           keymap.of([
             ...completionKeymap,
+            // Tab / Shift-Tab: indent / outdent list items (and prose), capped.
+            // Placed before defaultKeymap so it owns Tab in the editor.
+            { key: "Tab", run: indentCommand, shift: dedentCommand },
             // Markdown list/quote continuation (falls through when N/A).
             { key: "Enter", run: insertNewlineContinueMarkup },
             { key: "Backspace", run: deleteMarkupBackward },

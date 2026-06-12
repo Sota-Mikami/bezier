@@ -177,12 +177,17 @@ class CheckboxWidget extends WidgetType {
     return other.checked === this.checked && other.from === this.from;
   }
   toDOM(view: EditorView) {
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.checked = this.checked;
-    input.className = "cm-md-checkbox";
-    input.addEventListener("mousedown", (e) => e.preventDefault());
-    input.addEventListener("change", () => {
+    // A custom span (not a native <input>) so it can be sized up + given a
+    // tappable, rounded look with a CSS checkmark — WKWebView won't render
+    // pseudo-elements on a styled <input>. role/aria keep it accessible.
+    const box = document.createElement("span");
+    box.className =
+      "cm-md-checkbox" + (this.checked ? " cm-md-checkbox-checked" : "");
+    box.setAttribute("role", "checkbox");
+    box.setAttribute("aria-checked", this.checked ? "true" : "false");
+    box.addEventListener("mousedown", (e) => e.preventDefault());
+    box.addEventListener("click", (e) => {
+      e.preventDefault();
       view.dispatch({
         changes: {
           from: this.from,
@@ -191,7 +196,7 @@ class CheckboxWidget extends WidgetType {
         },
       });
     });
-    return input;
+    return box;
   }
   // Handle our own clicks (don't let CM move the caret onto the marker).
   ignoreEvent() {
@@ -433,6 +438,15 @@ function compute(state: EditorState, baseDir?: string): LivePreview {
       if (name === "ListMark") {
         const txt = doc.sliceString(from, to);
         if (/\d/.test(txt)) return; // ordered: leave "1." visible
+        // Task-list item (`- [ ]` / `- [x]`): hide the bullet entirely — the
+        // rendered checkbox (from the TaskMarker) replaces the marker. Consume
+        // the space after the dash too so the checkbox sits at the line start.
+        if (/^\s*\[[ xX]\]/.test(doc.sliceString(to, to + 4))) {
+          let end = to;
+          if (doc.sliceString(end, end + 1) === " ") end += 1;
+          hideOrDim(from, end);
+          return;
+        }
         if (isActive(from, to)) {
           deco.push(dimMark.range(from, to));
         } else {
