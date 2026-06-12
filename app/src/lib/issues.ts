@@ -243,8 +243,7 @@ export async function createIssue(root: string, title: string): Promise<Issue> {
   const fm = serializeIssueFm({ id, title: cleanTitle || "Untitled", status: "open", created });
   const heading = cleanTitle ? `# ${cleanTitle}\n\n` : "";
   const body = `${heading}> 解きたい問題 / 機会をここに書く。\n`;
-  await writeFile(`${dir}/issue.md`, `${fm}${body}`);
-  return {
+  const issue: Issue = {
     id,
     slug,
     dir,
@@ -252,8 +251,13 @@ export async function createIssue(root: string, title: string): Promise<Issue> {
     status: "open",
     created,
     body,
-    slots: { spec: false, decision: false },
+    // Spec is the one mandatory, hand-authored slot (DEC-011). Create it up front
+    // so the maker never has to click "Add Spec" before writing the spec.
+    slots: { spec: true, decision: false },
   };
+  await writeFile(`${dir}/issue.md`, `${fm}${body}`);
+  await writeFile(slotPath(issue, "spec"), SLOT_TEMPLATES.spec(issue));
+  return issue;
 }
 
 /** Update issue.md metadata (title/status/labels), preserving id/created/screens + body. */

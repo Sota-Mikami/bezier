@@ -367,10 +367,25 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
   React.useEffect(() => {
     let cancelled = false;
     readIssue(root, id)
-      .then((found) => {
+      .then(async (found) => {
         if (cancelled) return;
-        if (found) setIssue(found);
-        else setNotFound(true);
+        if (!found) {
+          setNotFound(true);
+          return;
+        }
+        // Spec is mandatory and auto-created (no "Add Spec" click). New issues get
+        // it at creation; this rescues any legacy issue opened without a spec.md
+        // by generating it from the template on open.
+        if (!found.slots.spec) {
+          try {
+            await createSlot(root, found, "spec");
+            found = { ...found, slots: { ...found.slots, spec: true } };
+          } catch {
+            /* write failed — leave as-is; the Spec pane shows a loading state */
+          }
+          if (cancelled) return;
+        }
+        setIssue(found);
       })
       .catch(() => {
         if (!cancelled) setNotFound(true);
@@ -435,7 +450,6 @@ function IssueWorkbench({
   setIssue: React.Dispatch<React.SetStateAction<Issue | null>>;
 }) {
   const [tab, setTab] = React.useState<DetailTab>("spec");
-  const [creatingSpec, setCreatingSpec] = React.useState(false);
 
   // --- Live change visualization (DEC-012 §7) ------------------------------
   // A change signal (agent rewrote spec.md / wrote code) PULSES the changed tab
@@ -495,20 +509,6 @@ function IssueWorkbench({
     },
     [issue, root, setIssue],
   );
-
-  // Create spec.md on demand (the one hand-authored slot).
-  const ensureSpec = React.useCallback(async () => {
-    if (issue.slots.spec || creatingSpec) return;
-    setCreatingSpec(true);
-    try {
-      await createSlot(root, issue, "spec");
-      setIssue((prev) =>
-        prev ? { ...prev, slots: { ...prev.slots, spec: true } } : prev,
-      );
-    } finally {
-      setCreatingSpec(false);
-    }
-  }, [issue, root, creatingSpec, setIssue]);
 
   // Status changes from the agent panel keep the header badge in sync.
   const handleStatusChange = React.useCallback(
@@ -642,22 +642,11 @@ function IssueWorkbench({
                   onExternalChange={() => signalChange("spec")}
                 />
               ) : (
+                // Spec is auto-created (no button). This shows only for the brief
+                // window while the template is being written for a legacy issue.
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
-                  <FileText className="size-6" />
-                  <div>まだ Spec がありません。</div>
-                  <Button
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={creatingSpec}
-                    onClick={() => void ensureSpec()}
-                  >
-                    {creatingSpec ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="size-3.5" />
-                    )}
-                    Add Spec
-                  </Button>
+                  <Loader2 className="size-5 animate-spin" />
+                  <div>Spec を準備中…</div>
                 </div>
               )}
             </div>
