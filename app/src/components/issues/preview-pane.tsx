@@ -68,6 +68,9 @@ export function PreviewPane({
 
   const [showSettings, setShowSettings] = React.useState(false);
   const [reloadNonce, setReloadNonce] = React.useState(0);
+  // Ref to the live iframe — handed to the annotation overlay so the element
+  // picker can postMessage the cooperating preview (DEC-046 #3).
+  const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
 
   const running = status === "starting" || status === "ready";
 
@@ -169,13 +172,16 @@ export function PreviewPane({
           <>
             <iframe
               key={reloadNonce}
+              ref={iframeRef}
               src={url}
               title="worktree preview"
               className="h-full w-full border-0 bg-white"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             />
-            {/* Figma-style comment/pen feedback over the live preview (DEC-045). */}
-            {session && <DesignAnnotations session={session} />}
+            {/* Figma-style comment/pen feedback over the live preview (DEC-045/046). */}
+            {session && (
+              <DesignAnnotations session={session} iframeRef={iframeRef} />
+            )}
           </>
         ) : status === "starting" ? (
           <StartingOrError
