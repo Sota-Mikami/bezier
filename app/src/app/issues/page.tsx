@@ -251,7 +251,9 @@ function IssueList({ root }: { root: string }) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            // Ignore Enter while the IME is composing (Japanese conversion
+            // confirm), so it only creates the issue once the text is settled.
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void handleCreate();
             }
@@ -763,7 +765,7 @@ function TitleEditor({
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
           e.preventDefault();
           (e.target as HTMLInputElement).blur();
         } else if (e.key === "Escape") {
@@ -852,7 +854,7 @@ function LabelsEditor({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
             e.preventDefault();
             (e.target as HTMLInputElement).blur();
           } else if (e.key === "Escape") {
