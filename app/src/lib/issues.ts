@@ -564,7 +564,7 @@ export async function buildImplementHandoff(
   root: string,
   issue: Issue,
   worktreePath: string,
-  opts?: { followUp?: boolean },
+  opts?: { followUp?: boolean; userMessage?: string },
 ): Promise<{ path: string; content: string }> {
   let issueMd: string;
   try {
@@ -583,18 +583,28 @@ export async function buildImplementHandoff(
   // On a re-run the worktree already holds the previous iteration's changes; ask
   // the agent to adjust them to the updated spec rather than start over (DEC-012
   // review↔refine cycle).
-  const intro = opts?.followUp
+  const intro = opts?.userMessage
     ? [
         `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-        "これは **追記の再実装依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
-        "**ゼロからやり直さず**、更新後の Issue / Spec に合わせて既存の変更を調整・拡張してください。",
+        "これは **新規 Issue のチャット開始** です。ユーザーの最初のリクエスト（下記）をもとに、次の順で進めてください:",
+        `1) まず \`${specPath}\` に Spec を書き起こす（既にテンプレートがあれば埋める）。なぜ/何を/受入基準を具体化する。`,
+        "2) issue.md の frontmatter の `title` が空または「Untitled」なら、簡潔なタイトルを設定する。",
+        "3) その後にこの worktree 内のコードへ実装する。",
+        "不明点があれば、いきなり実装せず **まず質問** してください（チャットで対話できます）。",
         "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
       ]
-    : [
-        `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-        "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
-        "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
-      ];
+    : opts?.followUp
+      ? [
+          `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
+          "これは **追記の再実装依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
+          "**ゼロからやり直さず**、更新後の Issue / Spec に合わせて既存の変更を調整・拡張してください。",
+          "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+        ]
+      : [
+          `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
+          "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
+          "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+        ];
   // The Spec is the LIVING spec for this issue. It lives OUTSIDE the worktree
   // (in the main repo's .continuum tree) but is made readable+writable to the
   // agent via `claude --add-dir <issue.dir>`. Telling the agent to (1) re-read it
@@ -610,12 +620,15 @@ export async function buildImplementHandoff(
     "",
   ];
   const content = [
-    `# 実装ハンドオフ — ${issue.title}`,
+    `# 実装ハンドオフ — ${issue.title || "(無題)"}`,
     "",
     ...intro,
     "",
     "---",
     "",
+    ...(opts?.userMessage
+      ? ["## ユーザーの最初のリクエスト", "", opts.userMessage, "", "---", ""]
+      : []),
     ...livingSpec,
     "---",
     "",

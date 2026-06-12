@@ -12,7 +12,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   CircleDot,
   FolderOpen,
-  Plus,
   ArrowLeft,
   Loader2,
   Check,
@@ -360,7 +359,7 @@ function IssueWorkbench({
     [issue, root, setIssue],
   );
 
-  // Create spec.md on demand (the one hand-authored slot).
+  // Create spec.md from the template (the one hand-authored slot).
   const ensureSpec = React.useCallback(async () => {
     if (issue.slots.spec || creatingSpec) return;
     setCreatingSpec(true);
@@ -373,6 +372,15 @@ function IssueWorkbench({
       setCreatingSpec(false);
     }
   }, [issue, root, creatingSpec, setIssue]);
+
+  // DEC-023: no "Add Spec" button — the spec template is created automatically
+  // when the issue opens, so the editor shows by default. Deferred off the
+  // synchronous effect path (ensureSpec setStates).
+  React.useEffect(() => {
+    if (issue.slots.spec) return;
+    const t = window.setTimeout(() => void ensureSpec(), 0);
+    return () => window.clearTimeout(t);
+  }, [issue.slots.spec, ensureSpec]);
 
   // Status changes from the agent panel keep the header badge in sync.
   const handleStatusChange = React.useCallback(
@@ -537,22 +545,9 @@ function IssueWorkbench({
                   onExternalChange={() => signalChange("spec")}
                 />
               ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
-                  <FileText className="size-6" />
-                  <div>まだ Spec がありません。</div>
-                  <Button
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={creatingSpec}
-                    onClick={() => void ensureSpec()}
-                  >
-                    {creatingSpec ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="size-3.5" />
-                    )}
-                    Add Spec
-                  </Button>
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Spec を準備中…
                 </div>
               )}
             </div>

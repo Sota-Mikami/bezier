@@ -136,6 +136,8 @@ export interface ImplementSession {
 
   canImplement: boolean;
   handleImplement: () => Promise<void>;
+  /** Chat-first start: begin a session from a free-text message (DEC-023). */
+  handleStart: (message: string) => Promise<void>;
   handleRerun: () => Promise<void>;
   handleAccept: () => Promise<void>;
   handleDiscard: () => Promise<void>;
@@ -511,6 +513,56 @@ export function useImplementSession(
     logEvent,
   ]);
 
+  // Chat-first start (DEC-023): begin from a free-text message instead of a
+  // pre-written spec. Same worktree setup as Implement, but the handoff seeds the
+  // agent with the user's first message and asks it to (1) draft the spec, (2)
+  // title the issue, then (3) implement. Unlike handleImplement it does NOT
+  // require a spec to exist — the agent writes it.
+  const handleStart = React.useCallback(
+    async (message: string) => {
+      const msg = message.trim();
+      if (!gitRepo || action || !msg) return;
+      if (!selectedAgent?.available) {
+        setError("利用可能なエージェント (claude / codex) が見つかりません。");
+        return;
+      }
+      setAction("implement");
+      setError(null);
+      setInfo(null);
+      try {
+        const branch = branchName(issue);
+        const wt = await worktreeDir(root, issue);
+        await gitWorktreeAdd(root, branch, wt);
+        const newRef: WorktreeRef = { branch, path: wt, baseSHA: "" };
+        await writeWorktreeRef(issue, newRef);
+        await updateIssueMeta(root, issue, { status: "in-progress" });
+        onStatusChange("in-progress");
+        const { content } = await buildImplementHandoff(root, issue, wt, {
+          userMessage: msg,
+        });
+        setRef(newRef);
+        launchAgent(selectedAgent, wt, { prompt: content });
+        void logEvent("implement", "チャット開始");
+        void loadBehind(wt);
+      } catch (e) {
+        setError(errMsg(e));
+      } finally {
+        setAction(null);
+      }
+    },
+    [
+      gitRepo,
+      issue,
+      action,
+      selectedAgent,
+      root,
+      onStatusChange,
+      launchAgent,
+      loadBehind,
+      logEvent,
+    ],
+  );
+
   // Re-run AI on the SAME worktree with a follow-up handoff built from the
   // (possibly edited) issue.md + spec.md (DEC-012 review↔refine cycle).
   const handleRerun = React.useCallback(async () => {
@@ -791,6 +843,7 @@ export function useImplementSession(
     openPR,
     canImplement,
     handleImplement,
+    handleStart,
     handleRerun,
     handleAccept,
     handleDiscard,

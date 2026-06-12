@@ -82,6 +82,7 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
     openPR,
     canImplement,
     handleImplement,
+    handleStart,
     handleRerun,
     handleAccept,
     handleDiscard,
@@ -457,18 +458,89 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
             </Button>
           </div>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-            <div className="flex size-10 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900">
-              <Sparkles className="size-4 text-zinc-400" />
-            </div>
-            <div className="text-sm font-medium text-zinc-200">
-              セッション未開始
-            </div>
-            <p className="max-w-xs text-xs text-zinc-400">
-              「Implement with AI」で branch + worktree を作成し、選択したエージェントを worktree 内で起動します。ここで Spec や Design について対話できます。
-            </p>
-          </div>
+          <ChatStart
+            disabled={!selectedAgent?.available || gitRepo === false}
+            busy={action === "implement"}
+            onSend={(m) => void handleStart(m)}
+          />
         )}
+      </div>
+    </div>
+  );
+}
+
+// Chat-first start (DEC-023): the entry shown when no worktree exists yet. The
+// user types what they want; sending creates the worktree + launches the agent
+// seeded with that message (the agent drafts the spec, titles the issue, then
+// implements). Replaces the old "press Implement" placeholder.
+function ChatStart({
+  disabled,
+  busy,
+  onSend,
+}: {
+  disabled: boolean;
+  busy: boolean;
+  onSend: (message: string) => void;
+}) {
+  const [draft, setDraft] = React.useState("");
+  const ref = React.useRef<HTMLTextAreaElement>(null);
+  React.useEffect(() => {
+    if (!disabled) ref.current?.focus();
+  }, [disabled]);
+
+  const send = () => {
+    const m = draft.trim();
+    if (!m || disabled || busy) return;
+    onSend(m);
+    setDraft("");
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <div className="flex size-10 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900">
+          <Sparkles className="size-4 text-zinc-400" />
+        </div>
+        <div className="text-sm font-medium text-zinc-200">チャットで始める</div>
+        <p className="max-w-xs text-xs text-zinc-400">
+          やりたいことを書くと worktree を作成して AI が起動し、まず Spec を一緒に書き起こします。
+        </p>
+      </div>
+      <div className="border-t border-zinc-800 p-3">
+        <textarea
+          ref={ref}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          rows={3}
+          disabled={disabled || busy}
+          placeholder={
+            disabled
+              ? "利用可能なエージェントがありません"
+              : "やりたいことを書く…（Enter で開始 / Shift+Enter で改行）"
+          }
+          className="w-full resize-none rounded-md border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-zinc-500 disabled:opacity-60"
+        />
+        <div className="mt-2 flex justify-end">
+          <Button
+            size="sm"
+            className="gap-1.5"
+            disabled={disabled || busy || !draft.trim()}
+            onClick={send}
+          >
+            {busy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="size-3.5" />
+            )}
+            開始
+          </Button>
+        </div>
       </div>
     </div>
   );
