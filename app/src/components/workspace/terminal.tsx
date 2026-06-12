@@ -18,6 +18,8 @@ import {
   ptyWrite,
   ptyResize,
   ptyKill,
+  ptyLookup,
+  ptyBacklog,
   onPtyData,
   onPtyExit,
   commandExists,
@@ -34,6 +36,13 @@ export interface TerminalPaneProps {
   onReady?: (id: string) => void;
   /** Fired once when the child process exits, with its exit code (null if signal-killed). */
   onExit?: (code: number | null) => void;
+  /**
+   * Stable key (the issue id) for a PERSISTENT agent terminal. When set, on mount
+   * the pane reattaches to a still-running pty for this key (replaying its
+   * backlog) instead of spawning a new one, and on unmount it leaves the pty
+   * RUNNING (the agent keeps working in the background) rather than killing it.
+   */
+  sessionKey?: string;
   className?: string;
 }
 
@@ -54,6 +63,7 @@ export default function TerminalPane({
   spawn,
   onReady,
   onExit,
+  sessionKey,
   className,
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -90,9 +100,14 @@ export default function TerminalPane({
         }
       }
       if (ptyId) {
-        ptyKill(ptyId).catch(() => {
-          /* child may already be gone */
-        });
+        // Persistent agent terminals (sessionKey) keep their pty RUNNING on
+        // unmount so the agent works in the background and can be reattached;
+        // only throwaway shells are killed here.
+        if (!sessionKey) {
+          ptyKill(ptyId).catch(() => {
+            /* child may already be gone */
+          });
+        }
         ptyId = null;
       }
       term?.dispose();
@@ -122,52 +137,76 @@ export default function TerminalPane({
       const cols = term.cols || 80;
       const rows = term.rows || 24;
 
-      const shell = spawn ?? (await resolveUserShell());
-      if (disposed) {
-        dispose();
-        return;
-      }
-
-      let id: string;
-      try {
-        id = await ptySpawn({
-          cwd,
-          cmd: shell.cmd,
-          args: shell.args,
-          cols,
-          rows,
-        });
-      } catch (err) {
-        if (!disposed && term) {
-          term.write(
-            `\r\n\x1b[31mFailed to start terminal: ${
-              err instanceof Error ? err.message : String(err)
-            }\x1b[0m\r\n`,
-          );
+      // Reattach to a still-running persistent pty for this key, if any: replay
+      // its backlog (what happened while detached) and skip spawning.
+      let id: string | null = null;
+      let reattached = false;
+      if (sessionKey) {
+        const existing = await ptyLookup(sessionKey).catch(() => null);
+        if (disposed) {
+          dispose();
+          return;
         }
-        return;
+        if (existing) {
+          id = existing;
+          reattached = true;
+          const backlog = await ptyBacklog(existing).catch(() => "");
+          if (disposed) return;
+          if (backlog && term) term.write(backlog);
+        }
       }
 
-      if (disposed) {
-        ptyKill(id).catch(() => {});
-        return;
+      if (!id) {
+        const shell = spawn ?? (await resolveUserShell());
+        if (disposed) {
+          dispose();
+          return;
+        }
+        try {
+          id = await ptySpawn({
+            cwd,
+            cmd: shell.cmd,
+            args: shell.args,
+            cols,
+            rows,
+            key: sessionKey,
+          });
+        } catch (err) {
+          if (!disposed && term) {
+            term.write(
+              `\r\n\x1b[31mFailed to start terminal: ${
+                err instanceof Error ? err.message : String(err)
+              }\x1b[0m\r\n`,
+            );
+          }
+          return;
+        }
+
+        if (disposed) {
+          // Race: unmounted during spawn. A persistent pty is left running to
+          // reattach later; a throwaway one is killed.
+          if (!sessionKey) ptyKill(id).catch(() => {});
+          return;
+        }
       }
-      ptyId = id;
+      if (!id) return; // unreachable (set by attach or spawn) — narrows the type.
+      const pid = id;
+      ptyId = pid;
 
       // Keystrokes / paste -> pty stdin.
       term.onData((d) => {
-        ptyWrite(id, d).catch(() => {});
+        ptyWrite(pid, d).catch(() => {});
       });
 
       // pty output -> terminal. Callback fires for ALL ptys; filter on id.
       unlisteners.push(
         await onPtyData((p) => {
-          if (p.id === id) term?.write(p.chunk);
+          if (p.id === pid) term?.write(p.chunk);
         }),
       );
       unlisteners.push(
         await onPtyExit((p) => {
-          if (p.id !== id) return;
+          if (p.id !== pid) return;
           setExitCode(p.code);
           onExitRef.current?.(p.code);
           if (term) {
@@ -185,7 +224,18 @@ export default function TerminalPane({
         return;
       }
 
-      onReady?.(id);
+      // On reattach, nudge the pty size so the agent's TUI repaints into the
+      // fresh xterm (the replayed backlog is static text until it redraws).
+      if (reattached && term) {
+        try {
+          fit?.fit();
+          ptyResize(pid, term.cols, term.rows).catch(() => {});
+        } catch {
+          /* container not laid out yet */
+        }
+      }
+
+      onReady?.(pid);
 
       // Keep pty window in sync with the container.
       resizeObserver = new ResizeObserver(() => {

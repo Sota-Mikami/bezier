@@ -54,7 +54,7 @@ import {
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
-import { ptyWrite, commandExists } from "@/lib/pty";
+import { ptyWrite, commandExists, ptyLookup, ptyKillKey } from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
 
@@ -101,6 +101,8 @@ export interface ImplementSession {
   termCwd: string | null;
   termSpawn: TermSpawn | undefined;
   termNonce: number;
+  /** Stable key for the persistent agent pty (the issue id). */
+  termKey: string;
   handleTermReady: (id: string) => void;
   handleTermExit: (code: number | null) => void;
 
@@ -575,6 +577,9 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     try {
+      // Stop any background agent still running for this issue so the re-run is
+      // the single live session (otherwise we'd spawn a 2nd pty for the key).
+      await ptyKillKey(issue.id).catch(() => {});
       const { content } = await buildImplementHandoff(root, issue, ref.path, {
         followUp: true,
       });
@@ -618,13 +623,33 @@ export function useImplementSession(
     if (autoResumedRef.current) return;
     if (!ref || termMounted || action) return;
     if (!selectedAgent?.available) return;
-    // Mark immediately so a re-render before the deferred launch can't double-fire,
-    // and defer the launch itself off the synchronous effect path (handleResume
-    // clears error/info via setState — doing that synchronously cascades renders).
+    // Mark immediately so a re-render can't double-fire.
     autoResumedRef.current = true;
-    const t = window.setTimeout(() => void handleResume(), 0);
-    return () => window.clearTimeout(t);
-  }, [ref, termMounted, action, selectedAgent, handleResume]);
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      // If a background agent is STILL RUNNING for this issue (you navigated
+      // away and came back), reattach to it — mount the terminal pointing at the
+      // worktree with NO spawn, and TerminalPane (sessionKey=issue.id) reattaches
+      // to the live pty + replays its backlog. Otherwise fall back to resuming
+      // the prior conversation (`claude --continue`).
+      const live = await ptyLookup(issue.id).catch(() => null);
+      if (cancelled) return;
+      if (live) {
+        setError(null);
+        setInfo(null);
+        setTermCwd(ref.path);
+        setTermSpawn(undefined);
+        setTermMounted(true);
+        setTermNonce((n) => n + 1);
+      } else {
+        void handleResume();
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [ref, termMounted, action, selectedAgent, handleResume, issue.id]);
 
   const handleAccept = React.useCallback(async () => {
     if (!ref || action) return;
@@ -672,9 +697,12 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     try {
-      // Stop the dev server + unmount the terminal first so nothing holds the
-      // worktree open while git removes it.
+      // Stop the dev server, kill the (now persistent) background agent, and
+      // unmount the terminal first so nothing holds the worktree open while git
+      // removes it. teardownTerminal no longer kills the pty (it persists), so
+      // ptyKillKey is what actually stops the agent on Discard.
       await preview.stop();
+      await ptyKillKey(issue.id).catch(() => {});
       teardownTerminal();
       await gitWorktreeRemove(root, ref.path);
       await gitBranchDelete(root, ref.branch).catch(() => {
@@ -825,6 +853,7 @@ export function useImplementSession(
     termCwd,
     termSpawn,
     termNonce,
+    termKey: issue.id,
     handleTermReady,
     handleTermExit,
     thread,

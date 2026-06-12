@@ -40,6 +40,7 @@ import {
 } from "@/lib/issues";
 import { purgeTrashed } from "@/lib/issue-actions";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
+import { ptyActiveKeys } from "@/lib/pty";
 import { cn } from "@/lib/utils";
 
 /** How many issues a repo toggle shows before "もっと見る". */
@@ -69,8 +70,25 @@ export function AppSidebar() {
     Record<string, TrashMeta[]>
   >({});
   const [showAll, setShowAll] = React.useState<Set<string>>(new Set());
+  const [activeKeys, setActiveKeys] = React.useState<Set<string>>(new Set());
   const [creating, setCreating] = React.useState(false);
   const loadingIssues = React.useRef<Set<string>>(new Set());
+
+  // Poll which issues have a live background agent (a running pty) for the
+  // "running" dots — agents now survive navigating away (DEC-026).
+  React.useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const keys = await ptyActiveKeys().catch(() => [] as string[]);
+      if (!cancelled) setActiveKeys(new Set(keys));
+    };
+    void tick();
+    const h = window.setInterval(() => void tick(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(h);
+    };
+  }, []);
 
   const loadIssues = React.useCallback(async (path: string) => {
     if (loadingIssues.current.has(path)) return;
@@ -328,6 +346,7 @@ export function AppSidebar() {
               matches={matches}
               showAll={showAll.has(r.path)}
               selectedId={selectedId}
+              activeKeys={activeKeys}
               onToggle={() => toggleRepo(r.path)}
               onSelectIssue={(id) => selectIssue(r.path, id)}
               onShowAll={() => setShowAll((p) => new Set(p).add(r.path))}
@@ -376,6 +395,7 @@ function RepoGroup({
   matches,
   showAll,
   selectedId,
+  activeKeys,
   onToggle,
   onSelectIssue,
   onShowAll,
@@ -389,6 +409,7 @@ function RepoGroup({
   matches: (i: Issue) => boolean;
   showAll: boolean;
   selectedId: string | null;
+  activeKeys: Set<string>;
   onToggle: () => void;
   onSelectIssue: (id: string) => void;
   onShowAll: () => void;
@@ -450,16 +471,27 @@ function RepoGroup({
                       ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                       : "text-foreground/80",
                   )}
-                  title={issue.title || "(無題)"}
+                  title={
+                    activeKeys.has(issue.id)
+                      ? `${issue.title || "(無題)"}（エージェント実行中）`
+                      : issue.title || "(無題)"
+                  }
                 >
-                  <CircleDot
-                    className={cn(
-                      "size-3 shrink-0",
-                      issue.status === "open" && "text-muted-foreground",
-                      issue.status === "in-progress" && "text-primary",
-                      issue.status === "merged" && "text-foreground",
-                    )}
-                  />
+                  {activeKeys.has(issue.id) ? (
+                    <span className="relative flex size-3 shrink-0 items-center justify-center">
+                      <span className="absolute inline-flex size-2 animate-ping rounded-full bg-emerald-500/70" />
+                      <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+                    </span>
+                  ) : (
+                    <CircleDot
+                      className={cn(
+                        "size-3 shrink-0",
+                        issue.status === "open" && "text-muted-foreground",
+                        issue.status === "in-progress" && "text-primary",
+                        issue.status === "merged" && "text-foreground",
+                      )}
+                    />
+                  )}
                   <span className="truncate">{issue.title || "(無題)"}</span>
                 </button>
               ))}
