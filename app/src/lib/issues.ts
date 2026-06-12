@@ -19,6 +19,7 @@ import {
   appDataDir,
 } from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
+import { getSettings } from "@/lib/settings";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
 
@@ -341,8 +342,14 @@ function continuumDir(root: string): string {
 //   .continuum/trash/drafts/<id>-<slug>/   (incl. .trashed.json marker)
 //   .continuum/trash/issues/<id>/          (the activity thread, if any)
 
-/** Issues are purged from the trash this many days after deletion. */
+/** Default days a trashed issue is kept (the settings default; DEC-020). The
+ * effective value is user-configurable — read `trashTtlDays()` for the live one. */
 export const TRASH_TTL_DAYS = 30;
+
+/** Effective trash TTL in days (settings override, falls back to the default). */
+export function trashTtlDays(): number {
+  return getSettings().trashTtlDays;
+}
 
 /** Deletion marker written inside a trashed issue's folder (.trashed.json). */
 export interface TrashMeta {
@@ -513,17 +520,25 @@ export async function removeTrashEntry(root: string, meta: TrashMeta): Promise<v
 
 /** Trashed entries past the TTL (candidates for the auto-purge on load). */
 export function expiredTrash(trash: TrashMeta[], now: number): TrashMeta[] {
-  const ttlMs = TRASH_TTL_DAYS * 24 * 60 * 60 * 1000;
+  const ttlMs = trashTtlDays() * 24 * 60 * 60 * 1000;
   return trash.filter((m) => {
     const t = Date.parse(m.deletedAt);
     return Number.isFinite(t) && now - t >= ttlMs;
   });
 }
 
-// Spec is the only hand-created slot (DEC-011 / DEC-014/A).
+/** Substitute `{{id}}` / `{{title}}` in a Spec template (DEC-043, settings). */
+function renderTemplate(tmpl: string, issue: Pick<Issue, "id" | "title">): string {
+  return tmpl
+    .split("{{id}}").join(issue.id)
+    .split("{{title}}").join(issue.title || "Untitled");
+}
+
+// Spec is the only hand-created slot (DEC-011 / DEC-014/A). The template is
+// user-customizable in Settings (DEC-043); getSettings() returns the live value
+// (falling back to DEFAULT_SPEC_TEMPLATE).
 const SLOT_TEMPLATES: Record<IssueSlot, (issue: Issue) => string> = {
-  spec: (issue) =>
-    `---\nissue: ${issue.id}\n---\n# ${issue.title} — Spec\n\n## なぜ\n<!-- 背景・課題・なぜ今やるのか -->\n\n## 何を\n<!-- 何を作るのか -->\n\n## 受入基準\n- [ ] \n- [ ] \n\n## やらないこと\n- \n\n## 未解決\n- \n`,
+  spec: (issue) => renderTemplate(getSettings().specTemplate, issue),
 };
 
 /**

@@ -25,6 +25,107 @@
 import { StateField, type Extension, type Range, type EditorState } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
+import { readFileBytes } from "@/lib/ipc";
+
+// --- Inline image rendering (DEC-043 #1) ---------------------------------
+// Spec images (`![alt](assets/foo.png)`) render inline in the live preview.
+// Local relative paths are resolved against the doc's directory (`baseDir`),
+// read as bytes, and turned into a data: URL (avoids needing the Tauri asset
+// protocol). Results are cached by absolute path so recomputes don't re-read.
+
+const imageCache = new Map<string, string>(); // absPath/url -> data URL ("" = failed)
+
+function mimeFromPath(p: string): string {
+  switch (p.split(".").pop()?.toLowerCase()) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "svg":
+      return "image/svg+xml";
+    case "avif":
+      return "image/avif";
+    case "bmp":
+      return "image/bmp";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+/** Base64-encode bytes in chunks (avoids a stack overflow on large images). */
+function toBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+/** Resolve a markdown image URL to a loadable source (absolute file path for
+ * local relatives; passthrough for http/https/data). */
+function resolveImageSrc(url: string, baseDir?: string): string {
+  if (/^(https?:|data:|asset:|file:)/i.test(url)) return url;
+  if (url.startsWith("/")) return url; // already absolute path
+  const clean = url.replace(/^\.\//, "");
+  const base = baseDir ? baseDir.replace(/\/+$/, "") : "";
+  return base ? `${base}/${clean}` : clean;
+}
+
+/** Load an image source to a renderable URL (data: for local files). Cached. */
+async function loadImageSrc(src: string): Promise<string | null> {
+  if (/^(https?:|data:)/i.test(src)) return src;
+  const cached = imageCache.get(src);
+  if (cached !== undefined) return cached || null;
+  try {
+    const bytes = await readFileBytes(src);
+    const url = `data:${mimeFromPath(src)};base64,${toBase64(bytes)}`;
+    imageCache.set(src, url);
+    return url;
+  } catch {
+    imageCache.set(src, "");
+    return null;
+  }
+}
+
+/** An inline-rendered image (`![alt](url)`), loaded asynchronously. `src` is the
+ * already-resolved source (absolute file path or http/data URL). */
+class ImageWidget extends WidgetType {
+  constructor(
+    readonly src: string,
+    readonly alt: string,
+  ) {
+    super();
+  }
+  eq(other: ImageWidget) {
+    return other.src === this.src && other.alt === this.alt;
+  }
+  toDOM() {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-md-image";
+    const img = document.createElement("img");
+    if (this.alt) img.alt = this.alt;
+    void loadImageSrc(this.src).then((url) => {
+      if (url) {
+        img.src = url;
+      } else {
+        wrap.classList.add("cm-md-image-missing");
+        wrap.textContent = `🖼 ${this.alt || this.src.split("/").pop() || "画像"}（読み込めません）`;
+      }
+    });
+    wrap.appendChild(img);
+    return wrap;
+  }
+  // Let clicks reach the editor so the caret can enter and reveal the source.
+  ignoreEvent() {
+    return false;
+  }
+}
 
 // --- Shared decoration singletons ----------------------------------------
 
@@ -235,7 +336,7 @@ function activeRanges(state: EditorState): { from: number; to: number }[] {
   return out;
 }
 
-function compute(state: EditorState): LivePreview {
+function compute(state: EditorState, baseDir?: string): LivePreview {
   const deco: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
   const { doc } = state;
@@ -358,6 +459,19 @@ function compute(state: EditorState): LivePreview {
         return;
       }
 
+      // --- Image: render inline off-cursor, raw `![alt](url)` on-cursor. ---
+      if (name === "Image") {
+        if (isActive(from, to)) return false;
+        const raw = doc.sliceString(from, to);
+        const m = /^!\[([^\]]*)\]\(\s*<?([^\s)>]+)>?/.exec(raw);
+        if (m) {
+          const src = resolveImageSrc(m[2], baseDir);
+          const w = Decoration.replace({ widget: new ImageWidget(src, m[1]) });
+          deco.push(w.range(from, to));
+        }
+        return false;
+      }
+
       // --- Links: show styled text off-cursor, full `[text](url)` on-cursor. ---
       if (name === "Link") {
         if (isActive(from, to)) return false;
@@ -421,17 +535,22 @@ function compute(state: EditorState): LivePreview {
 
 // --- Extension ------------------------------------------------------------
 
-const livePreviewField = StateField.define<LivePreview>({
-  create: (state) => compute(state),
-  // Recompute on every transaction so reveal-on-cursor tracks the caret AND any
-  // async markdown parse progress is picked up. For markdown-note-sized docs the
-  // single tree walk is sub-millisecond.
-  update: (_value, tr) => compute(tr.state),
-  provide: (f) => [
-    EditorView.decorations.from(f, (v) => v.deco),
-    EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
-  ],
-});
-
-/** Obsidian-style live-preview decorations for a markdown CodeMirror editor. */
-export const livePreview: Extension = [livePreviewField];
+/**
+ * Obsidian-style live-preview decorations for a markdown CodeMirror editor.
+ * `baseDir` (the doc's directory) is used to resolve relative image paths
+ * (`![](assets/x.png)`) to absolute files for inline rendering (DEC-043 #1).
+ */
+export function livePreview(baseDir?: string): Extension {
+  const field = StateField.define<LivePreview>({
+    create: (state) => compute(state, baseDir),
+    // Recompute on every transaction so reveal-on-cursor tracks the caret AND any
+    // async markdown parse progress is picked up. For markdown-note-sized docs the
+    // single tree walk is sub-millisecond.
+    update: (_value, tr) => compute(tr.state, baseDir),
+    provide: (f) => [
+      EditorView.decorations.from(f, (v) => v.deco),
+      EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
+    ],
+  });
+  return [field];
+}

@@ -56,6 +56,7 @@ import {
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
+import { getSettings, resolveDark } from "@/lib/settings";
 import {
   ptyWrite,
   commandExists,
@@ -370,8 +371,14 @@ export function useImplementSession(
       .then((found) => {
         if (cancelled) return;
         setAgents(found);
-        const first = found.find((a) => a.available);
-        setSelectedAgentId(first ? first.id : null);
+        // Prefer the user's default agent (Settings, DEC-043) when it's
+        // available; otherwise fall back to the first available one.
+        const preferredId = getSettings().defaultAgentId;
+        const preferred = preferredId
+          ? found.find((a) => a.id === preferredId && a.available)
+          : undefined;
+        const pick = preferred ?? found.find((a) => a.available);
+        setSelectedAgentId(pick ? pick.id : null);
       })
       .catch(() => {
         /* none */
@@ -483,11 +490,9 @@ export function useImplementSession(
         if (opts.resume) args.push("--continue");
         // Wire Stop/Notification hooks → the events file (deterministic "agent is
         // awaiting you", DEC-028) AND match Claude's TUI theme to the terminal
-        // background so its output stays legible in light mode (DEC-034).
-        const dark =
-          typeof window !== "undefined" && window.matchMedia
-            ? window.matchMedia("(prefers-color-scheme: dark)").matches
-            : true;
+        // background so its output stays legible in light mode (DEC-034). Follows
+        // the resolved app theme (Settings override, not just the OS; DEC-043).
+        const dark = resolveDark();
         args.push(
           "--settings",
           agentHookSettings(eventsPath, dark ? "dark" : "light"),

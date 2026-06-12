@@ -24,6 +24,9 @@ import {
   X,
   MoreHorizontal,
   Unplug,
+  Pencil,
+  Code2,
+  Settings as SettingsIcon,
 } from "lucide-react";
 
 import {
@@ -38,19 +41,24 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { useWorkspaceRoot, repoName } from "@/lib/workspace-root";
+import { useWorkspaceRoot, repoName, repoLabel } from "@/lib/workspace-root";
 import {
   listIssues,
   listTrash,
   restoreFromTrash,
   expiredTrash,
   createIssue,
-  TRASH_TTL_DAYS,
+  trashTtlDays,
   type Issue,
   type TrashMeta,
 } from "@/lib/issues";
 import { purgeTrashed } from "@/lib/issue-actions";
-import { confirmDialog, messageDialog } from "@/lib/ipc";
+import {
+  confirmDialog,
+  messageDialog,
+  revealInFinder,
+  openInEditor,
+} from "@/lib/ipc";
 import {
   ptyStatuses,
   ptyDismiss,
@@ -73,7 +81,8 @@ export function AppSidebar() {
   const sp = useSearchParams();
   const selectedId = sp.get("issue");
   const selectedTrashId = sp.get("trash");
-  const { root, recents, switchTo, openRoot, removeRepo } = useWorkspaceRoot();
+  const { root, recents, switchTo, openRoot, removeRepo, setRepoDisplayName } =
+    useWorkspaceRoot();
 
   const [query, setQuery] = React.useState("");
   const [showTrash, setShowTrash] = React.useState(false);
@@ -202,29 +211,40 @@ export function AppSidebar() {
     [root, switchTo, router],
   );
 
+  // Create a new draft issue in a SPECIFIC repo and open it (DEC-043 #6). Used by
+  // the per-repo "+" button so multi-repo users pick the target explicitly.
+  const createIssueIn = React.useCallback(
+    async (target: string) => {
+      if (creating) return;
+      setCreating(true);
+      setShowTrash(false);
+      try {
+        const issue = await createIssue(target, "");
+        if (target !== root) switchTo(target);
+        void loadIssues(target);
+        router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
+      } catch (e) {
+        await messageDialog(
+          `作成に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+          { title: "作成エラー" },
+        );
+      } finally {
+        setCreating(false);
+      }
+    },
+    [creating, root, switchTo, loadIssues, router],
+  );
+
+  // The big top "New" targets the ACTIVE repo (opening a folder first if none).
   const handleNew = React.useCallback(async () => {
     if (creating) return;
-    setCreating(true);
-    setShowTrash(false);
-    try {
-      let target = root;
-      if (!target) {
-        target = await openRoot();
-        if (!target) return;
-      }
-      const issue = await createIssue(target, "");
-      if (target !== root) switchTo(target);
-      void loadIssues(target);
-      router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
-    } catch (e) {
-      await messageDialog(
-        `作成に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-        { title: "作成エラー" },
-      );
-    } finally {
-      setCreating(false);
+    let target = root;
+    if (!target) {
+      target = await openRoot();
+      if (!target) return;
     }
-  }, [creating, root, openRoot, switchTo, loadIssues, router]);
+    await createIssueIn(target);
+  }, [creating, root, openRoot, createIssueIn]);
 
   // Quick-new shortcut: ⌘N (mac) / Ctrl+N. The modifier means it never fires by
   // accident while typing in the Spec editor or chatting with the agent, so it
@@ -241,6 +261,28 @@ export function AppSidebar() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [handleNew]);
+
+  // "…" menu: reveal the repo in Finder / open it in the user's IDE (DEC-041 #5).
+  const handleRevealRepo = React.useCallback(async (path: string) => {
+    try {
+      await revealInFinder(path);
+    } catch (e) {
+      await messageDialog(
+        `Finder で開けませんでした: ${e instanceof Error ? e.message : String(e)}`,
+        { title: "エラー" },
+      );
+    }
+  }, []);
+
+  const handleOpenEditor = React.useCallback(async (path: string) => {
+    try {
+      await openInEditor(path);
+    } catch (e) {
+      await messageDialog(e instanceof Error ? e.message : String(e), {
+        title: "IDE で開けませんでした",
+      });
+    }
+  }, []);
 
   const handleRestore = React.useCallback(
     async (repoPath: string, meta: TrashMeta) => {
@@ -453,6 +495,7 @@ export function AppSidebar() {
                 <RepoGroup
                   key={r.path}
                   path={r.path}
+                  name={repoLabel(r)}
                   active={r.path === root}
                   open={expanded.has(r.path) || searching}
                   forceOpen={searching}
@@ -462,10 +505,15 @@ export function AppSidebar() {
                   showAll={showAll.has(r.path)}
                   selectedId={selectedId}
                   statusByKey={statusByKey}
+                  creating={creating}
                   onToggle={() => toggleRepo(r.path)}
                   onSelectIssue={(id) => selectIssue(r.path, id)}
                   onShowAll={() => setShowAll((p) => new Set(p).add(r.path))}
                   onRemove={() => removeRepo(r.path)}
+                  onNewIssue={() => void createIssueIn(r.path)}
+                  onRename={(name) => setRepoDisplayName(r.path, name)}
+                  onReveal={() => void handleRevealRepo(r.path)}
+                  onOpenEditor={() => void handleOpenEditor(r.path)}
                 />
               ))
             )}
@@ -498,6 +546,14 @@ export function AppSidebar() {
           <FolderOpen className="size-4" />
           フォルダを開く…
         </button>
+        <button
+          type="button"
+          onClick={() => router.push("/settings")}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <SettingsIcon className="size-4" />
+          設定
+        </button>
       </SidebarFooter>
     </Sidebar>
   );
@@ -505,6 +561,7 @@ export function AppSidebar() {
 
 function RepoGroup({
   path,
+  name,
   active,
   open,
   forceOpen,
@@ -514,12 +571,18 @@ function RepoGroup({
   showAll,
   selectedId,
   statusByKey,
+  creating,
   onToggle,
   onSelectIssue,
   onShowAll,
   onRemove,
+  onNewIssue,
+  onRename,
+  onReveal,
+  onOpenEditor,
 }: {
   path: string;
+  name: string;
   active: boolean;
   open: boolean;
   forceOpen: boolean;
@@ -529,13 +592,31 @@ function RepoGroup({
   showAll: boolean;
   selectedId: string | null;
   statusByKey: Map<string, AgentStatus>;
+  creating: boolean;
   onToggle: () => void;
   onSelectIssue: (id: string) => void;
   onShowAll: () => void;
   onRemove: () => void;
+  onNewIssue: () => void;
+  onRename: (name: string) => void;
+  onReveal: () => void;
+  onOpenEditor: () => void;
 }) {
   const all = issues ?? [];
   const filtered = query ? all.filter(matches) : all;
+
+  // Inline rename (DEC-041 "表示名を変更"): swap the toggle row for an input.
+  const [renaming, setRenaming] = React.useState(false);
+  const [draft, setDraft] = React.useState(name);
+  const startRename = React.useCallback(() => {
+    setDraft(name);
+    setRenaming(true);
+  }, [name]);
+  const commitRename = React.useCallback(() => {
+    setRenaming(false);
+    onRename(draft);
+  }, [draft, onRename]);
+
   // When searching, hide repos that have no matching issue.
   if (forceOpen && query && filtered.length === 0) return null;
 
@@ -544,50 +625,118 @@ function RepoGroup({
 
   return (
     <div className="group/repo relative mb-0.5">
-      <button
-        type="button"
-        onClick={onToggle}
-        className={cn(
-          "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors hover:bg-sidebar-accent",
-          active ? "text-foreground" : "text-muted-foreground",
-        )}
-        title={path}
-      >
-        <ChevronRight
+      {renaming ? (
+        <div className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5">
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitRename();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setRenaming(false);
+              }
+            }}
+            placeholder={repoName(path)}
+            className="h-5 w-full rounded border bg-background px-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onToggle}
           className={cn(
-            "size-3.5 shrink-0 transition-transform",
-            open && "rotate-90",
+            "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors hover:bg-sidebar-accent",
+            active ? "text-foreground" : "text-muted-foreground",
           )}
-        />
-        <span className="truncate">{repoName(path)}</span>
-        {active && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
-        {issues && all.length > 0 && (
-          // Count fades out on hover to make room for the "…" menu.
-          <span className="ml-auto shrink-0 text-[10px] font-normal text-muted-foreground transition-opacity group-hover/repo:opacity-0">
-            {all.length}
-          </span>
-        )}
-      </button>
-
-      {/* Hover (or right-click) → "…" menu for per-repo actions (DEC-041). */}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          title="その他"
-          aria-label="リポジトリの操作"
-          className="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 outline-none transition hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/repo:opacity-100 data-[popup-open]:opacity-100"
+          title={path}
         >
-          <MoreHorizontal className="size-3.5" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-44">
-          <DropdownMenuItem
-            onClick={onRemove}
-            className="cursor-pointer gap-2 text-xs"
+          <ChevronRight
+            className={cn(
+              "size-3.5 shrink-0 transition-transform",
+              open && "rotate-90",
+            )}
+          />
+          <span className="truncate">{name}</span>
+          {active && (
+            <span className="size-1.5 shrink-0 rounded-full bg-primary" />
+          )}
+          {issues && all.length > 0 && (
+            // Count fades out on hover to make room for the +/… actions.
+            <span className="ml-auto shrink-0 text-[10px] font-normal text-muted-foreground transition-opacity group-hover/repo:opacity-0">
+              {all.length}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* Hover actions: New-issue-in-this-repo (DEC-043 #6) + the "…" menu
+          (DEC-041 #5). Hidden until hover; overlay the (faded) count. */}
+      {!renaming && (
+        <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition group-hover/repo:opacity-100 group-focus-within/repo:opacity-100">
+          <button
+            type="button"
+            title="この repo に新規 Issue"
+            aria-label="この repo に新規 Issue"
+            disabled={creating}
+            onClick={onNewIssue}
+            className="flex size-5 items-center justify-center rounded text-muted-foreground outline-none transition hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 disabled:opacity-50"
           >
-            <Unplug className="size-3.5" />
-            接続を解除
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <Plus className="size-3.5" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              title="その他"
+              aria-label="リポジトリの操作"
+              className="flex size-5 items-center justify-center rounded text-muted-foreground outline-none transition hover:bg-sidebar-accent hover:text-foreground data-[popup-open]:opacity-100"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-48">
+              <DropdownMenuItem
+                onClick={onNewIssue}
+                className="cursor-pointer gap-2 text-xs"
+              >
+                <Plus className="size-3.5" />
+                新規 Issue
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onReveal}
+                className="cursor-pointer gap-2 text-xs"
+              >
+                <FolderOpen className="size-3.5" />
+                Finder で開く
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onOpenEditor}
+                className="cursor-pointer gap-2 text-xs"
+              >
+                <Code2 className="size-3.5" />
+                IDE で開く
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={startRename}
+                className="cursor-pointer gap-2 text-xs"
+              >
+                <Pencil className="size-3.5" />
+                表示名を変更
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onRemove}
+                className="cursor-pointer gap-2 text-xs"
+              >
+                <Unplug className="size-3.5" />
+                接続を解除
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
 
       {open && (
         <div className="ml-3 border-l pl-2">
@@ -800,7 +949,7 @@ function GlobalTrash({
   return (
     <div className="px-1">
       <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-        削除した Issue は {TRASH_TTL_DAYS} 日後に自動で完全削除されます。クリックで中身を確認できます。
+        削除した Issue は {trashTtlDays()} 日後に自動で完全削除されます。クリックで中身を確認できます。
       </div>
       {rows.length === 0 ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -859,6 +1008,6 @@ function GlobalTrash({
 function daysLeft(deletedAt: string): number {
   const t = Date.parse(deletedAt);
   if (!Number.isFinite(t)) return 0;
-  const ms = t + TRASH_TTL_DAYS * 24 * 60 * 60 * 1000 - Date.now();
+  const ms = t + trashTtlDays() * 24 * 60 * 60 * 1000 - Date.now();
   return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
 }

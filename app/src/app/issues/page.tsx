@@ -36,7 +36,7 @@ import {
   createSlot,
   updateIssueMeta,
   trashIssue,
-  TRASH_TTL_DAYS,
+  trashTtlDays,
   slotPath,
   deriveState,
   DERIVED_STATE_META,
@@ -635,7 +635,7 @@ function IssueWorkbench({
   // workbench tears the terminal down).
   const handleDeleteIssue = React.useCallback(async () => {
     const ok = await confirmDialog(
-      `Issue「${issue.title}」をゴミ箱に移動します。${TRASH_TTL_DAYS}日後に完全削除されます（それまでは復元できます）。`,
+      `Issue「${issue.title}」をゴミ箱に移動します。${trashTtlDays()}日後に完全削除されます（それまでは復元できます）。`,
       { title: "ゴミ箱へ移動", okLabel: "ゴミ箱へ移動", cancelLabel: "キャンセル" },
     );
     if (!ok) return;

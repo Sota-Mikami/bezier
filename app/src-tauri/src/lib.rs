@@ -153,6 +153,91 @@ fn write_file(path: String, contents: String) -> Result<(), String> {
     fs::write(&resolved, contents).map_err(|e| format!("write_file {path}: {e}"))
 }
 
+/// Write raw BYTES to a file (DEC-043 — pasted/dropped Spec images). Same parent-
+/// dir creation + `..` traversal guard as `write_file`; the only difference is a
+/// binary payload (sent from JS as a number array). Used to save image assets
+/// under `<issue.dir>/assets/`.
+#[tauri::command]
+fn write_file_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let target = Path::new(&path);
+    reject_traversal(target)?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("write_file_bytes {path}: path has no parent directory"))?;
+    if !parent.as_os_str().is_empty() && !parent.exists() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("write_file_bytes {path}: cannot create parent dir: {e}"))?;
+    }
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|e| format!("write_file_bytes {path}: cannot resolve parent dir: {e}"))?;
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| format!("write_file_bytes {path}: path has no file name"))?;
+    let mut resolved: PathBuf = canonical_parent;
+    resolved.push(file_name);
+    reject_traversal(&resolved)?;
+    fs::write(&resolved, bytes).map_err(|e| format!("write_file_bytes {path}: {e}"))
+}
+
+/// Read a file's raw BYTES (DEC-043 — rendering a Spec image as a data: URL in
+/// the live preview). Traversal-guarded like `read_file`.
+#[tauri::command]
+fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
+    reject_traversal(Path::new(&path))?;
+    fs::read(&path).map_err(|e| format!("read_file_bytes {path}: {e}"))
+}
+
+/// Reveal a path in the macOS Finder (DEC-041 "…" menu → Finderで開く). `open`
+/// on a directory opens it in Finder; on a file it reveals/opens its app. Path is
+/// traversal-guarded; a spawn failure surfaces a clear Err.
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    reject_traversal(Path::new(&path))?;
+    let status = std::process::Command::new("open")
+        .arg(&path)
+        .status()
+        .map_err(|e| format!("open {path}: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Finder で開けませんでした: {path}"))
+    }
+}
+
+/// Open a folder in the user's IDE (DEC-041 "…" menu → IDEで開く). Tries known
+/// editor CLIs on PATH in preference order and launches the first one found with
+/// the folder as its argument. Returns the editor name on success; a clear Err
+/// (listing the probed CLIs) when none is installed. PATH is the login-shell PATH
+/// (see fix_path_env), so nvm/Homebrew installs of `code` / `cursor` are seen.
+#[tauri::command]
+fn open_in_editor(path: String) -> Result<String, String> {
+    reject_traversal(Path::new(&path))?;
+    const EDITORS: &[(&str, &str)] = &[
+        ("cursor", "Cursor"),
+        ("code", "VS Code"),
+        ("windsurf", "Windsurf"),
+        ("zed", "Zed"),
+        ("subl", "Sublime Text"),
+        ("idea", "IntelliJ IDEA"),
+        ("webstorm", "WebStorm"),
+    ];
+    let path_env = std::env::var_os("PATH").unwrap_or_default();
+    for (bin, label) in EDITORS {
+        let found = std::env::split_paths(&path_env).any(|dir| is_executable(&dir.join(bin)));
+        if !found {
+            continue;
+        }
+        let status = std::process::Command::new(bin)
+            .arg(&path)
+            .status()
+            .map_err(|e| format!("{bin} {path}: {e}"))?;
+        if status.success() {
+            return Ok((*label).to_string());
+        }
+    }
+    Err("対応する IDE が見つかりませんでした（cursor / code / windsurf / zed / subl / idea / webstorm）。".to_string())
+}
+
 /// Recursively remove a file or directory. Guarded: rejects `..` traversal and
 /// requires the resolved path to live under a `.continuum` working store, so it
 /// can only delete continuum's local issue artifacts — never arbitrary repo
@@ -1707,6 +1792,10 @@ pub fn run() {
             list_dir,
             read_file,
             write_file,
+            write_file_bytes,
+            read_file_bytes,
+            reveal_in_finder,
+            open_in_editor,
             remove_path,
             move_path,
             pty_spawn,

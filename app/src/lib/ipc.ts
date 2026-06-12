@@ -70,6 +70,33 @@ export function writeFile(path: string, contents: string): Promise<void> {
 }
 
 /**
+ * Write raw bytes to a file (pasted/dropped Spec images, DEC-043). Auto-creates
+ * parent dirs. -> invoke("write_file_bytes", { path, bytes })
+ */
+export function writeFileBytes(path: string, bytes: Uint8Array): Promise<void> {
+  return invoke<void>("write_file_bytes", { path, bytes: Array.from(bytes) });
+}
+
+/** Read a file's raw bytes (image preview, DEC-043). -> invoke("read_file_bytes", { path }) */
+export async function readFileBytes(path: string): Promise<Uint8Array> {
+  const arr = await invoke<number[]>("read_file_bytes", { path });
+  return Uint8Array.from(arr);
+}
+
+/** Reveal a path in the macOS Finder (DEC-041). -> invoke("reveal_in_finder", { path }) */
+export function revealInFinder(path: string): Promise<void> {
+  return invoke<void>("reveal_in_finder", { path });
+}
+
+/**
+ * Open a folder in the user's IDE (first installed of cursor/code/…). Returns the
+ * editor's display name. -> invoke("open_in_editor", { path })
+ */
+export function openInEditor(path: string): Promise<string> {
+  return invoke<string>("open_in_editor", { path });
+}
+
+/**
  * Recursively remove a file or directory. Guarded on the Rust side to only
  * delete paths under a `.continuum` working store (continuum's local issue
  * artifacts), never arbitrary repo files. No-op when the path is absent.

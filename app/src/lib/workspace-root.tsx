@@ -31,6 +31,14 @@ export interface RepoEntry {
   count: number;
   /** Monotonic open sequence — higher = more recently used (recency tiebreak). */
   seq: number;
+  /** User-set display name override (DEC-041 "表示名を変更"). Falls back to the
+   * last path segment when empty. */
+  displayName?: string;
+}
+
+/** The label to show for a repo entry: its override, else the path basename. */
+export function repoLabel(entry: RepoEntry): string {
+  return entry.displayName?.trim() || repoName(entry.path);
 }
 
 /** Last path segment — the repo's display name. */
@@ -98,7 +106,14 @@ function loadRecents(): RepoEntry[] {
           typeof (e as RepoEntry).count === "number" &&
           typeof (e as RepoEntry).seq === "number",
       )
-      .map((e) => ({ path: e.path, count: e.count, seq: e.seq }));
+      .map((e) => ({
+        path: e.path,
+        count: e.count,
+        seq: e.seq,
+        ...(typeof e.displayName === "string" && e.displayName
+          ? { displayName: e.displayName }
+          : {}),
+      }));
   } catch {
     return [];
   }
@@ -185,6 +200,18 @@ function removeRecent(path: string): void {
   }
 }
 
+// Set (or clear, when blank) a repo's display-name override (DEC-041).
+function setDisplayName(path: string, name: string): void {
+  const entry = recentsMap.get(path);
+  if (!entry) return;
+  const trimmed = name.trim();
+  if (trimmed) entry.displayName = trimmed;
+  else delete entry.displayName;
+  recentsSorted = sortRecents();
+  persistRecents();
+  notify();
+}
+
 // snapshots
 function getRootSnapshot(): string | null {
   return currentRoot;
@@ -222,6 +249,8 @@ interface WorkspaceRootValue {
   cycle: (dir: 1 | -1) => void;
   /** Forget a repo from the list (non-destructive; folder/git untouched). */
   removeRepo: (path: string) => void;
+  /** Set a repo's display-name override (blank clears it). */
+  setRepoDisplayName: (path: string, name: string) => void;
 }
 
 const Ctx = React.createContext<WorkspaceRootValue | null>(null);
@@ -273,18 +302,31 @@ export function WorkspaceRootProvider({
     removeRecent(path);
   }, []);
 
+  const setRepoDisplayName = React.useCallback((path: string, name: string) => {
+    setDisplayName(path, name);
+  }, []);
+
+  // Display name of the active root (its override, else the basename). `recents`
+  // is in the dep list so this recomputes when the override changes.
+  const rootName = React.useMemo(() => {
+    if (!root) return null;
+    const entry = recents.find((e) => e.path === root);
+    return entry ? repoLabel(entry) : repoName(root);
+  }, [root, recents]);
+
   const value = React.useMemo<WorkspaceRootValue>(
     () => ({
       root,
-      rootName: root ? repoName(root) : null,
+      rootName,
       recents,
       hydrated,
       openRoot,
       switchTo,
       cycle,
       removeRepo,
+      setRepoDisplayName,
     }),
-    [root, recents, hydrated, openRoot, switchTo, cycle, removeRepo],
+    [root, rootName, recents, hydrated, openRoot, switchTo, cycle, removeRepo, setRepoDisplayName],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

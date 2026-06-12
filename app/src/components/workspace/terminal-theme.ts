@@ -5,6 +5,7 @@
 // on each background (Claude Code emits ANSI colors).
 
 import type { ITheme } from "@xterm/xterm";
+import { resolveDark } from "@/lib/settings";
 
 export const DARK_TERMINAL: ITheme = {
   background: "#0a0a0a",
@@ -54,10 +55,11 @@ export const LIGHT_TERMINAL: ITheme = {
   brightWhite: "#27272a",
 };
 
-/** Whether the OS currently prefers dark. SSR-safe (defaults to dark). */
+/** Whether the terminal should be dark — follows the resolved app theme
+ * (Settings: light / dark / system; DEC-043). SSR-safe (defaults to dark). */
 export function prefersDark(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return true;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  if (typeof window === "undefined") return true;
+  return resolveDark();
 }
 
 export function terminalTheme(dark = prefersDark()): ITheme {

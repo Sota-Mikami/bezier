@@ -44,7 +44,7 @@ import { languages } from "@codemirror/language-data";
 import { stringify as yamlStringify } from "yaml";
 
 import type { OpenDoc } from "@/lib/ipc";
-import { writeFile } from "@/lib/ipc";
+import { writeFile, writeFileBytes, messageDialog } from "@/lib/ipc";
 import type { Frontmatter } from "@/lib/frontmatter";
 import { livePreview } from "@/components/workspace/markdown-live-preview";
 import {
@@ -122,6 +122,37 @@ function emitFrontmatter(fm: Frontmatter | undefined): string {
   if (Object.keys(data).length === 0) return "";
   // yamlStringify ends with a trailing newline -> `---\n<yaml>---\n`.
   return `---\n${yamlStringify(data)}---\n`;
+}
+
+// --- Spec image insertion (DEC-043 #1) -----------------------------------
+// Pasted/dropped images are saved next to the doc under `assets/` and a
+// `![](assets/<name>)` reference is inserted at the caret; the live preview then
+// renders them inline (markdown-live-preview.ts).
+
+/** Directory portion of an absolute file path. */
+function dirOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i > 0 ? path.slice(0, i) : "";
+}
+
+/** File extension for an image File (from its MIME type, then its name). */
+function imageExt(file: File): string {
+  const fromType: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "image/avif": "avif",
+    "image/bmp": "bmp",
+  };
+  return fromType[file.type] || file.name.split(".").pop()?.toLowerCase() || "png";
+}
+
+/** A filesystem-safe basename stem from a pasted file (often "image"). */
+function imageStem(name: string): string {
+  const stem = name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]+/g, "-");
+  return stem.replace(/^-+|-+$/g, "").slice(0, 40) || "image";
 }
 
 /**
@@ -350,6 +381,22 @@ const editorTheme = EditorView.theme({
     accentColor: "var(--primary)",
   },
 
+  // Inline images (DEC-043 #1) — rendered from `![](assets/…)` off-cursor.
+  ".cm-md-image": { display: "inline-block", maxWidth: "100%" },
+  ".cm-md-image img": {
+    maxWidth: "100%",
+    height: "auto",
+    borderRadius: "8px",
+    border: "1px solid var(--border)",
+    display: "block",
+  },
+  ".cm-md-image-missing": {
+    color: "var(--muted-foreground)",
+    fontSize: "0.86em",
+    fontStyle: "italic",
+  },
+  ".cm-md-image-missing img": { display: "none" },
+
   // Fenced code (line band) + dimmed fences.
   ".cm-md-codeblock": {
     fontFamily: "var(--font-mono, ui-monospace, monospace)",
@@ -567,6 +614,71 @@ function MarkdownEditorInner(
       onEditRef.current?.();
     });
 
+    // Doc directory: resolves relative image paths for inline render + is where
+    // pasted/dropped images are saved (DEC-043 #1). Fixed for this mounted doc.
+    const baseDir = dirOf(docRef.current.path);
+
+    // Save pasted/dropped image files under <baseDir>/assets/ and insert a
+    // `![](assets/<name>)` reference at the caret (or drop point).
+    const insertImageFiles = async (
+      ev: EditorView,
+      files: File[],
+      atPos?: number,
+    ) => {
+      if (!baseDir) return;
+      for (const file of files) {
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const rel = `assets/${imageStem(file.name)}-${Date.now().toString(36)}-${Math.floor(
+            Math.random() * 1e4,
+          ).toString(36)}.${imageExt(file)}`;
+          await writeFileBytes(`${baseDir}/${rel}`, bytes);
+          const snippet = `![](${rel})`;
+          const pos = atPos ?? ev.state.selection.main.head;
+          ev.dispatch({
+            changes: { from: pos, insert: `${snippet}\n` },
+            selection: { anchor: pos + snippet.length },
+          });
+        } catch (e) {
+          await messageDialog(
+            `画像を保存できませんでした: ${e instanceof Error ? e.message : String(e)}`,
+            { title: "画像の挿入エラー" },
+          );
+        }
+      }
+    };
+
+    // Paste an image from the clipboard / drop an image file → insert it.
+    const imageHandlers = EditorView.domEventHandlers({
+      paste(event, ev) {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        const files: File[] = [];
+        for (const it of Array.from(items)) {
+          if (it.kind === "file" && it.type.startsWith("image/")) {
+            const f = it.getAsFile();
+            if (f) files.push(f);
+          }
+        }
+        if (files.length === 0) return false;
+        event.preventDefault();
+        void insertImageFiles(ev, files);
+        return true;
+      },
+      drop(event, ev) {
+        const dt = event.dataTransfer;
+        if (!dt || dt.files.length === 0) return false;
+        const files = Array.from(dt.files).filter((f) =>
+          f.type.startsWith("image/"),
+        );
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const pos = ev.posAtCoords({ x: event.clientX, y: event.clientY });
+        void insertImageFiles(ev, files, pos ?? undefined);
+        return true;
+      },
+    });
+
     const view = new EditorView({
       parent: host,
       state: EditorState.create({
@@ -600,7 +712,8 @@ function MarkdownEditorInner(
           // GFM (tables, strikethrough, task lists, autolinks) + lazy code-block
           // language highlighting via @codemirror/language-data.
           markdown({ base: markdownLanguage, codeLanguages: languages }),
-          livePreview,
+          livePreview(baseDir),
+          imageHandlers,
           flashField,
           editorTheme,
           cmPlaceholder("Start writing…  (type / for commands)"),

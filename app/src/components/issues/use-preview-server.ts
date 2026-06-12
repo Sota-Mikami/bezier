@@ -44,6 +44,7 @@ import {
   type DevDetect,
   type RunnerKind,
 } from "@/lib/preview";
+import { getSettings } from "@/lib/settings";
 
 export type PreviewStatus = "idle" | "starting" | "ready" | "error" | "stopped";
 
@@ -61,8 +62,10 @@ const READY_TIMEOUT_MS = 90_000;
 // with the app (SIGHUP on the pty), so a fresh launch starts clean.
 
 const PREVIEW_PTY_PREFIX = "preview:";
-const MAX_PREVIEWS = 3;
-const IDLE_STOP_MS = 10 * 60_000; // stop a preview not viewed for 10 min
+// Concurrency cap + idle-stop are user-configurable (DEC-043). Read live from
+// settings so changing them takes effect without a restart.
+const maxPreviews = () => getSettings().maxPreviews;
+const idleStopMs = () => getSettings().previewIdleMinutes * 60_000;
 const SWEEP_MS = 60_000;
 
 interface PreviewEntry {
@@ -92,7 +95,7 @@ async function dropPreview(key: string): Promise<void> {
 /** Enforce the concurrency cap before starting `keepKey`: evict the
  * least-recently-viewed OTHER preview while at/over the limit. */
 async function enforcePreviewCap(keepKey: string): Promise<void> {
-  while (previewRegistry.size >= MAX_PREVIEWS && !previewRegistry.has(keepKey)) {
+  while (previewRegistry.size >= maxPreviews() && !previewRegistry.has(keepKey)) {
     let lruKey: string | null = null;
     let lruAt = Infinity;
     for (const [k, e] of previewRegistry) {
@@ -115,8 +118,9 @@ function ensureIdleSweep(): void {
   sweepStarted = true;
   window.setInterval(() => {
     const now = Date.now();
+    const idle = idleStopMs();
     for (const [k, e] of [...previewRegistry]) {
-      if (now - e.lastViewedAt >= IDLE_STOP_MS) void dropPreview(k);
+      if (now - e.lastViewedAt >= idle) void dropPreview(k);
     }
   }, SWEEP_MS);
 }
