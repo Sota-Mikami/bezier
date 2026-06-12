@@ -10,7 +10,7 @@
 // parsed/emitted via the `yaml` package directly so fields beyond the typed
 // Frontmatter shape (id / labels / screens) survive round-trips.
 
-import { listDir, readFile, writeFile, appDataDir } from "@/lib/ipc";
+import { listDir, readFile, writeFile, removePath, appDataDir } from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
@@ -273,6 +273,26 @@ export async function updateIssueMeta(
     created: asString(cur.created) ?? issue.created,
   };
   await writeFile(path, `${serializeIssueFm(meta)}${body}`);
+}
+
+/**
+ * Permanently delete an issue: removes its folder (.continuum/drafts/<id>-<slug>
+ * — incl. issue.md / spec.md / worktree.json) and its activity thread dir
+ * (.continuum/issues/<id>). Does NOT tear down a git worktree/branch — a caller
+ * holding an active worktree must remove it (Discard) first to avoid orphaning
+ * it. removePath is a no-op when a path is already absent.
+ */
+export async function deleteIssue(
+  root: string,
+  issue: Pick<Issue, "id" | "dir">,
+): Promise<void> {
+  await removePath(issue.dir);
+  await removePath(`${draftsStoreDir(root)}/issues/${issue.id}`);
+}
+
+/** <root>/.continuum — the local working store root (drafts + issues live here). */
+function draftsStoreDir(root: string): string {
+  return `${stripTrailingSlash(root)}/.continuum`;
 }
 
 // Spec is the only hand-created slot (DEC-011 / DEC-014/A).

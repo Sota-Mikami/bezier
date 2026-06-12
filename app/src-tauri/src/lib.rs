@@ -153,6 +153,36 @@ fn write_file(path: String, contents: String) -> Result<(), String> {
     fs::write(&resolved, contents).map_err(|e| format!("write_file {path}: {e}"))
 }
 
+/// Recursively remove a file or directory. Guarded: rejects `..` traversal and
+/// requires the resolved path to live under a `.continuum` working store, so it
+/// can only delete continuum's local issue artifacts — never arbitrary repo
+/// files. No-op (Ok) when the path does not exist.
+#[tauri::command]
+fn remove_path(path: String) -> Result<(), String> {
+    let target = Path::new(&path);
+    reject_traversal(target)?;
+    if !target.exists() {
+        return Ok(());
+    }
+    let canonical =
+        fs::canonicalize(target).map_err(|e| format!("remove_path {path}: cannot resolve: {e}"))?;
+    reject_traversal(&canonical)?;
+    let under_store = canonical
+        .components()
+        .any(|c| c.as_os_str() == ".continuum");
+    if !under_store {
+        return Err(format!(
+            "refusing to remove path outside a .continuum store: {}",
+            canonical.display()
+        ));
+    }
+    if canonical.is_dir() {
+        fs::remove_dir_all(&canonical).map_err(|e| format!("remove_path {path}: {e}"))
+    } else {
+        fs::remove_file(&canonical).map_err(|e| format!("remove_path {path}: {e}"))
+    }
+}
+
 // ============================================================================
 // v0.2 — embedded terminal (portable-pty) + agent delegation backend.
 //
@@ -1196,6 +1226,7 @@ pub fn run() {
             list_dir,
             read_file,
             write_file,
+            remove_path,
             pty_spawn,
             pty_write,
             pty_resize,

@@ -20,6 +20,7 @@ import {
   ChevronDown,
   FileText,
   MonitorPlay,
+  Trash2,
 } from "lucide-react";
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -42,6 +43,8 @@ import {
   readIssue,
   createSlot,
   updateIssueMeta,
+  deleteIssue,
+  readWorktreeRef,
   slotPath,
   ISSUE_STATUSES,
   type Issue,
@@ -54,7 +57,19 @@ import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignReview } from "@/components/issues/design-review";
 import { useImplementSession } from "@/components/issues/use-implement-session";
-import { gitStatus } from "@/lib/git";
+import { gitStatus, gitWorktreeRemove, gitBranchDelete } from "@/lib/git";
+
+// Permanently delete an issue + tear down its git worktree/branch if one exists
+// (so deleting an in-progress issue doesn't orphan a worktree). git teardown is
+// best-effort: a missing worktree/branch must not block removing the folder.
+async function purgeIssue(root: string, issue: Issue): Promise<void> {
+  const ref = await readWorktreeRef(issue).catch(() => null);
+  if (ref) {
+    await gitWorktreeRemove(root, ref.path).catch(() => {});
+    await gitBranchDelete(root, ref.branch).catch(() => {});
+  }
+  await deleteIssue(root, issue);
+}
 
 // Live change visualization (DEC-012 §7).
 // How often we poll the worktree's git status to detect the agent writing CODE
@@ -234,6 +249,27 @@ function IssueList({ root }: { root: string }) {
     }
   }, [title, creating, root, router]);
 
+  const handleDelete = React.useCallback(
+    async (issue: Issue) => {
+      if (
+        !window.confirm(
+          `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。よろしいですか？`,
+        )
+      ) {
+        return;
+      }
+      try {
+        await purgeIssue(root, issue);
+        setIssues((prev) => prev?.filter((i) => i.id !== issue.id) ?? prev);
+      } catch (e) {
+        window.alert(
+          `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    },
+    [root],
+  );
+
   return (
     <div className="flex h-svh flex-col">
       <Header title="Issues">
@@ -289,10 +325,10 @@ function IssueList({ root }: { root: string }) {
             {issues.map((issue) => {
               const badge = STATUS_BADGE[issue.status];
               return (
-                <li key={issue.id}>
+                <li key={issue.id} className="group/row relative flex items-center">
                   <Link
                     href={`/issues?issue=${encodeURIComponent(issue.id)}`}
-                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
+                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -340,6 +376,15 @@ function IssueList({ root }: { root: string }) {
                       {fmtDate(issue.created)}
                     </span>
                   </Link>
+                  <button
+                    type="button"
+                    title="Issue を削除"
+                    aria-label="Issue を削除"
+                    onClick={() => void handleDelete(issue)}
+                    className="mr-2 shrink-0 rounded p-2 text-muted-foreground opacity-0 transition-[color,opacity] hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 </li>
               );
             })}
@@ -434,6 +479,7 @@ function IssueWorkbench({
   issue: Issue;
   setIssue: React.Dispatch<React.SetStateAction<Issue | null>>;
 }) {
+  const router = useRouter();
   const [tab, setTab] = React.useState<DetailTab>("spec");
   const [creatingSpec, setCreatingSpec] = React.useState(false);
 
@@ -522,6 +568,28 @@ function IssueWorkbench({
   // (terminal + controls) and the center Design tab (Preview + Diff).
   const session = useImplementSession(root, issue, handleStatusChange);
 
+  // Delete this issue from the detail view: stop the preview (so nothing holds
+  // the worktree open), purge the issue + its worktree/branch, then return to
+  // the list (unmounting the workbench tears the terminal down).
+  const handleDeleteIssue = React.useCallback(async () => {
+    if (
+      !window.confirm(
+        `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。よろしいですか？`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await session.preview.stop().catch(() => {});
+      await purgeIssue(root, issue);
+      router.push("/issues");
+    } catch (e) {
+      window.alert(
+        `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }, [issue, root, session, router]);
+
   // Code-change detection (DEC-012 §7): poll the worktree's porcelain status
   // while a worktree exists. When it differs from the last seen snapshot (the
   // agent wrote/added/removed files) → signal a Design change (auto-switch +
@@ -576,6 +644,15 @@ function IssueWorkbench({
             status={issue.status}
             onChange={(s) => void patchMeta({ status: s })}
           />
+          <button
+            type="button"
+            title="Issue を削除"
+            aria-label="Issue を削除"
+            onClick={() => void handleDeleteIssue()}
+            className="rounded p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </button>
         </div>
       </DetailHeader>
 

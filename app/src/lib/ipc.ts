@@ -38,6 +38,16 @@ export function writeFile(path: string, contents: string): Promise<void> {
 }
 
 /**
+ * Recursively remove a file or directory. Guarded on the Rust side to only
+ * delete paths under a `.continuum` working store (continuum's local issue
+ * artifacts), never arbitrary repo files. No-op when the path is absent.
+ * -> invoke("remove_path", { path })
+ */
+export function removePath(path: string): Promise<void> {
+  return invoke<void>("remove_path", { path });
+}
+
+/**
  * The continuum app-data directory (created if absent). Worktrees are hosted
  * here, OUTSIDE the user's repo, so workspace-root inference (Next.js/Turbopack)
  * doesn't trip over the parent repo's lockfile. -> invoke("app_data_dir")
