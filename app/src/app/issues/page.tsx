@@ -36,6 +36,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { confirmDialog, messageDialog } from "@/lib/ipc";
 import { useWorkspaceRoot } from "@/lib/workspace-root";
 import {
   listIssues,
@@ -251,19 +252,18 @@ function IssueList({ root }: { root: string }) {
 
   const handleDelete = React.useCallback(
     async (issue: Issue) => {
-      if (
-        !window.confirm(
-          `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。よろしいですか？`,
-        )
-      ) {
-        return;
-      }
+      const ok = await confirmDialog(
+        `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。`,
+        { title: "Issue を削除", okLabel: "削除", cancelLabel: "キャンセル" },
+      );
+      if (!ok) return;
       try {
         await purgeIssue(root, issue);
         setIssues((prev) => prev?.filter((i) => i.id !== issue.id) ?? prev);
       } catch (e) {
-        window.alert(
+        await messageDialog(
           `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+          { title: "削除エラー" },
         );
       }
     },
@@ -572,13 +572,11 @@ function IssueWorkbench({
   // the worktree open), purge the issue + its worktree/branch, then return to
   // the list (unmounting the workbench tears the terminal down).
   const handleDeleteIssue = React.useCallback(async () => {
-    if (
-      !window.confirm(
-        `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。よろしいですか？`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog(
+      `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。`,
+      { title: "Issue を削除", okLabel: "削除", cancelLabel: "キャンセル" },
+    );
+    if (!ok) return;
     try {
       await session.preview.stop().catch(() => {});
       await purgeIssue(root, issue);

@@ -4,8 +4,40 @@
 // (camelCase: isDir).
 
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import {
+  open,
+  confirm as tauriConfirm,
+  message as tauriMessage,
+} from "@tauri-apps/plugin-dialog";
 import type { Frontmatter } from "@/lib/frontmatter";
+
+/**
+ * Native confirm dialog. WKWebView's `window.confirm()` is unreliable inside
+ * Tauri (can return immediately without showing), so destructive confirmations
+ * must go through the dialog plugin. Resolves true when the user confirms.
+ */
+export function confirmDialog(
+  message: string,
+  opts?: { title?: string; okLabel?: string; cancelLabel?: string },
+): Promise<boolean> {
+  return tauriConfirm(message, {
+    kind: "warning",
+    okLabel: opts?.okLabel,
+    cancelLabel: opts?.cancelLabel,
+    ...(opts?.title ? { title: opts.title } : {}),
+  });
+}
+
+/** Native message dialog (WKWebView's `window.alert()` is likewise unreliable). */
+export async function messageDialog(
+  text: string,
+  opts?: { title?: string; kind?: "info" | "warning" | "error" },
+): Promise<void> {
+  await tauriMessage(text, {
+    kind: opts?.kind ?? "error",
+    ...(opts?.title ? { title: opts.title } : {}),
+  });
+}
 
 export interface FileEntry {
   path: string;

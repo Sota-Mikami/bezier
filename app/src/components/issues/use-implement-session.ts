@@ -55,6 +55,7 @@ import {
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
 import { ptyWrite, commandExists } from "@/lib/pty";
+import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
 
 function errMsg(e: unknown): string {
@@ -610,13 +611,11 @@ export function useImplementSession(
 
   const handleDiscard = React.useCallback(async () => {
     if (!ref || action) return;
-    if (
-      !window.confirm(
-        "worktree と branch を破棄し、Issue を open に戻します。よろしいですか？",
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog(
+      "worktree と branch を破棄し、Issue を open に戻します。",
+      { title: "変更を破棄", okLabel: "破棄", cancelLabel: "キャンセル" },
+    );
+    if (!ok) return;
     setAction("discard");
     setError(null);
     setInfo(null);
