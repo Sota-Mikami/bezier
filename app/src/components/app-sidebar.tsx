@@ -22,6 +22,8 @@ import {
   Check,
   Bell,
   X,
+  MoreHorizontal,
+  Unplug,
 } from "lucide-react";
 
 import {
@@ -30,6 +32,12 @@ import {
   SidebarContent,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { useWorkspaceRoot, repoName } from "@/lib/workspace-root";
 import {
   listIssues,
@@ -65,7 +73,7 @@ export function AppSidebar() {
   const sp = useSearchParams();
   const selectedId = sp.get("issue");
   const selectedTrashId = sp.get("trash");
-  const { root, recents, switchTo, openRoot } = useWorkspaceRoot();
+  const { root, recents, switchTo, openRoot, removeRepo } = useWorkspaceRoot();
 
   const [query, setQuery] = React.useState("");
   const [showTrash, setShowTrash] = React.useState(false);
@@ -457,6 +465,7 @@ export function AppSidebar() {
                   onToggle={() => toggleRepo(r.path)}
                   onSelectIssue={(id) => selectIssue(r.path, id)}
                   onShowAll={() => setShowAll((p) => new Set(p).add(r.path))}
+                  onRemove={() => removeRepo(r.path)}
                 />
               ))
             )}
@@ -508,6 +517,7 @@ function RepoGroup({
   onToggle,
   onSelectIssue,
   onShowAll,
+  onRemove,
 }: {
   path: string;
   active: boolean;
@@ -522,6 +532,7 @@ function RepoGroup({
   onToggle: () => void;
   onSelectIssue: (id: string) => void;
   onShowAll: () => void;
+  onRemove: () => void;
 }) {
   const all = issues ?? [];
   const filtered = query ? all.filter(matches) : all;
@@ -532,7 +543,7 @@ function RepoGroup({
   const more = filtered.length - shown.length;
 
   return (
-    <div className="mb-0.5">
+    <div className="group/repo relative mb-0.5">
       <button
         type="button"
         onClick={onToggle}
@@ -551,11 +562,32 @@ function RepoGroup({
         <span className="truncate">{repoName(path)}</span>
         {active && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
         {issues && all.length > 0 && (
-          <span className="ml-auto shrink-0 text-[10px] font-normal text-muted-foreground">
+          // Count fades out on hover to make room for the "…" menu.
+          <span className="ml-auto shrink-0 text-[10px] font-normal text-muted-foreground transition-opacity group-hover/repo:opacity-0">
             {all.length}
           </span>
         )}
       </button>
+
+      {/* Hover (or right-click) → "…" menu for per-repo actions (DEC-041). */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          title="その他"
+          aria-label="リポジトリの操作"
+          className="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 outline-none transition hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover/repo:opacity-100 data-[popup-open]:opacity-100"
+        >
+          <MoreHorizontal className="size-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-44">
+          <DropdownMenuItem
+            onClick={onRemove}
+            className="cursor-pointer gap-2 text-xs"
+          >
+            <Unplug className="size-3.5" />
+            接続を解除
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {open && (
         <div className="ml-3 border-l pl-2">

@@ -170,6 +170,21 @@ function setRootValue(v: string | null): void {
   notify();
 }
 
+// Forget a repo from the sidebar list (DEC-041). Non-destructive: the folder +
+// git + its .continuum (issues) are untouched — re-opening it brings it back.
+// If it was the active root, switch to another recent (or clear).
+function removeRecent(path: string): void {
+  recentsMap.delete(path);
+  recentsSorted = sortRecents();
+  persistRecents();
+  if (currentRoot === path) {
+    const next = recentsSorted[0]?.path ?? null;
+    setRootValue(next); // notifies
+  } else {
+    notify();
+  }
+}
+
 // snapshots
 function getRootSnapshot(): string | null {
   return currentRoot;
@@ -205,6 +220,8 @@ interface WorkspaceRootValue {
   switchTo: (path: string) => void;
   /** Cycle to the previous (dir -1) / next (dir +1) repo in the frequency order. */
   cycle: (dir: 1 | -1) => void;
+  /** Forget a repo from the list (non-destructive; folder/git untouched). */
+  removeRepo: (path: string) => void;
 }
 
 const Ctx = React.createContext<WorkspaceRootValue | null>(null);
@@ -252,6 +269,10 @@ export function WorkspaceRootProvider({
     setRootValue(list[next].path);
   }, []);
 
+  const removeRepo = React.useCallback((path: string) => {
+    removeRecent(path);
+  }, []);
+
   const value = React.useMemo<WorkspaceRootValue>(
     () => ({
       root,
@@ -261,8 +282,9 @@ export function WorkspaceRootProvider({
       openRoot,
       switchTo,
       cycle,
+      removeRepo,
     }),
-    [root, recents, hydrated, openRoot, switchTo, cycle],
+    [root, recents, hydrated, openRoot, switchTo, cycle, removeRepo],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
