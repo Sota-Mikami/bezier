@@ -4,6 +4,7 @@ import "./globals.css";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/app-sidebar";
+import { AppTitlebar } from "@/components/app-titlebar";
 import { WorkspaceRootProvider } from "@/lib/workspace-root";
 import { ReloadShortcut } from "@/components/reload-shortcut";
 
@@ -47,7 +48,8 @@ export default function RootLayout({
         <TooltipProvider delay={0}>
           <ReloadShortcut />
           <WorkspaceRootProvider>
-            <SidebarProvider>
+            <SidebarProvider className="box-border h-svh overflow-hidden pt-[var(--titlebar-h)]">
+              <AppTitlebar />
               <Suspense fallback={null}>
                 <AppSidebar />
               </Suspense>

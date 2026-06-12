@@ -21,8 +21,6 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -111,7 +109,7 @@ export default function IssuesPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex h-svh items-center justify-center text-sm text-muted-foreground">
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
           Loading…
         </div>
       }
@@ -128,7 +126,7 @@ function IssuesView() {
 
   if (!hydrated) {
     return (
-      <div className="flex h-svh items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         Loading…
       </div>
     );
@@ -148,7 +146,7 @@ function IssuesView() {
 // the left sidebar now (DEC-021), so the main pane just invites picking / New.
 function EmptyLanding() {
   return (
-    <div className="flex h-svh flex-col">
+    <div className="flex h-full flex-col">
       <Header title="Issues" />
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
         <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
@@ -168,7 +166,7 @@ function EmptyLanding() {
 
 function NoFolder({ onOpen }: { onOpen: () => Promise<string | null> }) {
   return (
-    <div className="flex h-svh flex-col">
+    <div className="flex h-full flex-col">
       <Header title="Issues" />
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
         <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
@@ -200,8 +198,6 @@ function Header({
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="mx-1 h-5" />
       <CircleDot className="size-4 text-muted-foreground" />
       <span className="text-sm font-medium">{title}</span>
       {children}
@@ -244,7 +240,7 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
 
   if (loading) {
     return (
-      <div className="flex h-svh flex-col">
+      <div className="flex h-full flex-col">
         <DetailHeader />
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
@@ -256,7 +252,7 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
 
   if (notFound || !issue) {
     return (
-      <div className="flex h-svh flex-col">
+      <div className="flex h-full flex-col">
         <DetailHeader />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <div className="text-base font-medium">Issue が見つかりません</div>
@@ -450,7 +446,7 @@ function IssueWorkbench({
   }, [worktreePath, signalChange]);
 
   return (
-    <div className="flex h-svh flex-col">
+    <div className="flex h-full flex-col">
       <DetailHeader>
         <TitleEditor
           key={issue.title}
@@ -601,20 +597,10 @@ function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
 }
 
 function DetailHeader({ children }: { children?: React.ReactNode }) {
+  // No toggle / back button here (DEC-024): the sidebar collapse lives in the app
+  // title bar, and the sidebar IS the navigation. This header is just the issue.
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="mx-1 h-5" />
-      <Button
-        render={<Link href="/issues" />}
-        nativeButton={false}
-        variant="ghost"
-        size="icon"
-        className="size-7"
-        title="一覧へ戻る"
-      >
-        <ArrowLeft className="size-4" />
-      </Button>
       {children}
     </header>
   );
