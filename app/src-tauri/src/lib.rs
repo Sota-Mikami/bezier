@@ -694,6 +694,27 @@ fn git_sync_main(worktree_path: String, base: String) -> Result<SyncResult, Stri
     git_run(&["-C", wt, "rev-parse", "--verify", "--quiet", &base])
         .map_err(|_| format!("base '{base}' is not a valid ref"))?;
 
+    // The worktree may hold UNCOMMITTED agent work — `git merge` refuses to run
+    // on a dirty tree ("local changes would be overwritten"). Commit it first as
+    // a WIP commit on the branch (those changes belong to the branch anyway, and
+    // Accept would commit them too) so the merge can proceed and surface any real
+    // conflict for resolution. `--no-verify` skips commit hooks for this internal
+    // WIP commit.
+    let dirty = !git_run(&["-C", wt, "status", "--porcelain"])?
+        .trim()
+        .is_empty();
+    if dirty {
+        git_run(&["-C", wt, "add", "-A"])?;
+        git_run(&[
+            "-C",
+            wt,
+            "commit",
+            "--no-verify",
+            "-m",
+            "WIP: before sync with main",
+        ])?;
+    }
+
     let out = git_output(&["-C", wt, "merge", "--no-edit", &base])?;
     if out.status.success() {
         return Ok(SyncResult {
