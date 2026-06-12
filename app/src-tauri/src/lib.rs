@@ -855,6 +855,131 @@ fn git_merge_to_main(repo_path: String, branch: String) -> Result<String, String
 }
 
 // ============================================================================
+// DEC-015 — "Open PR" finalize path (team-safe default). Instead of touching
+// main directly (git_merge_to_main, demoted to a solo opt-in), push the Issue
+// branch and open a GitHub PR via `gh` so review / CI / merge happen on the
+// platform and `main` is never modified locally. Detection upstream uses
+// `command_exists("gh")` + `git_remote_url`. All path args are
+// `reject_traversal`-guarded; failures surface git's/gh's stderr.
+// ============================================================================
+
+/// origin's remote URL (used to detect "this repo can Open a PR"). Err when the
+/// repo has no `origin` remote.
+#[tauri::command]
+fn git_remote_url(repo_path: String) -> Result<String, String> {
+    reject_traversal(Path::new(&repo_path))?;
+    let url = git_run(&["-C", &repo_path, "remote", "get-url", "origin"])?;
+    let trimmed = url.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("no origin remote".to_string());
+    }
+    Ok(trimmed)
+}
+
+/// Push the worktree's `branch` to origin (`push -u origin <branch>`). If the
+/// worktree is dirty, commit the WIP first (same pattern as git_sync_main) so
+/// the push includes the agent's work. The worktree shares the main repo's
+/// remote. Returns git's push summary (mostly written to stderr).
+#[tauri::command]
+fn git_push(worktree_path: String, branch: String) -> Result<String, String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    let wt = worktree_path.as_str();
+
+    // Commit any uncommitted agent work first (git won't push it otherwise, and
+    // a PR with an empty diff is useless). Mirrors git_sync_main's WIP commit.
+    let dirty = !git_run(&["-C", wt, "status", "--porcelain"])?
+        .trim()
+        .is_empty();
+    if dirty {
+        git_run(&["-C", wt, "add", "-A"])?;
+        git_run(&["-C", wt, "commit", "--no-verify", "-m", "WIP: before PR"])?;
+    }
+
+    let out = git_output(&["-C", wt, "push", "-u", "origin", &branch])?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if !out.status.success() {
+        return Err(format!(
+            "git push failed: {}",
+            format!("{stderr}{stdout}").trim()
+        ));
+    }
+    // git writes the "branch set up to track / new branch" summary to stderr.
+    Ok(format!("{stdout}{stderr}").trim().to_string())
+}
+
+/// Last http(s) URL line in `s` (gh prints the PR URL on stdout, sometimes after
+/// preamble lines). None when no URL line is present.
+fn last_url_line(s: &str) -> Option<String> {
+    s.lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("https://") || l.starts_with("http://"))
+        .next_back()
+        .map(String::from)
+}
+
+/// Open a GitHub PR for `branch` via `gh pr create` (cwd = repo_path). Uses
+/// `--body-file` (NOT `--body`) so a large multi-line markdown body is safe.
+/// Returns the PR URL (gh prints it on stdout). If a PR for the branch already
+/// EXISTS, falls back to `gh pr view <branch> --json url -q .url`. Other
+/// failures surface gh's stderr. Never touches `main`.
+#[tauri::command]
+fn gh_pr_create(
+    repo_path: String,
+    branch: String,
+    title: String,
+    body_file_path: String,
+) -> Result<String, String> {
+    reject_traversal(Path::new(&repo_path))?;
+    reject_traversal(Path::new(&body_file_path))?;
+
+    let out = std::process::Command::new("gh")
+        .args([
+            "pr",
+            "create",
+            "--head",
+            &branch,
+            "--title",
+            &title,
+            "--body-file",
+            &body_file_path,
+        ])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("failed to run gh pr create: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if out.status.success() {
+        return last_url_line(&stdout).ok_or_else(|| {
+            format!("gh pr create succeeded but no URL found: {}", stdout.trim())
+        });
+    }
+
+    // A PR for this branch may already be open — return its URL instead of error.
+    if format!("{stderr}{stdout}").contains("already exists") {
+        let view = std::process::Command::new("gh")
+            .args(["pr", "view", &branch, "--json", "url", "-q", ".url"])
+            .current_dir(&repo_path)
+            .output()
+            .map_err(|e| format!("failed to run gh pr view: {e}"))?;
+        if view.status.success() {
+            let url = String::from_utf8_lossy(&view.stdout).trim().to_string();
+            if !url.is_empty() {
+                return Ok(url);
+            }
+        }
+        let vstderr = String::from_utf8_lossy(&view.stderr);
+        return Err(format!("gh pr view failed: {}", vstderr.trim()));
+    }
+
+    Err(format!(
+        "gh pr create failed: {}",
+        format!("{stderr}{stdout}").trim()
+    ))
+}
+
+// ============================================================================
 // v0.5 slice 2.5 — preview readiness probe.
 //
 // `http_ping(url)` is a tiny TCP+HTTP reachability check used to poll a worktree
@@ -1049,6 +1174,9 @@ pub fn run() {
             git_sync_main,
             git_merge_conflict_check,
             git_merge_to_main,
+            git_remote_url,
+            git_push,
+            gh_pr_create,
             http_ping,
             symlink,
             clone_dir,
