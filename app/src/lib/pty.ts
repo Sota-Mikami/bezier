@@ -102,3 +102,14 @@ export function onPtyExit(
 export function commandExists(name: string): Promise<boolean> {
   return invoke<boolean>("command_exists", { name });
 }
+
+/**
+ * Resolve `name` to a preferred absolute executable path on PATH ("" when not
+ * found). Skips app-bundled shims (e.g. cmux.app's `claude`, which bridges
+ * sessions and can't replay a transcript on `--continue`) in favor of a real
+ * CLI install, so the launched agent actually persists resumable sessions.
+ * -> invoke("resolve_command", { name })
+ */
+export function resolveCommand(name: string): Promise<string> {
+  return invoke<string>("resolve_command", { name });
+}

@@ -449,6 +449,44 @@ fn command_exists(name: String) -> Result<bool, String> {
     Ok(false)
 }
 
+/// Resolve `name` to a preferred absolute executable path on PATH, returning ""
+/// when not found. Skips shims bundled inside other apps — notably cmux.app,
+/// whose `claude` bridges sessions and so cannot replay a prior transcript on
+/// `--continue` (the real npm/Homebrew install does). If the ONLY match is such
+/// a shim it is returned as a last resort. An explicit path is returned as-is
+/// when executable.
+#[tauri::command]
+fn resolve_command(name: String) -> Result<String, String> {
+    if name.is_empty() {
+        return Ok(String::new());
+    }
+    let candidate = Path::new(&name);
+    if candidate.is_absolute() || name.contains('/') {
+        return Ok(if is_executable(candidate) {
+            name
+        } else {
+            String::new()
+        });
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut fallback: Option<String> = None;
+    for dir in std::env::split_paths(&path) {
+        let p = dir.join(&name);
+        if is_executable(&p) {
+            let s = p.to_string_lossy().to_string();
+            // De-prioritize app-bundled shims; prefer a real CLI install.
+            if s.to_lowercase().contains("cmux.app") {
+                if fallback.is_none() {
+                    fallback = Some(s);
+                }
+                continue;
+            }
+            return Ok(s);
+        }
+    }
+    Ok(fallback.unwrap_or_default())
+}
+
 /// True if `p` is a regular file with an executable bit set (unix) / a file
 /// (other platforms).
 fn is_executable(p: &Path) -> bool {
@@ -1163,6 +1201,7 @@ pub fn run() {
             pty_resize,
             pty_kill,
             command_exists,
+            resolve_command,
             git_is_repo,
             git_worktree_add,
             git_diff,

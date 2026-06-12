@@ -4,14 +4,18 @@
 // markdown "handoff" file from the currently-open doc(s) that the agent is told
 // to read and implement. Signatures are frozen.
 
-import { commandExists } from "@/lib/pty";
+import { resolveCommand } from "@/lib/pty";
 import { readFile, writeFile } from "@/lib/ipc";
 
 /** A detectable CLI coding agent. */
 export interface AgentTool {
   /** Stable id used by the picker (e.g. "claude"). */
   id: string;
-  /** Human label (e.g. "Claude Code"). */
+  /**
+   * Executable to launch. Detection resolves this to the preferred ABSOLUTE
+   * path (skipping app-bundled shims like cmux.app's `claude`, which can't
+   * replay a transcript on `--continue`); falls back to the bare name.
+   */
   name: string;
   /** Executable name probed on PATH (e.g. "claude"). */
   bin: string;
@@ -26,15 +30,17 @@ const KNOWN_AGENTS: ReadonlyArray<Omit<AgentTool, "available">> = [
 ];
 
 /**
- * Probe each known agent via `commandExists` and report availability.
- * The picker should show only entries with `available === true`.
+ * Resolve each known agent to its preferred absolute binary and report
+ * availability. `bin` is set to that absolute path (so the pty launches a real
+ * CLI install, not an app-bundled shim that bridges sessions) and falls back to
+ * the bare name. The picker should show only entries with `available === true`.
  */
 export async function detectAgents(): Promise<AgentTool[]> {
   return Promise.all(
-    KNOWN_AGENTS.map(async (a) => ({
-      ...a,
-      available: await commandExists(a.bin).catch(() => false),
-    })),
+    KNOWN_AGENTS.map(async (a) => {
+      const resolved = await resolveCommand(a.bin).catch(() => "");
+      return { ...a, bin: resolved || a.bin, available: resolved.length > 0 };
+    }),
   );
 }
 
