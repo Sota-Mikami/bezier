@@ -893,6 +893,105 @@ fn git_is_repo(path: String) -> Result<bool, String> {
     Ok(out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "true")
 }
 
+/// The git repository state of a folder, for the open-folder guardrails
+/// (OPEN-002 / DEC-035). Lets the UI distinguish: a repo root (use it), a
+/// SUBFOLDER of a repo (offer to open the root instead — otherwise the worktree
+/// would span the whole parent repo), or NOT a repo (offer `git init`).
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepoStatus {
+    /// True if the path is inside any git work tree.
+    is_repo: bool,
+    /// Absolute path of the repo's toplevel, or "" when not a repo.
+    toplevel: String,
+    /// True when the opened path IS the toplevel (the good case).
+    is_toplevel: bool,
+}
+
+/// Classify a folder's git state (see RepoStatus).
+#[tauri::command]
+fn git_repo_status(path: String) -> Result<RepoStatus, String> {
+    reject_traversal(Path::new(&path))?;
+    let out = std::process::Command::new("git")
+        .args(["-C", &path, "rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|e| format!("git_repo_status {path}: {e}"))?;
+    if !out.status.success() {
+        return Ok(RepoStatus {
+            is_repo: false,
+            toplevel: String::new(),
+            is_toplevel: false,
+        });
+    }
+    let toplevel = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    // Compare canonical paths so trailing slashes / symlinks don't cause a false
+    // "subfolder" verdict.
+    let same = match (fs::canonicalize(&path), fs::canonicalize(&toplevel)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => Path::new(&path) == Path::new(&toplevel),
+    };
+    Ok(RepoStatus {
+        is_repo: true,
+        toplevel,
+        is_toplevel: same,
+    })
+}
+
+/// `git init` a folder AND create an initial commit of its current files (the
+/// open-folder guardrail's "make this a repo" path). The initial commit is
+/// required because continuum's worktrees are cut off HEAD — without it, the
+/// repo has an unborn HEAD and `git worktree add` fails, and the worktree would
+/// be empty (it only contains committed files). Falls back to a generic commit
+/// identity if the user has none configured, so it works for git newcomers.
+#[tauri::command]
+fn git_init(path: String) -> Result<(), String> {
+    reject_traversal(Path::new(&path))?;
+    let run = |args: &[&str]| -> Result<std::process::Output, String> {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(&path)
+            .output()
+            .map_err(|e| format!("git {args:?} in {path}: {e}"))
+    };
+    let init = run(&["init"])?;
+    if !init.status.success() {
+        return Err(format!(
+            "git init failed: {}",
+            String::from_utf8_lossy(&init.stderr).trim()
+        ));
+    }
+    run(&["add", "-A"])?;
+    // Commit (allow-empty so a truly empty folder still gets a HEAD). Retry with
+    // a fallback identity if the user has none configured.
+    let commit = run(&["commit", "--allow-empty", "-m", "Initial commit"])?;
+    if commit.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&commit.stderr);
+    let needs_identity =
+        err.contains("user.name") || err.contains("empty ident") || err.contains("who you are");
+    if needs_identity {
+        let retry = run(&[
+            "-c",
+            "user.name=continuum",
+            "-c",
+            "user.email=continuum@localhost",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Initial commit",
+        ])?;
+        if retry.status.success() {
+            return Ok(());
+        }
+        return Err(format!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&retry.stderr).trim()
+        ));
+    }
+    Err(format!("git commit failed: {}", err.trim()))
+}
+
 /// Create `branch` off the repo's current HEAD and add a worktree at
 /// `worktree_path`. If `branch` already exists, attach it to the new worktree
 /// instead of failing. A pre-existing `worktree_path` is surfaced as an Err.
@@ -1577,6 +1676,8 @@ pub fn run() {
             command_exists,
             resolve_command,
             git_is_repo,
+            git_repo_status,
+            git_init,
             git_worktree_add,
             git_diff,
             git_status,

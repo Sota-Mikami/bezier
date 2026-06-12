@@ -18,6 +18,8 @@
 
 import * as React from "react";
 import { openFolder } from "@/lib/workspace";
+import { gitRepoStatus, gitInit } from "@/lib/git";
+import { confirmDialog, messageDialog } from "@/lib/ipc";
 
 const STORAGE_KEY = "continuum:workspace-root";
 const RECENTS_KEY = "continuum:recent-repos";
@@ -35,6 +37,56 @@ export interface RepoEntry {
 export function repoName(path: string): string {
   const parts = path.replace(/\/+$/, "").split("/").filter(Boolean);
   return parts[parts.length - 1] ?? path;
+}
+
+/**
+ * Resolve a picked folder to a usable repo root (DEC-035), guiding the user
+ * through the subfolder / not-a-repo cases. Returns the path to open, or null if
+ * the user cancelled. Falls back to the picked path if git status can't be read.
+ */
+async function ensureUsableRepo(picked: string): Promise<string | null> {
+  const st = await gitRepoStatus(picked).catch(() => null);
+  if (!st || !st.toplevel) {
+    // git unavailable or status failed → only offer the not-a-repo path below if
+    // we positively know it isn't a repo; otherwise open as-is.
+    if (st && !st.isRepo) return offerInit(picked);
+    return picked;
+  }
+  if (st.isRepo && st.isToplevel) return picked;
+  if (st.isRepo && !st.isToplevel) {
+    const ok = await confirmDialog(
+      `このフォルダはリポジトリ「${repoName(st.toplevel)}」の一部（サブフォルダ）です。continuum はリポジトリ単位で動くため、リポジトリの root を開くことを推奨します。`,
+      {
+        title: "リポジトリの root を開く",
+        okLabel: "root を開く",
+        cancelLabel: "キャンセル",
+      },
+    );
+    return ok ? st.toplevel : null;
+  }
+  return offerInit(picked);
+}
+
+async function offerInit(picked: string): Promise<string | null> {
+  const ok = await confirmDialog(
+    `このフォルダは git リポジトリではありません。continuum で使うには git リポジトリが必要です。今ここで git init し、現在のファイルで初回コミットを作成しますか？`,
+    {
+      title: "git リポジトリにする",
+      okLabel: "git init して開く",
+      cancelLabel: "キャンセル",
+    },
+  );
+  if (!ok) return null;
+  try {
+    await gitInit(picked);
+    return picked;
+  } catch (e) {
+    await messageDialog(
+      `git init に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+      { title: "エラー" },
+    );
+    return null;
+  }
 }
 
 // --- module store ---------------------------------------------------------
@@ -185,10 +237,18 @@ export function WorkspaceRootProvider({
   );
   const hydrated = React.useSyncExternalStore(subscribe, getTrue, getFalse);
 
+  // Open-folder guardrails (DEC-035 / OPEN-002). continuum works per git repo,
+  // and worktrees are cut off the repo TOPLEVEL. So when you open a folder:
+  //   - repo root         → use it
+  //   - subfolder of a repo → opening it would make worktrees span the whole
+  //     parent repo (and miss the subfolder if untracked); steer to the root
+  //   - not a repo        → offer to `git init` it (so plain folders just work)
   const openRoot = React.useCallback(async () => {
     const picked = await openFolder();
-    if (picked) setRootValue(picked);
-    return picked;
+    if (!picked) return null;
+    const resolved = await ensureUsableRepo(picked);
+    if (resolved) setRootValue(resolved);
+    return resolved;
   }, []);
 
   const switchTo = React.useCallback((path: string) => {

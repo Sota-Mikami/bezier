@@ -17,6 +17,26 @@ export function gitIsRepo(path: string): Promise<boolean> {
   return invoke<boolean>("git_is_repo", { path });
 }
 
+/** Git state of a folder for the open-folder guardrails (DEC-035). */
+export interface RepoStatus {
+  /** Inside any git work tree. */
+  isRepo: boolean;
+  /** Absolute toplevel path, or "" when not a repo. */
+  toplevel: string;
+  /** The opened path IS the toplevel (the good case). */
+  isToplevel: boolean;
+}
+
+/** Classify a folder: repo root / subfolder of a repo / not a repo. */
+export function gitRepoStatus(path: string): Promise<RepoStatus> {
+  return invoke<RepoStatus>("git_repo_status", { path });
+}
+
+/** `git init` + initial commit, so a plain folder becomes continuum-usable. */
+export function gitInit(path: string): Promise<void> {
+  return invoke<void>("git_init", { path });
+}
+
 /**
  * Create `branch` off the repo's current HEAD and add a worktree at
  * `worktreePath`. Existing branch is attached; an existing worktree path errors.
