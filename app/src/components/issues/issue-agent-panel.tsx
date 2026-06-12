@@ -227,7 +227,7 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
                 className="gap-1.5"
                 disabled={!!action}
                 onClick={() => void handleAccept()}
-                title="変更を branch に commit し、decision を生成"
+                title="変更を branch に commit（記録は活動ログに残る）"
               >
                 {action === "accept" ? (
                   <Loader2 className="size-3.5 animate-spin" />

@@ -1,8 +1,8 @@
 "use client";
 
 // Reusable markdown slot editor — the /workspace `Editor` pattern, factored for
-// Issue artifact slots (spec.md / decision.md). Reads a file into an OpenDoc and
-// mounts the shared CodeMirror <MarkdownEditor>.
+// the Issue's spec.md artifact slot. Reads a file into an OpenDoc and mounts the
+// shared CodeMirror <MarkdownEditor>.
 //
 // AUTOSAVE (v0.5 slice 2.6): there is NO manual Save button. Edits are persisted
 // on a short debounce after typing stops, and flushed on blur + on unmount

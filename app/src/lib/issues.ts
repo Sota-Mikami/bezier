@@ -20,13 +20,14 @@ export type IssueStatus = "open" | "in-progress" | "merged";
 export const ISSUE_STATUSES: IssueStatus[] = ["open", "in-progress", "merged"];
 
 // DEC-011: the Design slot is removed (design intent lives in the Spec; the
-// output is the PR/code diff itself). Decision is no longer hand-written — it is
-// auto-drafted on Accept (see draftDecision) — but it remains a readable slot.
-export type IssueSlot = "spec" | "decision";
+// output is the PR/code diff itself). DEC-014/A: decision.md is removed too —
+// the durable "why" now lives in the issue's spec + the thread.json activity log
+// (the accept event records the committed paths + branch) + the PR body. Spec is
+// the only artifact slot.
+export type IssueSlot = "spec";
 
 export interface IssueSlots {
   spec: boolean;
-  decision: boolean;
 }
 
 export interface Issue {
@@ -61,8 +62,6 @@ export function slotPath(issue: Pick<Issue, "dir">, slot: IssueSlot): string {
   switch (slot) {
     case "spec":
       return `${issue.dir}/spec.md`;
-    case "decision":
-      return `${issue.dir}/decision.md`;
   }
 }
 
@@ -187,7 +186,6 @@ async function readIssueAt(
     body,
     slots: {
       spec: names.has("spec.md"),
-      decision: names.has("decision.md"),
     },
   };
 }
@@ -252,7 +250,7 @@ export async function createIssue(root: string, title: string): Promise<Issue> {
     status: "open",
     created,
     body,
-    slots: { spec: false, decision: false },
+    slots: { spec: false },
   };
 }
 
@@ -277,14 +275,10 @@ export async function updateIssueMeta(
   await writeFile(path, `${serializeIssueFm(meta)}${body}`);
 }
 
-// Only Spec is hand-created via createSlot now (DEC-011). The decision template
-// is retained for type-completeness / fallback, but Decision is normally
-// auto-drafted on Accept by draftDecision (below), not via createSlot.
+// Spec is the only hand-created slot (DEC-011 / DEC-014/A).
 const SLOT_TEMPLATES: Record<IssueSlot, (issue: Issue) => string> = {
   spec: (issue) =>
     `---\nissue: ${issue.id}\n---\n# ${issue.title} — Spec\n\n## なぜ\n<!-- 背景・課題・なぜ今やるのか -->\n\n## 何を\n<!-- 何を作るのか -->\n\n## 受入基準\n- [ ] \n- [ ] \n\n## やらないこと\n- \n\n## 未解決\n- \n`,
-  decision: (issue) =>
-    `---\nissue: ${issue.id}\nstatus: accepted\ndecided: ${new Date().toISOString().slice(0, 10)}\n---\n# ${issue.title} — Decision\n\n## 文脈\n<!-- spec の「なぜ」から -->\n\n## 決定\n<!-- spec の「何を」から -->\n\n## 代替案\n<!-- 検討して却下した案 -->\n\n## 影響・触れた所\n<!-- 対象画面 / 変更したパス -->\n\n## 関連\n- \n`,
 };
 
 /**
@@ -511,58 +505,6 @@ export async function buildImplementHandoff(
   return { path: outPath, content };
 }
 
-/** Extract the body text under a `## <heading>` section of a markdown doc. */
-function sectionBody(md: string, heading: string): string {
-  const lines = md.split("\n");
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const headRe = new RegExp(`^#{1,6}\\s+${escaped}\\s*$`);
-  const start = lines.findIndex((l) => headRe.test(l.trim()));
-  if (start < 0) return "";
-  const collected: string[] = [];
-  for (let j = start + 1; j < lines.length; j++) {
-    if (/^#{1,6}\s+/.test(lines[j])) break;
-    collected.push(lines[j]);
-  }
-  return collected
-    .join("\n")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .trim();
-}
-
-/**
- * Auto-draft decision.md on Accept (DEC-011). ADR shape (§3.5): 文脈 from the
- * spec「なぜ」, 決定 from spec「何を」, 影響 from the changed paths + issue.screens,
- * 関連 = branch + spec. Overwrites any existing decision.md (it is generated, the
- * human refines later). Returns the decision.md path.
- */
-export async function draftDecision(
-  root: string,
-  issue: Issue,
-  opts: { changedPaths: string[]; branch: string },
-): Promise<string> {
-  let specText = "";
-  try {
-    specText = await readFile(slotPath(issue, "spec"));
-  } catch {
-    /* no spec -> placeholders below */
-  }
-  const why = sectionBody(specText, "なぜ") || "<!-- spec の「なぜ」から -->";
-  const what = sectionBody(specText, "何を") || "<!-- spec の「何を」から -->";
-  const decided = new Date().toISOString().slice(0, 10);
-
-  const impactLines = [
-    ...opts.changedPaths.map((p) => `- \`${p}\``),
-    ...(issue.screens ?? []).map((s) => `- 画面: ${s}`),
-  ];
-  const impact = impactLines.length ? impactLines.join("\n") : "- （変更なし）";
-  const related = [`- branch: \`${opts.branch}\``, "- spec: `spec.md`"].join("\n");
-
-  const content = `---\nissue: ${issue.id}\nstatus: accepted\ndecided: ${decided}\n---\n# ${issue.title} — Decision\n\n## 文脈\n${why}\n\n## 決定\n${what}\n\n## 代替案\n<!-- 検討して却下した案（人が PR で追記） -->\n\n## 影響・触れた所\n${impact}\n\n## 関連\n${related}\n`;
-  const path = slotPath(issue, "decision");
-  await writeFile(path, content);
-  return path;
-}
-
 // ---------------------------------------------------------------------------
 // v0.5 slice 3 — durable activity thread (chat-first loop, DEC-012)
 // ---------------------------------------------------------------------------
@@ -590,6 +532,13 @@ export interface ThreadEvent {
   at: string;
   /** Optional human note (e.g. a commit sha, conflict count). */
   note?: string;
+  /**
+   * Structured record for `accept` events (DEC-014/A): the paths committed and
+   * the branch. This is the durable "what changed / where" that replaced
+   * decision.md — kept here in thread.json so the JSON log is the single record.
+   */
+  changedPaths?: string[];
+  branch?: string;
 }
 
 /** <root>/.continuum/issues/<ulid>/thread.json — the durable activity log. */

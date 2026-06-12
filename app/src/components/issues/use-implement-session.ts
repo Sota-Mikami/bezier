@@ -27,7 +27,6 @@ import {
   clearWorktreeRef,
   buildImplementHandoff,
   buildPrBody,
-  draftDecision,
   updateIssueMeta,
   readThread,
   appendThreadEvent,
@@ -334,12 +333,17 @@ export function useImplementSession(
   // Append a structured event to the durable thread + reflect it in state.
   // Best-effort: a write failure must never break the underlying action.
   const logEvent = React.useCallback(
-    async (type: ThreadEventType, note?: string) => {
+    async (
+      type: ThreadEventType,
+      note?: string,
+      extra?: Partial<Pick<ThreadEvent, "changedPaths" | "branch">>,
+    ) => {
       try {
         const next = await appendThreadEvent(root, issue, {
           type,
           at: new Date().toISOString(),
           ...(note ? { note } : {}),
+          ...(extra ?? {}),
         });
         setThread(next);
       } catch {
@@ -584,16 +588,15 @@ export function useImplementSession(
         return;
       }
       const sha = await gitCommitAll(ref.path, issue.title);
-      await draftDecision(root, issue, {
+      await updateIssueMeta(root, issue, { status: "merged" });
+      onStatusChange("merged");
+      setInfo(`commit ${sha.slice(0, 9)} を ${ref.branch} に作成しました。`);
+      // The durable record of "what changed / where" lives in thread.json
+      // (DEC-014/A) — the accept event carries the committed paths + branch.
+      void logEvent("accept", `commit ${sha.slice(0, 9)}`, {
         changedPaths: changed,
         branch: ref.branch,
       });
-      await updateIssueMeta(root, issue, { status: "merged" });
-      onStatusChange("merged");
-      setInfo(
-        `commit ${sha.slice(0, 9)} を ${ref.branch} に作成し、decision.md を生成しました（Decisions に表示されます）。`,
-      );
-      void logEvent("accept", `commit ${sha.slice(0, 9)}`);
       await refreshDiff(ref.path);
       // Re-evaluate behind/ahead + merge cleanliness now that the branch moved.
       await loadBehind(ref.path);
