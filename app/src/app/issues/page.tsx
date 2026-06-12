@@ -12,45 +12,31 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   CircleDot,
   FolderOpen,
-  Plus,
   ArrowLeft,
   Loader2,
   Check,
-  Tag,
-  ChevronDown,
   FileText,
   MonitorPlay,
   Trash2,
 } from "lucide-react";
 
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
 import { useWorkspaceRoot } from "@/lib/workspace-root";
 import {
-  listIssues,
-  createIssue,
   readIssue,
   createSlot,
   updateIssueMeta,
-  deleteIssue,
-  readWorktreeRef,
+  trashIssue,
+  TRASH_TTL_DAYS,
   slotPath,
-  ISSUE_STATUSES,
+  deriveState,
+  DERIVED_STATE_META,
   type Issue,
   type IssueStatus,
-  type IssueSlot,
+  type DerivedState,
   type ThreadEvent,
   type ThreadEventType,
 } from "@/lib/issues";
@@ -58,19 +44,7 @@ import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignReview } from "@/components/issues/design-review";
 import { useImplementSession } from "@/components/issues/use-implement-session";
-import { gitStatus, gitWorktreeRemove, gitBranchDelete } from "@/lib/git";
-
-// Permanently delete an issue + tear down its git worktree/branch if one exists
-// (so deleting an in-progress issue doesn't orphan a worktree). git teardown is
-// best-effort: a missing worktree/branch must not block removing the folder.
-async function purgeIssue(root: string, issue: Issue): Promise<void> {
-  const ref = await readWorktreeRef(issue).catch(() => null);
-  if (ref) {
-    await gitWorktreeRemove(root, ref.path).catch(() => {});
-    await gitBranchDelete(root, ref.branch).catch(() => {});
-  }
-  await deleteIssue(root, issue);
-}
+import { gitStatus } from "@/lib/git";
 
 // Live change visualization (DEC-012 §7).
 // How often we poll the worktree's git status to detect the agent writing CODE
@@ -86,23 +60,6 @@ const PULSE_MS = 3000;
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-const STATUS_BADGE: Record<
-  IssueStatus,
-  { label: string; variant: "default" | "secondary" | "outline" }
-> = {
-  open: { label: "open", variant: "secondary" },
-  "in-progress": { label: "in-progress", variant: "default" },
-  merged: { label: "merged", variant: "outline" },
-};
-
-// DEC-011/012: the Issue detail surfaces two artifact tabs — Spec (the spec.md
-// CM editor) and Design (the worktree iframe Preview + Diff + implement loop).
-// Decision is NOT shown here: it is auto-drafted on Accept and only surfaced on
-// the /decisions page. The list-row chip only advertises Spec presence.
-const SLOT_META: { key: IssueSlot; label: string }[] = [
-  { key: "spec", label: "Spec" },
-];
 
 function fmtDate(iso: string): string {
   if (!iso) return "—";
@@ -138,7 +95,7 @@ export default function IssuesPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex h-svh items-center justify-center text-sm text-muted-foreground">
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
           Loading…
         </div>
       }
@@ -155,7 +112,7 @@ function IssuesView() {
 
   if (!hydrated) {
     return (
-      <div className="flex h-svh items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         Loading…
       </div>
     );
@@ -168,12 +125,34 @@ function IssuesView() {
   if (selectedId) {
     return <IssueDetail key={selectedId} root={root} id={selectedId} />;
   }
-  return <IssueList root={root} />;
+  return <EmptyLanding />;
+}
+
+// Shown when a repo is open but no issue is selected — the issue list lives in
+// the left sidebar now (DEC-021), so the main pane just invites picking / New.
+function EmptyLanding() {
+  return (
+    <div className="flex h-full flex-col">
+      <Header title="Issues" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
+          <CircleDot className="size-5 text-muted-foreground" />
+        </div>
+        <div className="space-y-1">
+          <div className="text-base font-medium">Issue を選択</div>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            左のサイドバーから Issue を選ぶか、{" "}
+            <span className="font-medium">New</span> で新しい Issue を作成してください。
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function NoFolder({ onOpen }: { onOpen: () => Promise<string | null> }) {
   return (
-    <div className="flex h-svh flex-col">
+    <div className="flex h-full flex-col">
       <Header title="Issues" />
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
         <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
@@ -205,193 +184,10 @@ function Header({
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="mx-1 h-5" />
       <CircleDot className="size-4 text-muted-foreground" />
       <span className="text-sm font-medium">{title}</span>
       {children}
     </header>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// list
-// ---------------------------------------------------------------------------
-
-function IssueList({ root }: { root: string }) {
-  const router = useRouter();
-  const [issues, setIssues] = React.useState<Issue[] | null>(null);
-  const [title, setTitle] = React.useState("");
-  const [creating, setCreating] = React.useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    listIssues(root)
-      .then((list) => {
-        if (!cancelled) setIssues(list);
-      })
-      .catch(() => {
-        if (!cancelled) setIssues([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [root]);
-
-  const handleCreate = React.useCallback(async () => {
-    const t = title.trim();
-    if (!t || creating) return;
-    setCreating(true);
-    try {
-      const issue = await createIssue(root, t);
-      router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
-    } catch {
-      setCreating(false);
-    }
-  }, [title, creating, root, router]);
-
-  const handleDelete = React.useCallback(
-    async (issue: Issue) => {
-      const ok = await confirmDialog(
-        `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。`,
-        { title: "Issue を削除", okLabel: "削除", cancelLabel: "キャンセル" },
-      );
-      if (!ok) return;
-      try {
-        await purgeIssue(root, issue);
-        setIssues((prev) => prev?.filter((i) => i.id !== issue.id) ?? prev);
-      } catch (e) {
-        await messageDialog(
-          `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-          { title: "削除エラー" },
-        );
-      }
-    },
-    [root],
-  );
-
-  return (
-    <div className="flex h-svh flex-col">
-      <Header title="Issues">
-        <span
-          className="ml-2 hidden truncate font-mono text-[11px] text-muted-foreground sm:block"
-          title={root}
-        >
-          {root}
-        </span>
-      </Header>
-
-      {/* New issue */}
-      <div className="flex items-center gap-2 border-b px-4 py-3">
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void handleCreate();
-            }
-          }}
-          placeholder="新しい Issue のタイトル…"
-          className="h-9 max-w-md"
-        />
-        <Button
-          className="gap-1.5"
-          disabled={!title.trim() || creating}
-          onClick={() => void handleCreate()}
-        >
-          {creating ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          New issue
-        </Button>
-      </div>
-
-      <ScrollArea className="min-h-0 flex-1">
-        {issues == null ? (
-          <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-        ) : issues.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 px-6 py-20 text-center">
-            <CircleDot className="size-6 text-muted-foreground" />
-            <div className="text-sm font-medium">まだ Issue がありません</div>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              上のフォームでタイトルを入れて最初の Issue を作成してください。
-            </p>
-          </div>
-        ) : (
-          <ul className="divide-y">
-            {issues.map((issue) => {
-              const badge = STATUS_BADGE[issue.status];
-              return (
-                <li key={issue.id} className="group/row relative flex items-center">
-                  <Link
-                    href={`/issues?issue=${encodeURIComponent(issue.id)}`}
-                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">
-                          {issue.title}
-                        </span>
-                        <Badge
-                          variant={badge.variant}
-                          className="shrink-0 font-normal"
-                        >
-                          {badge.label}
-                        </Badge>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        {SLOT_META.map((s) => {
-                          const on = issue.slots[s.key];
-                          return (
-                            <span
-                              key={s.key}
-                              className={cn(
-                                "rounded border px-1.5 py-0.5 text-[10px] font-medium",
-                                on
-                                  ? "border-foreground/20 bg-muted text-foreground"
-                                  : "border-dashed text-muted-foreground/50",
-                              )}
-                            >
-                              {on && (
-                                <Check className="mr-0.5 inline size-2.5 align-[-1px]" />
-                              )}
-                              {s.label}
-                            </span>
-                          );
-                        })}
-                        {issue.labels?.map((l) => (
-                          <span
-                            key={l}
-                            className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground"
-                          >
-                            {l}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                      {fmtDate(issue.created)}
-                    </span>
-                  </Link>
-                  <button
-                    type="button"
-                    title="Issue を削除"
-                    aria-label="Issue を削除"
-                    onClick={() => void handleDelete(issue)}
-                    className="mr-2 shrink-0 rounded p-2 text-muted-foreground opacity-0 transition-[color,opacity] hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </ScrollArea>
-    </div>
   );
 }
 
@@ -430,7 +226,7 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
 
   if (loading) {
     return (
-      <div className="flex h-svh flex-col">
+      <div className="flex h-full flex-col">
         <DetailHeader />
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
@@ -442,7 +238,7 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
 
   if (notFound || !issue) {
     return (
-      <div className="flex h-svh flex-col">
+      <div className="flex h-full flex-col">
         <DetailHeader />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <div className="text-base font-medium">Issue が見つかりません</div>
@@ -535,14 +331,14 @@ function IssueWorkbench({
   }, []);
 
   const patchMeta = React.useCallback(
-    async (patch: { title?: string; status?: IssueStatus; labels?: string[] }) => {
+    async (patch: { title?: string }) => {
       await updateIssueMeta(root, issue, patch);
       setIssue((prev) => (prev ? { ...prev, ...patch } : prev));
     },
     [issue, root, setIssue],
   );
 
-  // Create spec.md on demand (the one hand-authored slot).
+  // Create spec.md from the template (the one hand-authored slot).
   const ensureSpec = React.useCallback(async () => {
     if (issue.slots.spec || creatingSpec) return;
     setCreatingSpec(true);
@@ -556,6 +352,15 @@ function IssueWorkbench({
     }
   }, [issue, root, creatingSpec, setIssue]);
 
+  // DEC-023: no "Add Spec" button — the spec template is created automatically
+  // when the issue opens, so the editor shows by default. Deferred off the
+  // synchronous effect path (ensureSpec setStates).
+  React.useEffect(() => {
+    if (issue.slots.spec) return;
+    const t = window.setTimeout(() => void ensureSpec(), 0);
+    return () => window.clearTimeout(t);
+  }, [issue.slots.spec, ensureSpec]);
+
   // Status changes from the agent panel keep the header badge in sync.
   const handleStatusChange = React.useCallback(
     (status: IssueStatus) => {
@@ -568,22 +373,24 @@ function IssueWorkbench({
   // (terminal + controls) and the center Design tab (Preview + Diff).
   const session = useImplementSession(root, issue, handleStatusChange);
 
-  // Delete this issue from the detail view: stop the preview (so nothing holds
-  // the worktree open), purge the issue + its worktree/branch, then return to
-  // the list (unmounting the workbench tears the terminal down).
+  // Delete this issue from the detail view → move to the trash (recoverable).
+  // Stop the preview first (so nothing holds the worktree open), move the issue
+  // to the trash (git untouched), then return to the list (unmounting the
+  // workbench tears the terminal down).
   const handleDeleteIssue = React.useCallback(async () => {
     const ok = await confirmDialog(
-      `Issue「${issue.title}」を削除します。worktree / branch があれば一緒に削除されます。元に戻せません。`,
-      { title: "Issue を削除", okLabel: "削除", cancelLabel: "キャンセル" },
+      `Issue「${issue.title}」をゴミ箱に移動します。${TRASH_TTL_DAYS}日後に完全削除されます（それまでは復元できます）。`,
+      { title: "ゴミ箱へ移動", okLabel: "ゴミ箱へ移動", cancelLabel: "キャンセル" },
     );
     if (!ok) return;
     try {
       await session.preview.stop().catch(() => {});
-      await purgeIssue(root, issue);
+      await trashIssue(root, issue);
       router.push("/issues");
     } catch (e) {
-      window.alert(
+      await messageDialog(
         `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+        { title: "削除エラー" },
       );
     }
   }, [issue, root, session, router]);
@@ -625,7 +432,7 @@ function IssueWorkbench({
   }, [worktreePath, signalChange]);
 
   return (
-    <div className="flex h-svh flex-col">
+    <div className="flex h-full flex-col">
       <DetailHeader>
         <TitleEditor
           key={issue.title}
@@ -633,14 +440,13 @@ function IssueWorkbench({
           onCommit={(t) => void patchMeta({ title: t })}
         />
         <div className="ml-auto flex items-center gap-2">
-          <LabelsEditor
-            key={(issue.labels ?? []).join(" ")}
-            labels={issue.labels ?? []}
-            onChange={(labels) => void patchMeta({ labels })}
-          />
-          <StatusDropdown
-            status={issue.status}
-            onChange={(s) => void patchMeta({ status: s })}
+          <StateBadge
+            state={deriveState({
+              status: issue.status,
+              running: session.running,
+              hasPr: !!session.ref?.prUrl,
+              hasWorktree: !!session.ref,
+            })}
           />
           <button
             type="button"
@@ -655,28 +461,22 @@ function IssueWorkbench({
       </DetailHeader>
 
       <div className="flex min-h-0 flex-1">
-        {/* left: minimal thread (narrow) */}
-        <section className="flex w-[280px] shrink-0 flex-col border-r">
+        {/* left: minimal activity thread (hidden on narrow widths — secondary). */}
+        <section className="hidden w-[280px] shrink-0 flex-col border-r lg:flex">
           <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
             スレッド
           </div>
           <ScrollArea className="min-h-0 flex-1">
             <div className="space-y-3 p-4">
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-foreground/40" />
-                起票 · {fmtDate(issue.created)}
-              </div>
-              <div className="rounded-lg border bg-card p-3 text-sm leading-relaxed whitespace-pre-wrap">
-                {issue.body.trim() || (
-                  <span className="text-muted-foreground">（説明なし）</span>
-                )}
-              </div>
-
-              {/* Durable activity timeline (chat-first loop): structured events
-                  that persist even after the live terminal is gone. */}
+              {/* Durable activity timeline (chat-first loop): newest-first, so the
+                  latest activity is on top. 起票 (oldest) sits at the bottom. */}
               {session.thread.length > 0 && (
                 <ThreadTimeline events={session.thread} />
               )}
+              <div className="flex items-center gap-2 border-t pt-3 text-[11px] text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-foreground/40" />
+                起票 · {fmtDate(issue.created)}
+              </div>
             </div>
           </ScrollArea>
         </section>
@@ -717,22 +517,9 @@ function IssueWorkbench({
                   onExternalChange={() => signalChange("spec")}
                 />
               ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
-                  <FileText className="size-6" />
-                  <div>まだ Spec がありません。</div>
-                  <Button
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={creatingSpec}
-                    onClick={() => void ensureSpec()}
-                  >
-                    {creatingSpec ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="size-3.5" />
-                    )}
-                    Add Spec
-                  </Button>
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Spec を準備中…
                 </div>
               )}
             </div>
@@ -742,8 +529,9 @@ function IssueWorkbench({
           </div>
         </section>
 
-        {/* right: persistent AI agent panel (picker + controls + terminal) */}
-        <section className="flex w-[42%] min-w-[360px] max-w-[680px] shrink-0 flex-col">
+        {/* right: persistent AI agent panel (picker + controls + terminal).
+            Narrower min on small widths; the center keeps its min-w-0. */}
+        <section className="flex w-[42%] min-w-[300px] max-w-[640px] shrink-0 flex-col md:min-w-[340px]">
           <IssueAgentPanel issue={issue} session={session} />
         </section>
       </div>
@@ -771,11 +559,13 @@ function UpdatingPulse() {
 // first, below 起票). Each event = a small JA label + a compact timestamp; an
 // optional note (commit sha / conflict count) sits underneath.
 function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
+  // Newest-first: render a reversed copy (the stored thread is chronological).
+  const ordered = [...events].reverse();
   return (
-    <ul className="space-y-2 border-t pt-3">
-      {events.map((e, i) => (
+    <ul className="space-y-2">
+      {ordered.map((e, i) => (
         <li
-          key={`${e.at}#${i}`}
+          key={`${e.at}#${events.length - i}`}
           className="flex items-start gap-2 text-[11px] text-muted-foreground"
         >
           <span className="mt-1 size-1.5 shrink-0 rounded-full bg-foreground/30" />
@@ -797,20 +587,10 @@ function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
 }
 
 function DetailHeader({ children }: { children?: React.ReactNode }) {
+  // No toggle / back button here (DEC-024): the sidebar collapse lives in the app
+  // title bar, and the sidebar IS the navigation. This header is just the issue.
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="mx-1 h-5" />
-      <Button
-        render={<Link href="/issues" />}
-        nativeButton={false}
-        variant="ghost"
-        size="icon"
-        className="size-7"
-        title="一覧へ戻る"
-      >
-        <ArrowLeft className="size-4" />
-      </Button>
       {children}
     </header>
   );
@@ -852,113 +632,42 @@ function TitleEditor({
   );
 }
 
-function StatusDropdown({
-  status,
-  onChange,
-}: {
-  status: IssueStatus;
-  onChange: (s: IssueStatus) => void;
-}) {
-  const badge = STATUS_BADGE[status];
+// Read-only derived state badge (DEC-027): computed from facts (status / running
+// / PR), never set by hand.
+function StateBadge({ state }: { state: DerivedState }) {
+  const meta = DERIVED_STATE_META[state];
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button variant="outline" size="sm" className="h-8 gap-1.5">
-            <span
-              className={cn(
-                "size-2 rounded-full",
-                status === "open" && "bg-muted-foreground",
-                status === "in-progress" && "bg-primary",
-                status === "merged" && "bg-foreground",
-              )}
-            />
-            {badge.label}
-            <ChevronDown className="size-3.5 text-muted-foreground" />
-          </Button>
-        }
-      />
-      <DropdownMenuContent align="end">
-        {ISSUE_STATUSES.map((s) => (
-          <DropdownMenuItem key={s} onClick={() => onChange(s)}>
-            <Check
-              className={cn(
-                "size-3.5",
-                s === status ? "opacity-100" : "opacity-0",
-              )}
-            />
-            {STATUS_BADGE[s].label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function LabelsEditor({
-  labels,
-  onChange,
-}: {
-  labels: string[];
-  onChange: (labels: string[]) => void;
-}) {
-  // Mounted fresh per committed label set (key at call site), so init from prop.
-  const [open, setOpen] = React.useState(false);
-  const [draft, setDraft] = React.useState(labels.join(", "));
-
-  const commit = () => {
-    const next = Array.from(
-      new Set(
-        draft
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-      ),
-    );
-    setOpen(false);
-    if (next.join(" ") !== labels.join(" ")) onChange(next);
-  };
-
-  if (open) {
-    return (
-      <Input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            (e.target as HTMLInputElement).blur();
-          } else if (e.key === "Escape") {
-            setDraft(labels.join(", "));
-            setOpen(false);
-          }
-        }}
-        placeholder="ラベル（カンマ区切り）"
-        className="h-8 w-56"
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setOpen(true)}
-      className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted"
-    >
-      <Tag className="size-3.5" />
-      {labels.length ? (
-        <span className="flex flex-wrap gap-1">
-          {labels.map((l) => (
-            <Badge key={l} variant="secondary" className="font-normal">
-              {l}
-            </Badge>
-          ))}
-        </span>
-      ) : (
-        "ラベル"
+    <span
+      className={cn(
+        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
+        meta.tone === "muted" && "text-muted-foreground",
+        meta.tone === "running" &&
+          "border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
+        meta.tone === "draft" && "text-foreground/80",
+        meta.tone === "review" &&
+          "border-sky-500/30 text-sky-600 dark:text-sky-400",
+        meta.tone === "done" &&
+          "border-foreground/20 text-foreground",
       )}
-    </button>
+    >
+      {state === "running" ? (
+        <span className="relative flex size-2 items-center justify-center">
+          <span className="absolute inline-flex size-2 animate-ping rounded-full bg-emerald-500/70" />
+          <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+        </span>
+      ) : state === "done" ? (
+        <Check className="size-3.5" />
+      ) : (
+        <span
+          className={cn(
+            "size-2 rounded-full",
+            meta.tone === "muted" && "bg-muted-foreground",
+            meta.tone === "draft" && "bg-primary",
+            meta.tone === "review" && "bg-sky-500",
+          )}
+        />
+      )}
+      {meta.label}
+    </span>
   );
 }

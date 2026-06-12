@@ -5,6 +5,143 @@ CEO が承認・決定した不可逆な事項を記録する。**二度聞か�
 
 ---
 
+## DEC-028 (2026-06-12) — Agent Inbox（要対応キュー）＋通知。並行Agentの「司令塔」
+
+> CEO とのキャッチアップ（IDE/Agentオーケストレータ観点）で、A=「並行Agentの司令塔UX」を最優先と合意。並行Agent(DEC-026)を入れたが「どのAgentが今self を必要としているか」が分からない=残り半分。
+
+- **Agentの状態を Rust 側で常時トラッキング**（terminal detach 中も reader thread が動くのでバックエンドが正）: `Session` に `last_activity`（出力ごとに更新）＋ `exited`（EOF で exit code 記録、session は map に残す）。
+- **`pty_statuses(waitingAfterMs)`**: keyed Agent ごとに `running`（最近出力）/ `waiting`（生存だが idle ≥ 閾値=入力待ち推定）/ `done`(exit0) / `error`(exit≠0)。`pty_dismiss(key)` で exited を ack 除去。
+- **Agent Inbox（サイドバー上部）**: waiting/done/error の Agent を集約表示（タイトル＋状態、idle 降順）。クリックでその issue へジャンプ（repo 切替込み）、done/error は ✕ で dismiss。running は inbox に出さない（self を必要としない）。
+- **per-issue ドット拡張**: running=緑パルス / waiting=琥珀パルス / done=✓緑 / error=✕赤。
+- **通知**: needs-attention へ遷移した瞬間（かつ現在開いている issue でない）に Web Notification（best-effort、権限を遅延要求）。新規プラグイン無し。
+- ~~**waiting 閾値=8s**~~ → DEC-029 で**廃止**（CEO「8秒は急かしすぎ・明確に判定できないの？」）。Claude の Stop/Notification hook で決定論的に検知する方式へ。
+- DEC-027 の badge `running` も `pty_statuses`(running|waiting) ベースに変更（lingering exited を緑にしない）。
+
+---
+
+## DEC-029 (2026-06-12) — waiting 検知を idle ヒューリスティック → Claude hooks で決定論化
+
+> CEO:「8秒沈黙判定は急かしすぎ。明確に判定できないの？ cmux はちゃんと Agent からのアクション待ちの時に通知できている」。正しい。cmux は Claude Code の hooks で検知している（env に `CMUX_CLAUDE_HOOK_CMUX_BIN` があったのが証拠）。
+
+- **実機検証**: `claude --settings '{"hooks":{"Stop":[...],"Notification":[...]}}' -p ...` で **Stop hook が発火し events ファイルに追記される**ことを確認（`--settings` は file/JSON 文字列を受ける、hooks は Stop/Notification/SubagentStop 対応）。
+- **方式**: claude 起動時に `--settings` で **Stop/Notification hooks** を注入し、`<root>/.continuum/agent-events/<issueId>` に1バイト append させる（`agentHookSettings()` が JSON 生成）。
+  - **waiting = events ファイルが spawn 後に増えた（hook 発火＝ターン終了/入力要求）**。idle 時間は一切見ない。
+  - **解除 = user が pty に入力した瞬間**（`pty_write` で awaiting=false ＋ events baseline 更新）。
+  - baseline は **spawn 時の events ファイル長**（Rust `pty_spawn`）。前 session の残りで誤発火しない。親ディレクトリも spawn 時に作成。
+- **Rust**: `Session` に `awaiting` / `events_path` / `events_seen_len`。`pty_statuses` から `waiting_after_ms` 引数を撤去し hook ベース判定に。`PtySpawnOpts.events_path` 追加。
+- **JS**: `agentHookSettings(path)`、`PtySpawnOpts.eventsPath`、`ptyStatuses()`(引数なし)。terminal→use-implement-session→agent-panel に `eventsPath` を配線。`WAITING_AFTER_MS` 撤去。
+- **限界**: hooks は claude 専用。codex 等 hook 非対応 agent は waiting を出さない（done/error は exit で出る）。8s 誤検知が無くなるので体験は改善。
+- B（visual review / Figma comment 風）= `playbook/ideas-backlog.md` に着手予定で記録。C/D も同ファイルに idea として保存。
+
+---
+
+## DEC-027 (2026-06-12) — status は手動廃止 → 事実から派生する読み取り専用バッジ
+
+> CEO:「status 本当に必要？ 少なくとも手動はやめたい。IDE/Agent オーケストレーションツールだと普通どう設計する？」。整理: 課題管理系(Linear/Jira)は手動＋他人への進捗共有が主目的、Agent オーケストレータ(Cursor/Zenbu)は明示 status を持たず作業の事実から派生。continuum はソロ×Agent並行なので後者が素直。CEO 選択=「派生バッジ」。
+
+- **手動ドロップダウン廃止**（StatusDropdown / STATUS_BADGE / ISSUE_STATUSES UI を撤去）。
+- **派生状態 `deriveState`**（issues.ts）: 事実から計算。`done`(merged) > `running`(agent pty 走行) > `review`(PR あり) > `draft`(worktree あり) > `idea`(なし)。`DERIVED_STATE_META` でラベル＋トーン。
+- **読み取り専用バッジ**（detail ヘッダ `StateBadge`）: 未着手/実行中(緑パルス)/下書き/レビュー中/完了(✓)。手で触れない。
+- **自動遷移は既存の事実で駆動**: Implement/Start→worktree(=作業中), Open PR→prUrl(=レビュー中), running は pty ポーリング, merge は下記。
+- **自動「完了」検知**: Rust `gh_pr_state(branch)` を新設。detail を開いた時 PR が `MERGED` なら status=merged に自動更新（Open PR→GitHub で merge したら勝手に完了になる）。`Merge to main`(ローカル)も従来どおり merged。
+- **サイドバー**: 実行中=緑パルス● / 完了=✓ / それ以外=status ドット（per-issue の prUrl は読まないので review は draft 表示）。
+- 内部の persisted `IssueStatus`(open/in-progress/merged) は自動メンテのキャッシュとして残置（手動編集経路は撤去）。
+
+---
+
+## DEC-026 (2026-06-12) — 並行エージェント: issue を離れても agent は走り続け、戻ったら再アタッチ
+
+> CEO:「離れてどんどんいろんな Issue について話せるようにしてほしい」。現状は issue を離れると `IssueDetail` unmount → terminal unmount → `ptyKill` で agent が即死していた。
+
+- **pty を issue ごとに永続化**: `PtySpawnOpts` に `key`（issue id）を追加。`key` 付き pty は **terminal を unmount しても kill せず**バックグラウンドで走り続ける。
+- **Rust 拡張**: `Session` に `key` ＋ 出力 `backlog`（最後 ~256KB をキャプチャ）。新コマンド `pty_lookup(key)`（生存中の id を返す）/ `pty_backlog(id)`（再アタッチ時に再生）/ `pty_kill_key(key)` / `pty_active_keys()`（実行中インジケータ用）。
+- **terminal.tsx**: `sessionKey` prop。mount 時に `pty_lookup` で生存 pty があれば **backlog を再生して再アタッチ**（spawn しない）＋ resize で TUI 再描画。unmount 時は `sessionKey` 付きなら **kill しない**。
+- **use-implement-session**: issue を開いた時、生存 pty があれば auto-resume でなく**再アタッチ**（terminal を mount するだけ）。`Discard` / `Re-run` は `pty_kill_key` で明示停止。
+- **サイドバー**: `pty_active_keys` を 3 秒ポーリングし、実行中 issue に **緑のパルス●**。
+- これで「A で agent を走らせ → B へ移動して B の agent と話す → A に戻ると走り続けた agent に再接続」が可能に。DEC-025（ローカル永続化）と合わせ、生存中は再アタッチ・死んでいれば `--continue` で resume。
+
+---
+
+## DEC-025 (2026-06-12) — resume 不能の真因 = 継承された CMUX/CLAUDE_CODE env による「子セッション bridge 化」。spawn 時に除去
+
+> CEO:「resume が引き続きできていない。チャットのログまで復元したい」。DEC-018（実体 claude 起動）でも直らず、徹底調査した。
+
+- **調査結果（実データで確定）**:
+  - 当該 worktree の claude セッション jsonl は `bridge-session`(`bridgeSessionId: cse_...`)＋`ai-title` だけで **user/assistant の本文がローカルに無い**。
+  - cmux/nvm **両 claude とも** `--continue -p` で **NO_CONTEXT**（文脈すら復元不可）。`--resume <uuid>` も不可。
+  - 環境変数に `CLAUDECODE` / `CLAUDE_CODE_SESSION_ID` / `CLAUDE_CODE_CHILD_SESSION` / `CMUX_*` が大量に存在 = **アプリが cmux/Claude-Code ターミナル内から起動され、それを継承**していた。
+  - **クリーン env で検証**: `claude -p` で codeword を覚えさせ、`--continue` したら **ZEBRA42 を想起＝復元成功**。→ 原因は env による child/bridge 判定で確定。
+- **修正（真因対応）**: Rust `pty_spawn` で子プロセスから **`CLAUDECODE` / `AI_AGENT` / `CLAUDE_CODE_*` / `CMUX_*` を除去**。これで spawn される agent は通常のトップレベルセッションになり、ローカルに会話を永続化＝`--continue` で文脈もチャットも復元される。
+- **限界**: この修正**以降に作る新規チャットのみ resume 可能**。既存の bridge 化済みセッション（履歴は cmux 側）は復元不可。
+- DEC-018（cmux shim を避け実体 claude を起動）は併存して有効（cmux bash shim は env 非依存で daemon 接続するため、実体バイナリ利用も必要）。
+
+---
+
+## DEC-024 (2026-06-12) — サイドバー開閉トグルをアプリのタイトルバーへ／detail ヘッダはタイトルのみ
+
+> CEO:「SideNav の collapse をスクショ（Zenbu/Cursor）のように App 自体の Bar に置ける？ 今 icon button がある所はやめて、シンプルに Issue 名だけ。Issue 名の左の左矢印もいらない」。
+
+- **Tauri overlay タイトルバー**: `titleBarStyle: "Overlay"` + `hiddenTitle: true`。ネイティブのタイトルバーを透過し、traffic lights は左上に浮く。
+- **`AppTitlebar`（新規）**: ウィンドウ上部に薄い固定バー（`--titlebar-h: 2rem`）。左の traffic lights 用に `pl-[78px]`、その右に **SidebarTrigger（開閉トグル）**。`data-tauri-drag-region` でウィンドウドラッグ可。collapse 時もトグルは常に見える（サイドバー外）。
+- **オフセット**: 固定サイドバー(`[data-slot=sidebar-container]`)を `top: var(--titlebar-h)` に、SidebarProvider に `pt-[--titlebar-h]`、ページの `h-svh`→`h-full`。バーの下に隠れないよう全体を下げる。
+- **detail ヘッダ整理**: `SidebarTrigger` / 区切り / 「一覧へ戻る」(ArrowLeft) を撤去 → **Issue 名（＋status＋削除）だけ**。一覧/空状態ヘッダのトグルも撤去。
+- ⚠️ overlay の見た目（traffic light クリアランス・トグル位置）は実ウィンドウ目視で微調整余地あり。
+
+---
+
+## DEC-023 (2026-06-12) — Step2: チャット即開始の入口 ＋ Spec はデフォルト表示（Add Spec ボタン廃止）
+
+> DEC-021 の Step2。CEO:「New はチャット即開始で spec も AI に起草させたい」「Add Spec ボタンを押す必要なく default でテンプレ表示がいい」。
+
+- **Add Spec ボタン廃止 / spec デフォルト表示**: issue を開いた時に spec.md テンプレを **自動生成**（`ensureSpec` を mount 時に deferred 実行）。Spec タブは常にエディタを表示（生成中だけ短いローダー）。
+- **チャット即開始の入口**: worktree 未作成（`!ref`）の時、エージェントパネルのターミナル領域に **チャット入力**（textarea＋開始、Enter送信・自動フォーカス）を表示。送信で:
+  - `handleStart(message)`（use-implement-session 新設）= Implement と同じ worktree 作成だが、**spec の事前存在を要求しない**。
+  - `buildImplementHandoff` に `userMessage` を追加。エージェントに「①spec.md を起草 ②issue.md の title が空なら設定 ③その後に実装。不明点はまず質問」と指示。
+- New（サイドバー）→ 空タイトル issue 作成 → detail を開く → チャット入力に即フォーカス、という一連の「チャットから始める」導線が完成。
+- `Implement with AI`（既存 spec から実装）はコントロール側に残置（副導線）。
+
+---
+
+## DEC-022 (2026-06-12) — ゴミ箱はトグル内ではなく「横断1箇所」に集約
+
+> DEC-021 の per-repo トグル内ゴミ箱を見て CEO:「各トグルにゴミ箱があるのは冗長。trash は toggle に入れず横断のゴミ箱一覧にしたい」。
+
+- **トグル内ゴミ箱を撤去**し、各リポトグルは純粋にイシューリストに。
+- サイドバー **最下部（footer）に「ゴミ箱（N）」** を1つ。押すと **全リポ集約の横断ゴミ箱ビュー**（各行に Issue タイトル＋所属リポ名＋残日数＋復元/完全削除）。
+- 全リポの trash は mount 時に一括ロード（1ディレクトリ読みずつ・軽量）して footer 件数＋一覧に使用。auto-purge も同時。
+- issues は従来どおり展開時に lazy ロード。
+
+---
+
+## DEC-021 (2026-06-12) — 情報設計を刷新: 左サイドバー＝リポ→イシューのナビゲーター
+
+> CEO がスクショ（Zenbu/Cursor風）を提示。「左上に大きい New、左ナビは複数リポをトグルで縦に並べ、配下にイシュー、リポ毎ゴミ箱を最下部、検索＋初期5件表示」。New は将来「チャット即開始で spec も AI に起草させる入口」にしたい。
+
+- **進め方（CEO 選択）**: **Step1=IA 刷新を先に / Step2=チャット即 spec 起草は次セッション**。New 挙動は「チャット即開始」を選択（Step2 で配線）。
+- **Step1 実装（このコミット）**:
+  - `app-sidebar.tsx` を全面刷新し **イシューナビゲーター化**（旧 Obsidian 風の下部リポ切替＋Issues/Repo nav を撤去）。上部に大きい **New** ＋ **検索**、各リポを開閉トグル、配下にイシュー（**初期5件＋「もっと見る」**）、トグル最下部に **リポ毎ゴミ箱**（インライン展開で復元/完全削除）。
+  - **イシュー/リポ選択でアクティブ repo が切替**（別リポのイシューを開ける）。`useWorkspaceRoot.recents` をリポ一覧に流用。
+  - メインペイン（`/issues`）= 選択中イシューの detail / 無選択時はランディング。旧 `IssueList`・`TrashView` は撤去（サイドバーへ移設）。
+  - 検索時は全 recents をロードして横断フィルタ。各リポは展開時に lazy ロード＋ TTL 自動 purge。
+  - `useSearchParams` を使うので layout で `AppSidebar` を `<Suspense>` ラップ（static export 対応・`next build` 通過確認済）。
+  - git 依存の `purgeTrashed` を `lib/issue-actions.ts` に切り出し、サイドバー/detail で共有。
+- **Step2 予定**: New→detail 即オープン＋チャット入力に即フォーカス→初回送信で worktree 作成＋AI 起動し spec を会話で起草。
+
+---
+
+## DEC-020 (2026-06-12) — 削除はゴミ箱方式（30日後 auto-purge）＋ゴミ箱一覧で復元/完全削除
+
+> dogfood 中 CEO が誤って Issue を削除（native-confirm 修正が load される前の window.confirm スルーが原因）。git の dangling commit から作業コミットは復旧できたが、gitignore 下の spec/log テキストは消えていた。CEO:「一旦 Trash にして、30日後に完全削除。トラッシュ一覧で手動完全削除もできるように」。
+
+- **削除＝ゴミ箱へ退避（可逆）**: `.continuum/drafts/<id>-<slug>` と thread を `.continuum/trash/` に **move（rename）**。**git（worktree/branch）は触らない** → 完全に復元可能。`.trashed.json`（deletedAt / branch / worktreePath）を folder 内に残す。
+- **30日 auto-purge**: Issue 一覧マウント時に `expiredTrash`（deletedAt + 30日 ≤ now）を `purgeTrashed` で完全削除。
+- **ゴミ箱一覧 UI**: ヘッダの「ゴミ箱（N）」トグルで一覧表示。各エントリに **復元**（move-back）と **完全に削除**（手動・確認付き）。「あと N 日で完全削除」を表示。
+- **完全削除だけが破壊的**: worktree `--force` 除去 ＋ branch `-D` ＋ trash folder 削除。これは手動 or auto-purge 時のみ。
+- **Rust `move_path`（rename）を新設**: `..` 拒否＋ source と dest parent が **両方 `.continuum` 配下**であることを必須化。`remove_path` と同じ堀。
+- 旧 `deleteIssue`（即物理削除）は廃止し `trashIssue` に置換。TTL 定数 `TRASH_TTL_DAYS = 30`。
+
+---
+
 ## DEC-019 (2026-06-12) — 起票（Issue）の削除機能を追加
 
 > CEO:「起票の delete 機能が欲しい」。これまで Issue は作成のみで削除導線が無かった。

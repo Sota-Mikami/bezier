@@ -128,3 +128,14 @@
     @apply font-sans;
   }
 }
+/* Custom overlay title bar (DEC-024). The native title bar is transparent
+   (titleBarStyle: Overlay) and a thin app bar holds the sidebar toggle. Offset
+   the fixed sidebar + the content below it so nothing hides under the bar.
+   Plain rules (outside @layer) so they win over Tailwind utilities. */
+:root {
+  --titlebar-h: 2rem;
+}
+[data-slot="sidebar-container"] {
+  top: var(--titlebar-h);
+  height: calc(100svh - var(--titlebar-h));
+}

@@ -10,14 +10,60 @@
 // parsed/emitted via the `yaml` package directly so fields beyond the typed
 // Frontmatter shape (id / labels / screens) survive round-trips.
 
-import { listDir, readFile, writeFile, removePath, appDataDir } from "@/lib/ipc";
+import {
+  listDir,
+  readFile,
+  writeFile,
+  removePath,
+  movePath,
+  appDataDir,
+} from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
 
+// Persisted lifecycle marker, auto-maintained (no manual editing, DEC-027):
+// open (no work) → in-progress (worktree exists) → merged (landed on main). The
+// user-facing state is DERIVED from this + live facts (see deriveState).
 export type IssueStatus = "open" | "in-progress" | "merged";
 
 export const ISSUE_STATUSES: IssueStatus[] = ["open", "in-progress", "merged"];
+
+/**
+ * The DERIVED, user-facing state (DEC-027). Computed from facts — never set by
+ * hand — so it can't drift: a running agent, an open PR, a merge all show
+ * through automatically.
+ */
+export type DerivedState = "idea" | "running" | "draft" | "review" | "done";
+
+/** Derive the user-facing state from the persisted status + live facts. */
+export function deriveState(opts: {
+  status: IssueStatus;
+  /** A background agent (pty) is currently running for this issue. */
+  running: boolean;
+  /** A PR has been opened (worktree ref has a prUrl). */
+  hasPr: boolean;
+  /** A worktree exists (work has started) — defaults from status when unknown. */
+  hasWorktree?: boolean;
+}): DerivedState {
+  if (opts.status === "merged") return "done";
+  if (opts.running) return "running";
+  if (opts.hasPr) return "review";
+  const started = opts.hasWorktree ?? opts.status === "in-progress";
+  return started ? "draft" : "idea";
+}
+
+/** JA label + a tone token for each derived state (UI badge / sidebar). */
+export const DERIVED_STATE_META: Record<
+  DerivedState,
+  { label: string; tone: "muted" | "running" | "draft" | "review" | "done" }
+> = {
+  idea: { label: "未着手", tone: "muted" },
+  running: { label: "実行中", tone: "running" },
+  draft: { label: "下書き", tone: "draft" },
+  review: { label: "レビュー中", tone: "review" },
+  done: { label: "完了", tone: "done" },
+};
 
 // DEC-011: the Design slot is removed (design intent lives in the Spec; the
 // output is the PR/code diff itself). DEC-014/A: decision.md is removed too —
@@ -275,24 +321,124 @@ export async function updateIssueMeta(
   await writeFile(path, `${serializeIssueFm(meta)}${body}`);
 }
 
-/**
- * Permanently delete an issue: removes its folder (.continuum/drafts/<id>-<slug>
- * — incl. issue.md / spec.md / worktree.json) and its activity thread dir
- * (.continuum/issues/<id>). Does NOT tear down a git worktree/branch — a caller
- * holding an active worktree must remove it (Discard) first to avoid orphaning
- * it. removePath is a no-op when a path is already absent.
- */
-export async function deleteIssue(
-  root: string,
-  issue: Pick<Issue, "id" | "dir">,
-): Promise<void> {
-  await removePath(issue.dir);
-  await removePath(`${draftsStoreDir(root)}/issues/${issue.id}`);
+/** <root>/.continuum — the local working store root (drafts + issues + trash). */
+function continuumDir(root: string): string {
+  return `${stripTrailingSlash(root)}/.continuum`;
 }
 
-/** <root>/.continuum — the local working store root (drafts + issues live here). */
-function draftsStoreDir(root: string): string {
-  return `${stripTrailingSlash(root)}/.continuum`;
+// ---------------------------------------------------------------------------
+// Trash (recoverable delete + 30-day auto-purge, DEC-020)
+// ---------------------------------------------------------------------------
+//
+// Deleting an issue MOVES it to .continuum/trash/ instead of erasing it — git
+// (worktree + branch) is left untouched, so a trashed issue is fully restorable.
+// Only an explicit "完全に削除" or the 30-day auto-purge does the destructive
+// teardown. Layout mirrors the live store:
+//   .continuum/trash/drafts/<id>-<slug>/   (incl. .trashed.json marker)
+//   .continuum/trash/issues/<id>/          (the activity thread, if any)
+
+/** Issues are purged from the trash this many days after deletion. */
+export const TRASH_TTL_DAYS = 30;
+
+/** Deletion marker written inside a trashed issue's folder (.trashed.json). */
+export interface TrashMeta {
+  id: string;
+  slug: string;
+  title: string;
+  /** ISO timestamp of when it was moved to the trash. */
+  deletedAt: string;
+  /** The issue's branch + worktree, if it had one (for purge-time teardown). */
+  branch?: string;
+  worktreePath?: string;
+}
+
+function trashDraftsDir(root: string): string {
+  return `${continuumDir(root)}/trash/drafts`;
+}
+function trashIssuesDir(root: string): string {
+  return `${continuumDir(root)}/trash/issues`;
+}
+
+/**
+ * Move an issue to the trash (the default "delete"). Records a .trashed.json
+ * marker (incl. branch/worktree for later teardown), then moves the issue folder
+ * and its thread dir under .continuum/trash/. git is NOT touched — restore is a
+ * pure move-back. The worktree ref is read for the marker but left intact.
+ */
+export async function trashIssue(root: string, issue: Issue): Promise<void> {
+  const ref = await readWorktreeRef(issue).catch(() => null);
+  const folderName = `${issue.id}-${issue.slug}`;
+  const meta: TrashMeta = {
+    id: issue.id,
+    slug: issue.slug,
+    title: issue.title,
+    deletedAt: new Date().toISOString(),
+    ...(ref ? { branch: ref.branch, worktreePath: ref.path } : {}),
+  };
+  // Marker is written into the live folder BEFORE the move, so it travels with it.
+  await writeFile(`${issue.dir}/.trashed.json`, `${JSON.stringify(meta, null, 2)}\n`);
+  await movePath(issue.dir, `${trashDraftsDir(root)}/${folderName}`);
+  // Thread dir (may not exist) — best-effort.
+  await movePath(
+    `${continuumDir(root)}/issues/${issue.id}`,
+    `${trashIssuesDir(root)}/${issue.id}`,
+  ).catch(() => {});
+}
+
+/** List trashed issues, newest-deleted first. Reads each .trashed.json marker. */
+export async function listTrash(root: string): Promise<TrashMeta[]> {
+  let entries;
+  try {
+    entries = await listDir(trashDraftsDir(root));
+  } catch {
+    return [];
+  }
+  const out: TrashMeta[] = [];
+  for (const e of entries) {
+    if (!e.isDir) continue;
+    try {
+      const raw = await readFile(`${e.path}/.trashed.json`);
+      const m = JSON.parse(raw) as TrashMeta;
+      if (m && typeof m.id === "string" && typeof m.deletedAt === "string") {
+        out.push(m);
+      }
+    } catch {
+      /* missing/corrupt marker — skip */
+    }
+  }
+  out.sort((a, b) => (a.deletedAt < b.deletedAt ? 1 : a.deletedAt > b.deletedAt ? -1 : 0));
+  return out;
+}
+
+/** Restore a trashed issue back into the live store (move-back). */
+export async function restoreFromTrash(root: string, meta: TrashMeta): Promise<void> {
+  const folderName = `${meta.id}-${meta.slug}`;
+  const draft = `${draftsDir(root)}/${folderName}`;
+  await movePath(`${trashDraftsDir(root)}/${folderName}`, draft);
+  await removePath(`${draft}/.trashed.json`).catch(() => {});
+  await movePath(
+    `${trashIssuesDir(root)}/${meta.id}`,
+    `${continuumDir(root)}/issues/${meta.id}`,
+  ).catch(() => {});
+}
+
+/**
+ * Permanently remove a trashed issue's folders (.continuum/trash/...). Does NOT
+ * tear down git — the caller purges the worktree/branch (it has meta.branch /
+ * meta.worktreePath) before/after calling this, like purgeIssue does.
+ */
+export async function removeTrashEntry(root: string, meta: TrashMeta): Promise<void> {
+  await removePath(`${trashDraftsDir(root)}/${meta.id}-${meta.slug}`);
+  await removePath(`${trashIssuesDir(root)}/${meta.id}`);
+}
+
+/** Trashed entries past the TTL (candidates for the auto-purge on load). */
+export function expiredTrash(trash: TrashMeta[], now: number): TrashMeta[] {
+  const ttlMs = TRASH_TTL_DAYS * 24 * 60 * 60 * 1000;
+  return trash.filter((m) => {
+    const t = Date.parse(m.deletedAt);
+    return Number.isFinite(t) && now - t >= ttlMs;
+  });
 }
 
 // Spec is the only hand-created slot (DEC-011 / DEC-014/A).
@@ -457,7 +603,7 @@ export async function buildImplementHandoff(
   root: string,
   issue: Issue,
   worktreePath: string,
-  opts?: { followUp?: boolean },
+  opts?: { followUp?: boolean; userMessage?: string },
 ): Promise<{ path: string; content: string }> {
   let issueMd: string;
   try {
@@ -476,18 +622,28 @@ export async function buildImplementHandoff(
   // On a re-run the worktree already holds the previous iteration's changes; ask
   // the agent to adjust them to the updated spec rather than start over (DEC-012
   // review↔refine cycle).
-  const intro = opts?.followUp
+  const intro = opts?.userMessage
     ? [
         `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-        "これは **追記の再実装依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
-        "**ゼロからやり直さず**、更新後の Issue / Spec に合わせて既存の変更を調整・拡張してください。",
+        "これは **新規 Issue のチャット開始** です。ユーザーの最初のリクエスト（下記）をもとに、次の順で進めてください:",
+        `1) まず \`${specPath}\` に Spec を書き起こす（既にテンプレートがあれば埋める）。なぜ/何を/受入基準を具体化する。`,
+        "2) issue.md の frontmatter の `title` が空または「Untitled」なら、簡潔なタイトルを設定する。",
+        "3) その後にこの worktree 内のコードへ実装する。",
+        "不明点があれば、いきなり実装せず **まず質問** してください（チャットで対話できます）。",
         "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
       ]
-    : [
-        `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-        "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
-        "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
-      ];
+    : opts?.followUp
+      ? [
+          `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
+          "これは **追記の再実装依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
+          "**ゼロからやり直さず**、更新後の Issue / Spec に合わせて既存の変更を調整・拡張してください。",
+          "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+        ]
+      : [
+          `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
+          "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
+          "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+        ];
   // The Spec is the LIVING spec for this issue. It lives OUTSIDE the worktree
   // (in the main repo's .continuum tree) but is made readable+writable to the
   // agent via `claude --add-dir <issue.dir>`. Telling the agent to (1) re-read it
@@ -503,12 +659,15 @@ export async function buildImplementHandoff(
     "",
   ];
   const content = [
-    `# 実装ハンドオフ — ${issue.title}`,
+    `# 実装ハンドオフ — ${issue.title || "(無題)"}`,
     "",
     ...intro,
     "",
     "---",
     "",
+    ...(opts?.userMessage
+      ? ["## ユーザーの最初のリクエスト", "", opts.userMessage, "", "---", ""]
+      : []),
     ...livingSpec,
     "---",
     "",

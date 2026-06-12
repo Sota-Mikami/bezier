@@ -28,6 +28,18 @@ export interface PtySpawnOpts {
   cols: number;
   /** Initial terminal height in rows. */
   rows: number;
+  /**
+   * Optional stable key (the issue id). When set, the pty PERSISTS after the
+   * terminal unmounts (a background agent keeps running) and can be reattached
+   * via ptyLookup + ptyBacklog. Omit for throwaway shells.
+   */
+  key?: string;
+  /**
+   * Optional path to the agent's hook-events file. The agent is launched with
+   * Stop/Notification hooks that append here when it awaits the user; the
+   * backend watches this file for DETERMINISTIC "waiting" detection.
+   */
+  eventsPath?: string;
 }
 
 /** Payload of the "pty://data" event. */
@@ -73,6 +85,66 @@ export function ptyResize(id: string, cols: number, rows: number): Promise<void>
  */
 export function ptyKill(id: string): Promise<void> {
   return invoke<void>("pty_kill", { id });
+}
+
+/**
+ * Find a still-running persistent pty by its stable key (issue id). Returns its
+ * id to REATTACH to, or null. -> invoke("pty_lookup", { key })
+ */
+export function ptyLookup(key: string): Promise<string | null> {
+  return invoke<string | null>("pty_lookup", { key });
+}
+
+/** The captured output backlog of a session (for replay on reattach). */
+export function ptyBacklog(id: string): Promise<string> {
+  return invoke<string>("pty_backlog", { id });
+}
+
+/** Kill every live session with this key (issue id). Used on Discard / Re-run. */
+export function ptyKillKey(key: string): Promise<void> {
+  return invoke<void>("pty_kill_key", { key });
+}
+
+/** Keys (issue ids) of all live agent sessions — for "running" indicators. */
+export function ptyActiveKeys(): Promise<string[]> {
+  return invoke<string[]>("pty_active_keys");
+}
+
+/**
+ * Build the `--settings` JSON that wires Claude's Stop/Notification hooks to
+ * append to `eventsPath` — the deterministic signal that the agent is awaiting
+ * the user (turn ended / asked for input). Passed as a claude CLI arg.
+ */
+export function agentHookSettings(eventsPath: string): string {
+  // The hook command appends one byte; the backend watches the file's growth.
+  const cmd = `printf . >> ${JSON.stringify(eventsPath)}`;
+  const entry = [{ hooks: [{ type: "command", command: cmd }] }];
+  return JSON.stringify({ hooks: { Stop: entry, Notification: entry } });
+}
+
+/** Per-agent status for the Agent Inbox (DEC-028). */
+export type AgentState = "running" | "waiting" | "done" | "error";
+export interface AgentStatus {
+  /** The issue id. */
+  key: string;
+  state: AgentState;
+  /** Milliseconds since the agent last produced output. */
+  idleMs: number;
+  /** Exit code when state is done/error, else null. */
+  exitCode: number | null;
+}
+
+/**
+ * Snapshot of every keyed agent's status. "waiting" is set deterministically by
+ * the agent's hooks (turn ended / asked for input), cleared on user input.
+ */
+export function ptyStatuses(): Promise<AgentStatus[]> {
+  return invoke<AgentStatus[]>("pty_statuses");
+}
+
+/** Acknowledge/remove an EXITED agent for this key from the inbox. */
+export function ptyDismiss(key: string): Promise<void> {
+  return invoke<void>("pty_dismiss", { key });
 }
 
 /**

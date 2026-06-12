@@ -51,10 +51,18 @@ import {
   gitRemoteUrl,
   gitPush,
   ghPrCreate,
+  ghPrState,
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
-import { ptyWrite, commandExists } from "@/lib/pty";
+import {
+  ptyWrite,
+  commandExists,
+  ptyLookup,
+  ptyKillKey,
+  ptyStatuses,
+  agentHookSettings,
+} from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
 
@@ -101,6 +109,12 @@ export interface ImplementSession {
   termCwd: string | null;
   termSpawn: TermSpawn | undefined;
   termNonce: number;
+  /** Stable key for the persistent agent pty (the issue id). */
+  termKey: string;
+  /** Path to the agent's hook-events file (deterministic waiting, DEC-028). */
+  termEventsPath: string;
+  /** A background agent (pty) is currently running for this issue (DEC-027). */
+  running: boolean;
   handleTermReady: (id: string) => void;
   handleTermExit: (code: number | null) => void;
 
@@ -136,6 +150,8 @@ export interface ImplementSession {
 
   canImplement: boolean;
   handleImplement: () => Promise<void>;
+  /** Chat-first start: begin a session from a free-text message (DEC-023). */
+  handleStart: (message: string) => Promise<void>;
   handleRerun: () => Promise<void>;
   handleAccept: () => Promise<void>;
   handleDiscard: () => Promise<void>;
@@ -146,6 +162,10 @@ export function useImplementSession(
   issue: Issue,
   onStatusChange: (status: IssueStatus) => void,
 ): ImplementSession {
+  // The agent's hook-events file: Claude appends here (Stop/Notification hooks)
+  // when it awaits the user; the backend watches it for "waiting" (DEC-028).
+  const eventsPath = `${root.replace(/\/+$/, "")}/.continuum/agent-events/${issue.id}`;
+
   const [gitRepo, setGitRepo] = React.useState<boolean | null>(null);
   const [ref, setRef] = React.useState<WorktreeRef | null>(null);
   const [agents, setAgents] = React.useState<AgentTool[]>([]);
@@ -268,6 +288,45 @@ export function useImplementSession(
     };
   }, [root, issue, loadBehind]);
 
+  // Live "running" signal for the derived state (DEC-027): the agent session is
+  // ALIVE (running or waiting for input) — not a lingering exited one. Uses
+  // pty_statuses so a finished agent (which stays in the map for the inbox)
+  // doesn't keep the badge green.
+  const [running, setRunning] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const all = await ptyStatuses().catch(() => []);
+      if (cancelled) return;
+      const mine = all.find((s) => s.key === issue.id);
+      setRunning(mine?.state === "running" || mine?.state === "waiting");
+    };
+    void tick();
+    const h = window.setInterval(() => void tick(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(h);
+    };
+  }, [issue.id]);
+
+  // Auto-"done" (DEC-027): once this issue's PR is MERGED on the platform, mark
+  // it merged. Best-effort, checked when a PR link is present.
+  const refPrUrl = ref?.prUrl ?? null;
+  const refBranch = ref?.branch ?? null;
+  React.useEffect(() => {
+    if (!refPrUrl || !refBranch) return;
+    let cancelled = false;
+    (async () => {
+      const state = await ghPrState(root, refBranch).catch(() => "");
+      if (cancelled || state !== "MERGED") return;
+      await updateIssueMeta(root, issue, { status: "merged" }).catch(() => {});
+      onStatusChange("merged");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refPrUrl, refBranch, root, issue, onStatusChange]);
+
   // Detect installed agents once.
   React.useEffect(() => {
     let cancelled = false;
@@ -386,6 +445,9 @@ export function useImplementSession(
       if (opts.prompt) args.push(opts.prompt);
       if (isClaude) {
         if (opts.resume) args.push("--continue");
+        // Wire Stop/Notification hooks → the events file, for deterministic
+        // "agent is awaiting you" detection (DEC-028, replacing the idle guess).
+        args.push("--settings", agentHookSettings(eventsPath));
         args.push("--add-dir", issue.dir);
       }
       // Any launch counts as "the agent has been started for this issue", so the
@@ -398,7 +460,7 @@ export function useImplementSession(
       setTermMounted(true);
       setTermNonce((n) => n + 1);
     },
-    [issue.dir],
+    [issue.dir, eventsPath],
   );
 
   // Build a fresh seed handoff and launch it on an existing worktree. Used by the
@@ -511,6 +573,56 @@ export function useImplementSession(
     logEvent,
   ]);
 
+  // Chat-first start (DEC-023): begin from a free-text message instead of a
+  // pre-written spec. Same worktree setup as Implement, but the handoff seeds the
+  // agent with the user's first message and asks it to (1) draft the spec, (2)
+  // title the issue, then (3) implement. Unlike handleImplement it does NOT
+  // require a spec to exist — the agent writes it.
+  const handleStart = React.useCallback(
+    async (message: string) => {
+      const msg = message.trim();
+      if (!gitRepo || action || !msg) return;
+      if (!selectedAgent?.available) {
+        setError("利用可能なエージェント (claude / codex) が見つかりません。");
+        return;
+      }
+      setAction("implement");
+      setError(null);
+      setInfo(null);
+      try {
+        const branch = branchName(issue);
+        const wt = await worktreeDir(root, issue);
+        await gitWorktreeAdd(root, branch, wt);
+        const newRef: WorktreeRef = { branch, path: wt, baseSHA: "" };
+        await writeWorktreeRef(issue, newRef);
+        await updateIssueMeta(root, issue, { status: "in-progress" });
+        onStatusChange("in-progress");
+        const { content } = await buildImplementHandoff(root, issue, wt, {
+          userMessage: msg,
+        });
+        setRef(newRef);
+        launchAgent(selectedAgent, wt, { prompt: content });
+        void logEvent("implement", "チャット開始");
+        void loadBehind(wt);
+      } catch (e) {
+        setError(errMsg(e));
+      } finally {
+        setAction(null);
+      }
+    },
+    [
+      gitRepo,
+      issue,
+      action,
+      selectedAgent,
+      root,
+      onStatusChange,
+      launchAgent,
+      loadBehind,
+      logEvent,
+    ],
+  );
+
   // Re-run AI on the SAME worktree with a follow-up handoff built from the
   // (possibly edited) issue.md + spec.md (DEC-012 review↔refine cycle).
   const handleRerun = React.useCallback(async () => {
@@ -523,6 +635,9 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     try {
+      // Stop any background agent still running for this issue so the re-run is
+      // the single live session (otherwise we'd spawn a 2nd pty for the key).
+      await ptyKillKey(issue.id).catch(() => {});
       const { content } = await buildImplementHandoff(root, issue, ref.path, {
         followUp: true,
       });
@@ -566,13 +681,33 @@ export function useImplementSession(
     if (autoResumedRef.current) return;
     if (!ref || termMounted || action) return;
     if (!selectedAgent?.available) return;
-    // Mark immediately so a re-render before the deferred launch can't double-fire,
-    // and defer the launch itself off the synchronous effect path (handleResume
-    // clears error/info via setState — doing that synchronously cascades renders).
+    // Mark immediately so a re-render can't double-fire.
     autoResumedRef.current = true;
-    const t = window.setTimeout(() => void handleResume(), 0);
-    return () => window.clearTimeout(t);
-  }, [ref, termMounted, action, selectedAgent, handleResume]);
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      // If a background agent is STILL RUNNING for this issue (you navigated
+      // away and came back), reattach to it — mount the terminal pointing at the
+      // worktree with NO spawn, and TerminalPane (sessionKey=issue.id) reattaches
+      // to the live pty + replays its backlog. Otherwise fall back to resuming
+      // the prior conversation (`claude --continue`).
+      const live = await ptyLookup(issue.id).catch(() => null);
+      if (cancelled) return;
+      if (live) {
+        setError(null);
+        setInfo(null);
+        setTermCwd(ref.path);
+        setTermSpawn(undefined);
+        setTermMounted(true);
+        setTermNonce((n) => n + 1);
+      } else {
+        void handleResume();
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [ref, termMounted, action, selectedAgent, handleResume, issue.id]);
 
   const handleAccept = React.useCallback(async () => {
     if (!ref || action) return;
@@ -620,9 +755,12 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     try {
-      // Stop the dev server + unmount the terminal first so nothing holds the
-      // worktree open while git removes it.
+      // Stop the dev server, kill the (now persistent) background agent, and
+      // unmount the terminal first so nothing holds the worktree open while git
+      // removes it. teardownTerminal no longer kills the pty (it persists), so
+      // ptyKillKey is what actually stops the agent on Discard.
       await preview.stop();
+      await ptyKillKey(issue.id).catch(() => {});
       teardownTerminal();
       await gitWorktreeRemove(root, ref.path);
       await gitBranchDelete(root, ref.branch).catch(() => {
@@ -773,6 +911,9 @@ export function useImplementSession(
     termCwd,
     termSpawn,
     termNonce,
+    termKey: issue.id,
+    termEventsPath: eventsPath,
+    running,
     handleTermReady,
     handleTermExit,
     thread,
@@ -791,6 +932,7 @@ export function useImplementSession(
     openPR,
     canImplement,
     handleImplement,
+    handleStart,
     handleRerun,
     handleAccept,
     handleDiscard,
