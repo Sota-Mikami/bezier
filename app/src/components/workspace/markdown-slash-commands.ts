@@ -18,6 +18,8 @@ import type {
   CompletionResult,
 } from "@codemirror/autocomplete";
 
+import { pickAndInsertImage } from "@/components/workspace/editor-images";
+
 // Sentinel marking where the caret should land inside a template (stripped
 // before insertion). NUL never appears in real markdown source.
 const CARET = "\u0000";
@@ -41,6 +43,26 @@ function applyTemplate(template: string) {
       userEvent: "input.complete",
     });
   };
+}
+
+/**
+ * `apply` for the Image command: first delete the "/image" query text, then open
+ * the native file picker (async) and insert the chosen image(s) as co-located
+ * assets. Insertion happens after the await, off this synchronous apply.
+ */
+function applyImage(
+  view: EditorView,
+  _completion: Completion,
+  from: number,
+  to: number,
+) {
+  const slashFrom = from - 1; // also remove the leading "/"
+  view.dispatch({
+    changes: { from: slashFrom, to, insert: "" },
+    selection: { anchor: slashFrom },
+    userEvent: "input.complete",
+  });
+  void pickAndInsertImage(view);
 }
 
 // --- Icons (lucide paths, inlined as SVG markup) --------------------------
@@ -76,6 +98,8 @@ const ICONS = {
   table: svg('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M12 3v18"/>'),
   // Minus (divider)
   divider: svg('<path d="M5 12h14"/>'),
+  // Image
+  image: svg('<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>'),
 } as const;
 
 // --- Command catalogue -----------------------------------------------------
@@ -87,8 +111,13 @@ interface SlashItem {
   description: string;
   /** Inline SVG markup for the left icon tile. */
   icon: string;
-  /** Inserted markdown; CARET marks the resting caret position. */
-  template: string;
+  /**
+   * Inserted markdown; CARET marks the resting caret position. Omitted for items
+   * that supply a custom `apply` (e.g. Image, which opens a file picker).
+   */
+  template?: string;
+  /** Custom apply (overrides the template-based insert). */
+  apply?: Completion["apply"];
 }
 
 const ITEMS: SlashItem[] = [
@@ -112,6 +141,7 @@ const ITEMS: SlashItem[] = [
     template: "| " + CARET + " |  |\n| --- | --- |\n|  |  |",
   },
   { title: "Divider", description: "Visually separate blocks", icon: ICONS.divider, template: "---\n" + CARET },
+  { title: "Image", description: "Upload or embed a picture", icon: ICONS.image, apply: applyImage },
 ];
 
 interface SlashMeta {
@@ -129,7 +159,7 @@ const OPTIONS: Completion[] = ITEMS.map((it) => ({
   // highlighting). Detail/type are omitted so no default detail/icon node
   // double-renders alongside our custom row content.
   label: it.title,
-  apply: applyTemplate(it.template),
+  apply: it.apply ?? applyTemplate(it.template ?? ""),
 }));
 
 // --- Notion-style row rendering (addToOptions) -----------------------------

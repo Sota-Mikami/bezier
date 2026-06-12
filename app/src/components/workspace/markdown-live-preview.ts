@@ -25,6 +25,7 @@
 import { StateField, type Extension, type Range, type EditorState } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
+import { specPathFacet, loadImageSrc } from "@/components/workspace/editor-images";
 
 // --- Shared decoration singletons ----------------------------------------
 
@@ -79,6 +80,55 @@ class HrWidget extends WidgetType {
   }
 }
 const hrWidget = new HrWidget();
+
+/**
+ * A rendered <img> that replaces `![alt](url)` off-cursor. The markdown only
+ * holds the (usually relative) link; this widget lazily reads the co-located
+ * asset bytes into a blob URL at draw time (editor-images.loadImageSrc, cached),
+ * so the bytes never live in the doc text. `eq` keys on src+specPath so CM reuses
+ * the DOM (and its already-loaded image) across the per-transaction recompute.
+ */
+class ImageWidget extends WidgetType {
+  constructor(
+    readonly url: string,
+    readonly alt: string,
+    readonly specPath: string,
+    readonly inline: boolean,
+  ) {
+    super();
+  }
+  eq(other: ImageWidget) {
+    return (
+      other.url === this.url &&
+      other.alt === this.alt &&
+      other.specPath === this.specPath &&
+      other.inline === this.inline
+    );
+  }
+  ignoreEvent() {
+    return false;
+  }
+  toDOM() {
+    const wrap = document.createElement(this.inline ? "span" : "div");
+    wrap.className = this.inline ? "cm-md-image-inline" : "cm-md-imageblock";
+    const img = document.createElement("img");
+    img.className = "cm-md-image";
+    img.alt = this.alt;
+    if (this.alt) img.title = this.alt;
+    // Async resolve (relative asset → blob URL, or external src verbatim).
+    void loadImageSrc(this.specPath, this.url).then(
+      (src) => {
+        img.src = src;
+      },
+      () => {
+        wrap.classList.add("cm-md-image-error");
+        wrap.textContent = `⚠ image not found: ${this.url}`;
+      },
+    );
+    wrap.appendChild(img);
+    return wrap;
+  }
+}
 
 /** A real bordered <table> built from the raw GFM pipe source. */
 class TableWidget extends WidgetType {
@@ -203,6 +253,7 @@ function compute(state: EditorState): LivePreview {
   const deco: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
   const { doc } = state;
+  const specPath = state.facet(specPathFacet);
   const active = activeRanges(state);
   const isActive = (from: number, to: number) =>
     active.some((r) => from <= r.to && to >= r.from);
@@ -305,6 +356,30 @@ function compute(state: EditorState): LivePreview {
           deco.push(w.range(from, to));
         }
         return;
+      }
+
+      // --- Images: render <img> off-cursor, raw `![alt](url)` on-cursor. ---
+      if (name === "Image") {
+        if (isActive(from, to)) return false;
+        const src = doc.sliceString(from, to);
+        const m = /^!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)$/.exec(src);
+        if (!m) return false;
+        const alt = m[1];
+        const url = m[2];
+        const line = doc.lineAt(from);
+        const alone = doc.sliceString(line.from, line.to).trim() === src;
+        if (alone) {
+          // Image on its own line -> block widget over the line (clean layout,
+          // height measured correctly; caret reveals raw when entering the line).
+          replaceBlock(line.from, line.to, new ImageWidget(url, alt, specPath, false));
+        } else {
+          const w = Decoration.replace({
+            widget: new ImageWidget(url, alt, specPath, true),
+          });
+          deco.push(w.range(from, to));
+          atomic.push(w.range(from, to));
+        }
+        return false;
       }
 
       // --- Links: show styled text off-cursor, full `[text](url)` on-cursor. ---

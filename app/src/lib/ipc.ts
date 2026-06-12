@@ -70,6 +70,25 @@ export function writeFile(path: string, contents: string): Promise<void> {
 }
 
 /**
+ * Read a file's raw bytes (e.g. an image asset to render inline). The Rust side
+ * returns a Tauri `Response`, received here as an ArrayBuffer.
+ * -> invoke("read_binary_file", { path })
+ */
+export async function readBinaryFile(path: string): Promise<Uint8Array> {
+  const buf = await invoke<ArrayBuffer>("read_binary_file", { path });
+  return new Uint8Array(buf);
+}
+
+/**
+ * Write raw bytes to a file (e.g. an image pasted into a Spec). Parent dirs are
+ * auto-created (mirrors writeFile). -> invoke("write_binary_file", { path, contents })
+ */
+export function writeBinaryFile(path: string, contents: Uint8Array): Promise<void> {
+  // serde `Vec<u8>` deserializes from a JSON number array.
+  return invoke<void>("write_binary_file", { path, contents: Array.from(contents) });
+}
+
+/**
  * Recursively remove a file or directory. Guarded on the Rust side to only
  * delete paths under a `.continuum` working store (continuum's local issue
  * artifacts), never arbitrary repo files. No-op when the path is absent.

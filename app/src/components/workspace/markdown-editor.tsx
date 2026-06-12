@@ -51,6 +51,10 @@ import {
   slashCommands,
   slashAddToOptions,
 } from "@/components/workspace/markdown-slash-commands";
+import {
+  specPathFacet,
+  imageInputHandlers,
+} from "@/components/workspace/editor-images";
 import { cn } from "@/lib/utils";
 
 export interface MarkdownEditorHandle {
@@ -341,6 +345,27 @@ const editorTheme = EditorView.theme({
   },
   ".cm-md-table th": { fontWeight: "600", backgroundColor: "var(--muted)" },
 
+  // Image widget. Block = on its own line (centered, breathing room); inline =
+  // mid-paragraph. Constrained to the content width; never overflows.
+  ".cm-md-imageblock": { padding: "0.5em 0" },
+  ".cm-md-image": {
+    display: "block",
+    maxWidth: "100%",
+    height: "auto",
+    borderRadius: "8px",
+    border: "1px solid var(--border)",
+  },
+  ".cm-md-image-inline": { display: "inline-block", verticalAlign: "bottom" },
+  ".cm-md-image-inline .cm-md-image": { display: "inline-block", maxHeight: "1.6em", margin: "0 0.15em" },
+  ".cm-md-image-error": {
+    display: "inline-block",
+    padding: "0.3em 0.6em",
+    fontSize: "0.85em",
+    color: "var(--muted-foreground)",
+    border: "1px dashed var(--border)",
+    borderRadius: "6px",
+  },
+
   // Horizontal-rule widget.
   ".cm-md-hr": { padding: "0.6em 0" },
   ".cm-md-hr hr": {
@@ -566,6 +591,10 @@ function MarkdownEditorInner(
           // GFM (tables, strikethrough, task lists, autolinks) + lazy code-block
           // language highlighting via @codemirror/language-data.
           markdown({ base: markdownLanguage, codeLanguages: languages }),
+          // Image support: spec.md path (for save target + render resolution) +
+          // paste/drop handlers. The `/image` slash command reads the same facet.
+          specPathFacet.of(docRef.current.path),
+          imageInputHandlers,
           livePreview,
           flashField,
           editorTheme,
