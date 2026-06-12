@@ -12,6 +12,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
+import { terminalTheme } from "./terminal-theme";
 
 import {
   ptySpawn,
@@ -124,9 +125,17 @@ export default function TerminalPane({
         fontFamily:
           'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
         fontSize: 13,
-        theme: { background: "#0a0a0a" },
+        theme: terminalTheme(),
         convertEol: false,
       });
+      // Follow the OS light/dark setting live (the app theme is OS-driven).
+      const mql = window.matchMedia("(prefers-color-scheme: dark)");
+      const onScheme = () => {
+        if (term) term.options.theme = terminalTheme(mql.matches);
+      };
+      mql.addEventListener("change", onScheme);
+      unlisteners.push(() => mql.removeEventListener("change", onScheme));
+
       fit = new FitAddon();
       term.loadAddon(fit);
       term.loadAddon(new WebLinksAddon());

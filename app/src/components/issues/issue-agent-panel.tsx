@@ -39,7 +39,7 @@ import type { ImplementSession } from "./use-implement-session";
 const TerminalPane = dynamic(() => import("@/components/workspace/terminal"), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center gap-2 p-3 text-xs text-zinc-400">
+    <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
       <Loader2 className="size-3.5 animate-spin" />
       Starting terminal…
     </div>
@@ -435,7 +435,7 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
 
       {/* Embedded terminal (agent runs here, cwd = worktree). Stays mounted
           across Spec⇆Design center-tab switches so the session persists. */}
-      <div className="min-h-0 flex-1 bg-[#0a0a0a]">
+      <div className="min-h-0 flex-1 bg-background">
         {termMounted && termCwd ? (
           <TerminalPane
             key={`${termCwd}#${termNonce}#${termSpawn?.cmd ?? "shell"}`}
@@ -450,13 +450,13 @@ export function IssueAgentPanel({ issue, session }: IssueAgentPanelProps) {
           // A worktree exists but no live pty (app restarted / issue re-opened):
           // offer to resume the prior conversation rather than start over.
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-            <div className="flex size-10 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900">
-              <Play className="size-4 text-zinc-400" />
+            <div className="flex size-10 items-center justify-center rounded-full border border-border bg-muted">
+              <Play className="size-4 text-muted-foreground" />
             </div>
-            <div className="text-sm font-medium text-zinc-200">
+            <div className="text-sm font-medium text-foreground">
               セッションは休止中
             </div>
-            <p className="max-w-xs text-xs text-zinc-400">
+            <p className="max-w-xs text-xs text-muted-foreground">
               この Issue には worktree があります。前回のエージェント会話を再開できます。
             </p>
             <Button
@@ -510,15 +510,15 @@ function ChatStart({
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-        <div className="flex size-10 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900">
-          <Sparkles className="size-4 text-zinc-400" />
+        <div className="flex size-10 items-center justify-center rounded-full border border-border bg-muted">
+          <Sparkles className="size-4 text-muted-foreground" />
         </div>
-        <div className="text-sm font-medium text-zinc-200">チャットで始める</div>
-        <p className="max-w-xs text-xs text-zinc-400">
+        <div className="text-sm font-medium text-foreground">チャットで始める</div>
+        <p className="max-w-xs text-xs text-muted-foreground">
           やりたいことを書くと worktree を作成して AI が起動し、まず Spec を一緒に書き起こします。
         </p>
       </div>
-      <div className="border-t border-zinc-800 p-3">
+      <div className="border-t border-border p-3">
         <textarea
           ref={ref}
           value={draft}
@@ -536,7 +536,7 @@ function ChatStart({
               ? "利用可能なエージェントがありません"
               : "やりたいことを書く…（Enter で開始 / Shift+Enter で改行）"
           }
-          className="w-full resize-none rounded-md border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 outline-none placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-zinc-500 disabled:opacity-60"
+          className="w-full resize-none rounded-md border border-border bg-muted p-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
         />
         <div className="mt-2 flex justify-end">
           <Button
