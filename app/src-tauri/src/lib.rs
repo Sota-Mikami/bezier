@@ -1653,7 +1653,38 @@ fn app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// macOS GUI apps launched from Finder/Dock inherit a minimal PATH
+/// (/usr/bin:/bin:/usr/sbin:/sbin), NOT the user's login-shell PATH — so tools
+/// installed under nvm / Homebrew (claude, gh, node, …) aren't found and the
+/// agent can't launch. Ask the login shell for its real PATH and adopt it, so
+/// command_exists / resolve_command / pty spawns all see the right tools. No-op
+/// when the env already looks rich (e.g. the dev run from a terminal).
+fn fix_path_env() {
+    // If PATH already includes a common user tool dir, assume we inherited a
+    // real shell PATH and skip the (slowish) login-shell probe.
+    if let Ok(p) = std::env::var("PATH") {
+        if p.contains("/.nvm/") || p.contains("/homebrew/") || p.contains("/.local/bin") {
+            return;
+        }
+    }
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    // `-ilc` = interactive login shell running a command, so it sources the
+    // user's profile (.zprofile/.zshrc) where PATH is set.
+    let out = std::process::Command::new(&shell)
+        .args(["-ilc", "printf %s \"$PATH\""])
+        .output();
+    if let Ok(o) = out {
+        if o.status.success() {
+            let path = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if !path.is_empty() {
+                std::env::set_var("PATH", path);
+            }
+        }
+    }
+}
+
 pub fn run() {
+    fix_path_env();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(PtyState::default())
