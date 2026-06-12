@@ -51,6 +51,12 @@ import {
   slashCommands,
   slashAddToOptions,
 } from "@/components/workspace/markdown-slash-commands";
+import {
+  dirOf,
+  isImageFile,
+  loadImageSrc,
+  saveImageToAssets,
+} from "@/lib/images";
 import { cn } from "@/lib/utils";
 
 export interface MarkdownEditorHandle {
@@ -341,6 +347,26 @@ const editorTheme = EditorView.theme({
   },
   ".cm-md-table th": { fontWeight: "600", backgroundColor: "var(--muted)" },
 
+  // Embedded image (replaces `![alt](src)` off-cursor). Block-ish: its own line,
+  // capped so large screenshots don't overflow the editor column.
+  ".cm-md-image": { display: "inline-block", maxWidth: "100%" },
+  ".cm-md-image img": {
+    display: "block",
+    maxWidth: "100%",
+    height: "auto",
+    borderRadius: "6px",
+    border: "1px solid var(--border)",
+  },
+  // Broken / unreadable source: a dashed placeholder box so it's obvious.
+  ".cm-md-image-error": {
+    display: "inline-block",
+    minWidth: "8rem",
+    minHeight: "2rem",
+    borderRadius: "6px",
+    border: "1px dashed var(--destructive)",
+  },
+  ".cm-md-image-error img": { display: "none" },
+
   // Horizontal-rule widget.
   ".cm-md-hr": { padding: "0.6em 0" },
   ".cm-md-hr hr": {
@@ -470,6 +496,20 @@ const flashField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
+/** Collect File objects from a clipboard/drop DataTransfer (files API + items). */
+function filesFromDataTransfer(dt: DataTransfer | null): File[] {
+  if (!dt) return [];
+  if (dt.files && dt.files.length > 0) return Array.from(dt.files);
+  const out: File[] = [];
+  for (const item of Array.from(dt.items ?? [])) {
+    if (item.kind === "file") {
+      const f = item.getAsFile();
+      if (f) out.push(f);
+    }
+  }
+  return out;
+}
+
 function MarkdownEditorInner(
   props: MarkdownEditorProps,
   ref: React.ForwardedRef<MarkdownEditorHandle>,
@@ -533,6 +573,64 @@ function MarkdownEditorInner(
       onEditRef.current?.();
     });
 
+    // Image embedding (issue 01KTWV4SMA4C6WDA9DEY36H1KP). Images are stored in an
+    // `assets/` folder beside this document; baseDir = the doc's directory.
+    const baseDir = dirOf(docRef.current.path);
+    const loadImage = (src: string) => loadImageSrc(baseDir, src);
+
+    // Save the dropped/pasted images, then insert `![](assets/…)` at the caret.
+    // We save FIRST so the file exists before the live-preview widget loads it.
+    const insertImages = async (view: EditorView, files: File[]) => {
+      const images = files.filter(isImageFile);
+      if (images.length === 0) return;
+      try {
+        const links: string[] = [];
+        for (const f of images) {
+          const rel = await saveImageToAssets(baseDir, f);
+          links.push(`![](${rel})`);
+        }
+        const head = view.state.selection.main.head;
+        const line = view.state.doc.lineAt(head);
+        // Put images on their own line(s): no leading newline at a line start.
+        const body = links.join("\n");
+        const text = head === line.from ? `${body}\n` : `\n${body}\n`;
+        view.dispatch({
+          changes: { from: head, insert: text },
+          selection: { anchor: head + text.length },
+          userEvent: "input.paste",
+          scrollIntoView: true,
+        });
+      } catch (err) {
+        console.error("image embed failed:", err);
+      }
+    };
+
+    const imageEventHandlers = EditorView.domEventHandlers({
+      paste(event, view) {
+        const files = filesFromDataTransfer(event.clipboardData);
+        if (!files.some(isImageFile)) return false;
+        event.preventDefault();
+        void insertImages(view, files);
+        return true;
+      },
+      drop(event, view) {
+        const files = filesFromDataTransfer(event.dataTransfer);
+        if (!files.some(isImageFile)) return false;
+        event.preventDefault();
+        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (pos != null) view.dispatch({ selection: { anchor: pos } });
+        void insertImages(view, files);
+        return true;
+      },
+      dragover(event) {
+        // Allow the drop only when files are being dragged in.
+        if (Array.from(event.dataTransfer?.types ?? []).includes("Files")) {
+          event.preventDefault();
+        }
+        return false;
+      },
+    });
+
     const view = new EditorView({
       parent: host,
       state: EditorState.create({
@@ -566,7 +664,8 @@ function MarkdownEditorInner(
           // GFM (tables, strikethrough, task lists, autolinks) + lazy code-block
           // language highlighting via @codemirror/language-data.
           markdown({ base: markdownLanguage, codeLanguages: languages }),
-          livePreview,
+          livePreview({ loadImage }),
+          imageEventHandlers,
           flashField,
           editorTheme,
           cmPlaceholder("Start writing…  (type / for commands)"),

@@ -70,6 +70,22 @@ export function writeFile(path: string, contents: string): Promise<void> {
 }
 
 /**
+ * Write binary file contents supplied as base64 (pasted/dropped images). Parent
+ * dirs are created. -> invoke("write_file_base64", { path, base64 })
+ */
+export function writeFileBase64(path: string, base64: string): Promise<void> {
+  return invoke<void>("write_file_base64", { path, base64 });
+}
+
+/**
+ * Read a file's raw bytes back as base64 (to render images as `data:` URLs; the
+ * webview can't load a raw local path). -> invoke("read_file_base64", { path })
+ */
+export function readFileBase64(path: string): Promise<string> {
+  return invoke<string>("read_file_base64", { path });
+}
+
+/**
  * Recursively remove a file or directory. Guarded on the Rust side to only
  * delete paths under a `.continuum` working store (continuum's local issue
  * artifacts), never arbitrary repo files. No-op when the path is absent.

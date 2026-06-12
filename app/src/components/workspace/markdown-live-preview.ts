@@ -80,6 +80,58 @@ class HrWidget extends WidgetType {
 }
 const hrWidget = new HrWidget();
 
+/** Resolves a markdown image `src` to a displayable URL (or null if unreadable). */
+export type ImageLoader = (src: string) => Promise<string | null>;
+
+/**
+ * A rendered `<img>` that replaces `![alt](src)` off-cursor. The source is loaded
+ * asynchronously (relative paths are read off disk and turned into `data:` URLs
+ * by the loader); until it resolves the element is empty, and a failed load is
+ * flagged so a broken-image affordance can show.
+ */
+class ImageWidget extends WidgetType {
+  constructor(
+    readonly src: string,
+    readonly alt: string,
+    readonly load: ImageLoader,
+  ) {
+    super();
+  }
+  eq(other: ImageWidget) {
+    return other.src === this.src && other.alt === this.alt;
+  }
+  ignoreEvent() {
+    return false;
+  }
+  toDOM() {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-md-image";
+    const img = document.createElement("img");
+    img.alt = this.alt;
+    if (this.alt) img.title = this.alt;
+    img.addEventListener("error", () => wrap.classList.add("cm-md-image-error"));
+    this.load(this.src)
+      .then((url) => {
+        if (url) img.src = url;
+        else wrap.classList.add("cm-md-image-error");
+      })
+      .catch(() => wrap.classList.add("cm-md-image-error"));
+    wrap.appendChild(img);
+    return wrap;
+  }
+}
+
+/** Parse `![alt](src "title")` source into its alt text and bare src. */
+function parseImage(raw: string): { alt: string; src: string } | null {
+  const m = /^!\[([^\]]*)\]\(\s*([^)]*?)\s*\)/.exec(raw);
+  if (!m) return null;
+  // Drop an optional title; strip <...> angle-bracket wrapping around the URL.
+  let src = m[2].split(/\s+/)[0] ?? "";
+  if (src.startsWith("<") && src.endsWith(">")) src = src.slice(1, -1);
+  if (!src) return null;
+  return { alt: m[1], src };
+}
+
 /** A real bordered <table> built from the raw GFM pipe source. */
 class TableWidget extends WidgetType {
   constructor(readonly source: string) {
@@ -199,7 +251,7 @@ function activeRanges(state: EditorState): { from: number; to: number }[] {
   return out;
 }
 
-function compute(state: EditorState): LivePreview {
+function compute(state: EditorState, loadImage?: ImageLoader): LivePreview {
   const deco: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
   const { doc } = state;
@@ -307,6 +359,21 @@ function compute(state: EditorState): LivePreview {
         return;
       }
 
+      // --- Images: render <img> off-cursor, raw `![alt](src)` on-cursor. ---
+      if (name === "Image") {
+        if (!loadImage || isActive(from, to)) return false;
+        const parsed = parseImage(doc.sliceString(from, to));
+        if (!parsed) return false;
+        const w = Decoration.replace({
+          widget: new ImageWidget(parsed.src, parsed.alt, loadImage),
+        });
+        deco.push(w.range(from, to));
+        // Atomic so the caret treats the rendered image as one unit; entering it
+        // (click / arrow) reveals the raw source via the isActive check above.
+        atomic.push(w.range(from, to));
+        return false;
+      }
+
       // --- Links: show styled text off-cursor, full `[text](url)` on-cursor. ---
       if (name === "Link") {
         if (isActive(from, to)) return false;
@@ -370,17 +437,27 @@ function compute(state: EditorState): LivePreview {
 
 // --- Extension ------------------------------------------------------------
 
-const livePreviewField = StateField.define<LivePreview>({
-  create: (state) => compute(state),
-  // Recompute on every transaction so reveal-on-cursor tracks the caret AND any
-  // async markdown parse progress is picked up. For markdown-note-sized docs the
-  // single tree walk is sub-millisecond.
-  update: (_value, tr) => compute(tr.state),
-  provide: (f) => [
-    EditorView.decorations.from(f, (v) => v.deco),
-    EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
-  ],
-});
-
-/** Obsidian-style live-preview decorations for a markdown CodeMirror editor. */
-export const livePreview: Extension = [livePreviewField];
+/**
+ * Obsidian-style live-preview decorations for a markdown CodeMirror editor.
+ *
+ * `loadImage` (optional) enables inline image rendering: `![alt](src)` becomes an
+ * `<img>` off-cursor, with the source resolved through the loader (relative paths
+ * are read off disk and turned into `data:` URLs). Omit it to leave images as raw
+ * source.
+ */
+export function livePreview(
+  opts: { loadImage?: ImageLoader } = {},
+): Extension {
+  const field = StateField.define<LivePreview>({
+    create: (state) => compute(state, opts.loadImage),
+    // Recompute on every transaction so reveal-on-cursor tracks the caret AND any
+    // async markdown parse progress is picked up. For markdown-note-sized docs the
+    // single tree walk is sub-millisecond.
+    update: (_value, tr) => compute(tr.state, opts.loadImage),
+    provide: (f) => [
+      EditorView.decorations.from(f, (v) => v.deco),
+      EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
+    ],
+  });
+  return [field];
+}

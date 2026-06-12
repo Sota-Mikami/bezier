@@ -153,6 +153,115 @@ fn write_file(path: String, contents: String) -> Result<(), String> {
     fs::write(&resolved, contents).map_err(|e| format!("write_file {path}: {e}"))
 }
 
+// ---- Binary file I/O (images) ----
+//
+// The Markdown editor stores pasted/dropped images as files beside spec.md and
+// references them with `![](assets/<id>.<ext>)`. The Tauri webview cannot load a
+// raw local path from an `<img src>`, so images travel over IPC as base64: the
+// editor reads them back as a `data:` URL for rendering. base64 is hand-rolled
+// to avoid a new crate dependency (no network at build time).
+
+const B64_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn base64_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(B64_ALPHABET[((n >> 18) & 63) as usize] as char);
+        out.push(B64_ALPHABET[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            B64_ALPHABET[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            B64_ALPHABET[(n & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
+    fn val(c: u8) -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a' + 26) as u32),
+            b'0'..=b'9' => Some((c - b'0' + 52) as u32),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let clean: Vec<u8> = s
+        .bytes()
+        .filter(|&c| !c.is_ascii_whitespace() && c != b'=')
+        .collect();
+    let mut out = Vec::with_capacity(clean.len() / 4 * 3 + 3);
+    for chunk in clean.chunks(4) {
+        let mut n = 0u32;
+        let mut bits = 0;
+        for &c in chunk {
+            let v = val(c).ok_or_else(|| format!("base64: invalid char {c:#x}"))?;
+            n = (n << 6) | v;
+            bits += 6;
+        }
+        // Right-align the accumulated bits, then emit whole bytes.
+        n <<= 24 - bits;
+        let nbytes = bits / 8;
+        for i in 0..nbytes {
+            out.push((n >> (16 - i * 8)) as u8);
+        }
+    }
+    Ok(out)
+}
+
+/// Resolve a (possibly not-yet-existing) target path to a safe absolute path,
+/// creating the parent tree. Shared by the binary write command; mirrors the
+/// `..`-guard + canonicalize-parent discipline of `write_file`.
+fn resolve_for_write(path: &str, label: &str) -> Result<PathBuf, String> {
+    let target = Path::new(path);
+    reject_traversal(target)?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("{label} {path}: path has no parent directory"))?;
+    if !parent.as_os_str().is_empty() && !parent.exists() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("{label} {path}: cannot create parent dir: {e}"))?;
+    }
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|e| format!("{label} {path}: cannot resolve parent dir: {e}"))?;
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| format!("{label} {path}: path has no file name"))?;
+    let mut resolved = canonical_parent;
+    resolved.push(file_name);
+    reject_traversal(&resolved)?;
+    Ok(resolved)
+}
+
+/// Write binary file contents supplied as base64 (used for pasted/dropped images).
+#[tauri::command]
+fn write_file_base64(path: String, base64: String) -> Result<(), String> {
+    let resolved = resolve_for_write(&path, "write_file_base64")?;
+    let bytes = base64_decode(&base64)?;
+    fs::write(&resolved, bytes).map_err(|e| format!("write_file_base64 {path}: {e}"))
+}
+
+/// Read a file's raw bytes and return them base64-encoded (used to render images
+/// as `data:` URLs in the editor).
+#[tauri::command]
+fn read_file_base64(path: String) -> Result<String, String> {
+    reject_traversal(Path::new(&path))?;
+    let bytes = fs::read(&path).map_err(|e| format!("read_file_base64 {path}: {e}"))?;
+    Ok(base64_encode(&bytes))
+}
+
 /// Recursively remove a file or directory. Guarded: rejects `..` traversal and
 /// requires the resolved path to live under a `.continuum` working store, so it
 /// can only delete continuum's local issue artifacts — never arbitrary repo
@@ -1226,6 +1335,8 @@ pub fn run() {
             list_dir,
             read_file,
             write_file,
+            write_file_base64,
+            read_file_base64,
             remove_path,
             pty_spawn,
             pty_write,
