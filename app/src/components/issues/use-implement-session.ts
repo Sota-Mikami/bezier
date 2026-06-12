@@ -249,7 +249,11 @@ export function useImplementSession(
   // Dev-server lifecycle (the Preview). Hook-owned so it survives the
   // Preview⇆Diff toggle AND the Spec⇆Design center-tab switch, and can be
   // stopped on Discard. Keyed off the shared worktree path.
-  const preview = usePreviewServer(root, ref ? workDir(ref.path) : null);
+  const preview = usePreviewServer(
+    root,
+    ref ? workDir(ref.path) : null,
+    issue.id,
+  );
 
   // Embedded terminal (one at a time). termCwd/termSpawn/termNonce mirror the
   // /workspace pattern; pendingInput is written once the pty is ready.

@@ -1494,6 +1494,21 @@ fn gh_pr_state(repo_path: String, branch: String) -> Result<String, String> {
 // (returns Ok(false)); a malformed URL also yields Ok(false).
 // ============================================================================
 
+/// Find a free TCP port by binding 127.0.0.1:0 and reading the assigned port,
+/// then releasing it. Used to give each preview dev server a distinct port so
+/// concurrent previews never collide (DEC-040). Small TOCTOU window between
+/// release and the dev server binding — acceptable for local previews.
+#[tauri::command]
+fn find_free_port() -> Result<u16, String> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("find_free_port bind: {e}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("find_free_port addr: {e}"))?
+        .port();
+    Ok(port)
+}
+
 #[tauri::command]
 fn http_ping(url: String) -> Result<bool, String> {
     use std::io::{Read, Write};
@@ -1724,6 +1739,7 @@ pub fn run() {
             gh_pr_create,
             gh_pr_state,
             http_ping,
+            find_free_port,
             symlink,
             clone_dir,
             app_data_dir,

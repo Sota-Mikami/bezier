@@ -95,8 +95,11 @@ export function AppSidebar() {
   React.useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      const list = await ptyStatuses().catch(() => [] as AgentStatus[]);
+      const all = await ptyStatuses().catch(() => [] as AgentStatus[]);
       if (cancelled) return;
+      // Exclude preview dev-server ptys (key "preview:*", DEC-040) — they're not
+      // agents and must not appear in the Agent Inbox / issue dots.
+      const list = all.filter((s) => !s.key.startsWith("preview:"));
       const map = new Map(list.map((s) => [s.key, s]));
       setStatusByKey(map);
 

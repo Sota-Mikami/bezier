@@ -316,6 +316,11 @@ export function httpPing(url: string): Promise<boolean> {
   return invoke<boolean>("http_ping", { url });
 }
 
+/** Allocate a free TCP port so concurrent previews never collide (DEC-040). */
+export function findFreePort(): Promise<number> {
+  return invoke<number>("find_free_port");
+}
+
 /**
  * Create a symlink at `linkPath` pointing to `target` (Rust `symlink`). No-op if
  * `linkPath` already exists. Rejects (clear Err) if `target` does not exist —

@@ -17,7 +17,9 @@ import * as React from "react";
 
 import {
   ptySpawn,
-  ptyKill,
+  ptyKillKey,
+  ptyLookup,
+  ptyBacklog,
   onPtyData,
   onPtyExit,
   type UnlistenFn,
@@ -33,6 +35,7 @@ import {
   buildTauriDevCommand,
   previewUrl,
   httpPing,
+  findFreePort,
   packageCwd,
   ensureWorktreeNodeModules,
   ensureWorktreeTauriTarget,
@@ -47,6 +50,76 @@ export type PreviewStatus = "idle" | "starting" | "ready" | "error" | "stopped";
 const LOG_CAP = 20_000;
 const POLL_MS = 800;
 const READY_TIMEOUT_MS = 90_000;
+
+// --- Persistent preview registry (DEC-040) ---------------------------------
+// Preview dev servers now SURVIVE leaving an issue (like the agent pty, DEC-026)
+// so returning reattaches instead of restarting. Safety rails: a free port per
+// preview (no collisions), a concurrency CAP (evict the least-recently-viewed),
+// and an idle sweep (stop previews not viewed for a while). The pty is keyed
+// `preview:<previewKey>`; this module-level map tracks each running preview's
+// port + last-viewed time. It lives as long as the app runs — and previews die
+// with the app (SIGHUP on the pty), so a fresh launch starts clean.
+
+const PREVIEW_PTY_PREFIX = "preview:";
+const MAX_PREVIEWS = 3;
+const IDLE_STOP_MS = 10 * 60_000; // stop a preview not viewed for 10 min
+const SWEEP_MS = 60_000;
+
+interface PreviewEntry {
+  port: number;
+  isTauri: boolean;
+  lastViewedAt: number;
+}
+
+const previewRegistry = new Map<string, PreviewEntry>();
+
+function previewPtyKey(key: string): string {
+  return `${PREVIEW_PTY_PREFIX}${key}`;
+}
+
+/** Mark a preview as viewed (keeps it out of the idle sweep). */
+function touchPreview(key: string): void {
+  const e = previewRegistry.get(key);
+  if (e) e.lastViewedAt = Date.now();
+}
+
+/** Stop + forget a preview (kills its keyed pty). */
+async function dropPreview(key: string): Promise<void> {
+  previewRegistry.delete(key);
+  await ptyKillKey(previewPtyKey(key)).catch(() => {});
+}
+
+/** Enforce the concurrency cap before starting `keepKey`: evict the
+ * least-recently-viewed OTHER preview while at/over the limit. */
+async function enforcePreviewCap(keepKey: string): Promise<void> {
+  while (previewRegistry.size >= MAX_PREVIEWS && !previewRegistry.has(keepKey)) {
+    let lruKey: string | null = null;
+    let lruAt = Infinity;
+    for (const [k, e] of previewRegistry) {
+      if (k === keepKey) continue;
+      if (e.lastViewedAt < lruAt) {
+        lruAt = e.lastViewedAt;
+        lruKey = k;
+      }
+    }
+    if (!lruKey) break;
+    await dropPreview(lruKey);
+  }
+}
+
+// Idle sweep: started once, runs for the app's lifetime. Stops previews not
+// viewed for IDLE_STOP_MS. (Date.now is fine in the app runtime.)
+let sweepStarted = false;
+function ensureIdleSweep(): void {
+  if (sweepStarted || typeof window === "undefined") return;
+  sweepStarted = true;
+  window.setInterval(() => {
+    const now = Date.now();
+    for (const [k, e] of [...previewRegistry]) {
+      if (now - e.lastViewedAt >= IDLE_STOP_MS) void dropPreview(k);
+    }
+  }, SWEEP_MS);
+}
 
 // Strip ANSI escape sequences (color + cursor control like `\x1b[32m`, `\x1b[0K`)
 // from dev-server / Rust-build output. The log pane renders plain text, so raw
@@ -90,6 +163,7 @@ export interface PreviewServer {
 export function usePreviewServer(
   root: string,
   worktreePath: string | null,
+  previewKey: string,
 ): PreviewServer {
   const [status, setStatus] = React.useState<PreviewStatus>("idle");
   const [runner, setRunner] = React.useState<RunnerKind>("web");
@@ -109,6 +183,19 @@ export function usePreviewServer(
   // start(). Kept in a ref so start()'s identity doesn't churn on detection.
   const runnerRef = React.useRef<RunnerKind>("web");
   const srcTauriRelRef = React.useRef<string | null>(null);
+
+  // Persistent-preview key (DEC-040). The pty survives leaving the issue; this
+  // key identifies it for reattach / cap / idle.
+  const ptyKey = previewPtyKey(previewKey);
+
+  // Keep this preview "viewed" while the issue is open (out of the idle sweep),
+  // and run the sweep at least once.
+  React.useEffect(() => {
+    ensureIdleSweep();
+    touchPreview(previewKey);
+    const h = window.setInterval(() => touchPreview(previewKey), 30_000);
+    return () => window.clearInterval(h);
+  }, [previewKey]);
 
   // Load saved config + detect package.json defaults when a worktree appears.
   // setState only ever runs in the async continuation (no synchronous effect
@@ -191,16 +278,13 @@ export function usePreviewServer(
     clearTimers();
     // Detach BEFORE killing so the resulting exit is not flagged as a crash.
     detachListeners();
-    const id = ptyIdRef.current;
     ptyIdRef.current = null;
-    if (id) {
-      await ptyKill(id).catch(() => {
-        /* child may already be gone */
-      });
-    }
+    // Kill the PERSISTENT keyed pty + forget it (DEC-040). Used by the explicit
+    // Stop button and by Discard.
+    await dropPreview(previewKey);
     setUrl(null);
     setStatus((s) => (s === "idle" ? "idle" : "stopped"));
-  }, [clearTimers, detachListeners]);
+  }, [clearTimers, detachListeners, previewKey]);
 
   const start = React.useCallback(
     async (override?: PreviewConfig) => {
@@ -217,17 +301,22 @@ export function usePreviewServer(
         return;
       }
 
-      // Tear down any prior server first (detach so its exit is ignored).
+      // Tear down any prior server for this key first (detach so its exit is
+      // ignored), then make room under the concurrency cap (DEC-040).
       clearTimers();
       detachListeners();
-      const prev = ptyIdRef.current;
       ptyIdRef.current = null;
-      if (prev) await ptyKill(prev).catch(() => {});
+      await ptyKillKey(ptyKey).catch(() => {});
+      previewRegistry.delete(previewKey);
+      await enforcePreviewCap(previewKey);
 
       setLog("");
       setError(null);
       setUrl(null);
       setStatus("starting");
+
+      // A free port per preview so concurrent dev servers never collide.
+      const freePort = await findFreePort().catch(() => cfg.port);
 
       // A fresh worktree has no node_modules (gitignored) — clone it from the
       // main repo before launching, else `npm run dev` fails on missing deps.
@@ -245,7 +334,7 @@ export function usePreviewServer(
       // `tauri dev` builds incrementally, and launches on a dedicated port via a
       // --config override (the worktree's window, distinct from the main app).
       let command: string;
-      let launchPort: number;
+      const launchPort = freePort;
       if (isTauri) {
         const rel = srcTauriRelRef.current;
         if (rel) {
@@ -254,12 +343,10 @@ export function usePreviewServer(
             setLog((l) => `${l}[continuum] ${res.note}\n`);
           }
         }
-        launchPort = tauriDevPort(root);
         setTauriPort(launchPort);
         command = buildTauriDevCommand(launchPort);
       } else {
-        launchPort = cfg.port;
-        command = buildDevCommand(cfg, framework);
+        command = buildDevCommand({ ...cfg, port: launchPort }, framework);
       }
 
       // Run in the package dir (root or a subdir like "app") — where package.json
@@ -273,6 +360,7 @@ export function usePreviewServer(
           args: ["-c", command],
           cols: 120,
           rows: 40,
+          key: ptyKey, // persistent: survives leaving the issue (DEC-040)
         });
       } catch (e) {
         setStatus("error");
@@ -280,6 +368,12 @@ export function usePreviewServer(
         return;
       }
       ptyIdRef.current = id;
+      // Track this running preview (port + viewed-time) for reattach / cap / idle.
+      previewRegistry.set(previewKey, {
+        port: launchPort,
+        isTauri,
+        lastViewedAt: Date.now(),
+      });
 
       unlistenRef.current.push(
         await onPtyData((p) => {
@@ -335,7 +429,7 @@ export function usePreviewServer(
           });
       }, POLL_MS);
     },
-    [root, worktreePath, config, framework, clearTimers, detachListeners],
+    [root, worktreePath, config, framework, clearTimers, detachListeners, ptyKey, previewKey],
   );
 
   const saveConfig = React.useCallback(
@@ -346,9 +440,12 @@ export function usePreviewServer(
     [root],
   );
 
-  // Cleanup on unmount: kill the dev server + detach listeners. The listener
-  // array is mutated in place (never reassigned), so capturing it here is the
-  // same object used by start()/stop() throughout the component's life.
+  // Cleanup on unmount: DETACH listeners + stop polling, but DO NOT kill the dev
+  // server (DEC-040) — it persists (keyed pty) so returning to the issue
+  // reattaches instead of restarting. It's stopped only by the idle sweep, the
+  // concurrency cap, the explicit Stop button, or Discard. The listener array is
+  // mutated in place (never reassigned), so capturing it here is the same object
+  // used by start()/stop() throughout the component's life.
   React.useEffect(() => {
     const listeners = unlistenRef.current;
     return () => {
@@ -360,11 +457,75 @@ export function usePreviewServer(
           /* already detached */
         }
       }
-      const id = ptyIdRef.current;
       ptyIdRef.current = null;
-      if (id) ptyKill(id).catch(() => {});
     };
   }, []);
+
+  // Reattach on mount (DEC-040): if a preview is already RUNNING for this issue
+  // (you left and came back), don't restart — find its pty, replay its log, poll
+  // its known port, and show ready. Otherwise leave it to the user's Start.
+  React.useEffect(() => {
+    if (!worktreePath) return;
+    const entry = previewRegistry.get(previewKey);
+    if (!entry) return;
+    let cancelled = false;
+    const unlisteners = unlistenRef.current;
+    (async () => {
+      const id = await ptyLookup(ptyKey).catch(() => null);
+      if (cancelled) return;
+      if (!id) {
+        // Registry stale (e.g. process died) — forget it.
+        previewRegistry.delete(previewKey);
+        return;
+      }
+      ptyIdRef.current = id;
+      touchPreview(previewKey);
+      const backlog = await ptyBacklog(id).catch(() => "");
+      if (cancelled) return;
+      if (backlog) setLog(stripAnsi(backlog).slice(-LOG_CAP));
+      setError(null);
+      setStatus("starting");
+      // Re-attach output + exit listeners to the live pty.
+      unlisteners.push(
+        await onPtyData((p) => {
+          if (p.id !== id) return;
+          setLog((l) => {
+            const next = l + stripAnsi(p.chunk);
+            return next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next;
+          });
+        }),
+      );
+      unlisteners.push(
+        await onPtyExit((p) => {
+          if (p.id !== id || ptyIdRef.current !== id) return;
+          ptyIdRef.current = null;
+          previewRegistry.delete(previewKey);
+          setStatus((s) => (s === "ready" ? "stopped" : "error"));
+        }),
+      );
+      // Poll the known port; it's already up, so this resolves fast.
+      const target = previewUrl(entry.port);
+      const tick = async () => {
+        if (cancelled || ptyIdRef.current !== id) return;
+        const up = await httpPing(target).catch(() => false);
+        if (cancelled || ptyIdRef.current !== id) return;
+        if (up) {
+          if (pollRef.current !== null) window.clearInterval(pollRef.current);
+          pollRef.current = null;
+          if (!entry.isTauri) setUrl(target);
+          if (entry.isTauri) setTauriPort(entry.port);
+          setStatus("ready");
+        }
+      };
+      void tick();
+      pollRef.current = window.setInterval(() => void tick(), POLL_MS);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // worktreePath + previewKey identify the issue; run once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worktreePath, previewKey]);
 
   return {
     status,
