@@ -224,22 +224,49 @@ const editorTheme = EditorView.theme({
   },
   ".cm-placeholder": { color: "var(--muted-foreground)" },
 
-  // Live change flash (DEC-012 §7): a brief accent wash on lines the agent just
-  // rewrote, fading out so the eye catches WHAT changed without lingering noise.
-  // Negative inset margin lets the band breathe past the line padding without
-  // affecting CM6 height measurement (it's a background-only highlight).
-  ".cm-flash": {
-    animation: "cm-flash-fade 2.5s ease-out forwards",
-    borderRadius: "4px",
+  // AI change highlight (DEC-037): when the agent rewrites the Spec, the changed
+  // lines get (1) a crisp left gutter bar so you instantly see WHICH lines
+  // changed, (2) a single light "shimmer" sweep across them — an AI-generation
+  // feel — and (3) a soft violet tint that settles and fades. All one-shot and
+  // self-clearing, so it's noticeable but never しつこい. Violet (--ai) reads as
+  // "AI" against the neutral editor. Background-only + box-shadow, so it never
+  // affects CM6's line-height measurement.
+  ".cm-ai-change": {
+    position: "relative",
+    borderRadius: "3px",
+    animation: "cm-ai-settle 3.2s cubic-bezier(0.22, 1, 0.36, 1) forwards",
   },
-  "@keyframes cm-flash-fade": {
+  "@keyframes cm-ai-settle": {
     "0%": {
-      backgroundColor: "color-mix(in oklab, var(--primary) 30%, transparent)",
+      backgroundColor: "color-mix(in oklab, var(--ai) 15%, transparent)",
+      boxShadow: "inset 2px 0 0 0 var(--ai)",
     },
     "60%": {
-      backgroundColor: "color-mix(in oklab, var(--primary) 20%, transparent)",
+      backgroundColor: "color-mix(in oklab, var(--ai) 9%, transparent)",
+      boxShadow: "inset 2px 0 0 0 color-mix(in oklab, var(--ai) 55%, transparent)",
     },
-    "100%": { backgroundColor: "transparent" },
+    "100%": {
+      backgroundColor: "transparent",
+      boxShadow: "inset 2px 0 0 0 transparent",
+    },
+  },
+  // The shimmer sweep: a soft light band crossing the line once, left→right.
+  ".cm-ai-change::after": {
+    content: "''",
+    position: "absolute",
+    inset: "0",
+    borderRadius: "3px",
+    pointerEvents: "none",
+    background:
+      "linear-gradient(100deg, transparent 18%, color-mix(in oklab, var(--ai) 26%, transparent) 50%, transparent 82%)",
+    backgroundSize: "220% 100%",
+    backgroundRepeat: "no-repeat",
+    animation: "cm-ai-sweep 1.1s ease-out forwards",
+  },
+  "@keyframes cm-ai-sweep": {
+    "0%": { backgroundPosition: "-30% 0", opacity: "0" },
+    "25%": { opacity: "1" },
+    "100%": { backgroundPosition: "150% 0", opacity: "0" },
   },
 
   // Revealed (on-cursor) syntax punctuation: shown, muted (Obsidian-style).
@@ -440,7 +467,7 @@ const editorTheme = EditorView.theme({
 // invisible) decoration. Line decorations must come from a StateField, so this
 // is one.
 const setFlashLines = StateEffect.define<readonly number[]>();
-const flashLineDeco = Decoration.line({ class: "cm-flash" });
+const flashLineDeco = Decoration.line({ class: "cm-ai-change" });
 
 const flashField = StateField.define<DecorationSet>({
   create() {
@@ -587,10 +614,11 @@ function MarkdownEditorInner(
     // prop here is correct.
     if (flashLines && flashLines.length > 0) {
       view.dispatch({ effects: setFlashLines.of(flashLines) });
+      // Clear after the settle animation (cm-ai-settle 3.2s) completes.
       flashTimerRef.current = window.setTimeout(() => {
         flashTimerRef.current = null;
         viewRef.current?.dispatch({ effects: setFlashLines.of([]) });
-      }, 2500);
+      }, 3400);
     }
 
     return () => {

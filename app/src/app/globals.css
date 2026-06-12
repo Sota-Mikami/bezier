@@ -51,6 +51,8 @@
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
+  /* AI accent — used to mark agent-made changes (violet = "AI"). */
+  --ai: oklch(0.58 0.19 285);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -86,6 +88,8 @@
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+  /* AI accent — brighter on dark so it reads against the editor. */
+  --ai: oklch(0.72 0.17 287);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
