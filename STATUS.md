@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-13 / DEC-066 Implement タブもショートカット＋サイズ統一 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-066 タブ shortcut/サイズ・DEC-065 下線タブ・DEC-064 Preview レスポンシブ・DEC-063 ⌘Q確認・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-13 / DEC-068 Annotation 磨き込み（Comment統合/Pen まとめ送信/畳み） -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-068 Annotation・DEC-066 タブ shortcut/サイズ・DEC-065 下線タブ・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+
+## ▶ 2026-06-13 セッション（DEC-068 — Annotation 体験の磨き込み）
+- **Comment 統合**（Figma 方式・クリック=点/ドラッグ=範囲、`rect` ツール廃止）。**Pen 連続描画→まとめ送信**（ペンはツール解除せず溜める）。**アクションバー**（未送信数＋まとめ指示＋undo/redo/clear＋送信）を top 下に統合。**ツールバー畳み**（上の小ピル）。
+- **据え置き＝テキスト直接編集**（Slice C・Implement.Preview 限定／`bezier-inspect.js` 拡張要）。
+- **tsc+eslint green・実機 200・Rust 変更なし**。DEC-068 で commit 済。
 
 ## ▶ 2026-06-13 セッション（DEC-066 — Implement タブもショートカット＋サイズ統一）
 - 共有 `useTabShortcuts`（⌘1-9/⌘⌥←→/Ctrl+Tab・`active` 列のみ反応）を新設し **Implement の Preview/Diff/Code** と Design 候補タブの両方で使用（design-variants の自前実装は置換）。`page.tsx` が BuildReview に `active` を渡す。

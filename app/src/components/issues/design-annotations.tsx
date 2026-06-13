@@ -20,12 +20,15 @@ import {
   MousePointer2,
   MessageSquarePlus,
   Pencil,
-  Square,
   MousePointerClick,
   Send,
   Loader2,
   Check,
   Trash2,
+  Undo2,
+  Redo2,
+  Minus,
+  PanelTop,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -40,7 +43,10 @@ import {
 import { cn } from "@/lib/utils";
 import type { ImplementSession } from "./use-implement-session";
 
-type Tool = "cursor" | "comment" | "pen" | "rect" | "element";
+// Comment is now Figma-style — click = point pin, drag = area rect (DEC-068), so
+// there's no separate "rect" tool. The "rect" annotation KIND still exists (a
+// drag-comment creates one).
+type Tool = "cursor" | "comment" | "pen" | "element";
 type CaptureMode = "none" | "marks" | "clean";
 interface Rect {
   x: number;
@@ -100,6 +106,11 @@ export function AnnotationLayer({
   const [captureMode, setCaptureMode] = React.useState<CaptureMode>("none");
   const [busy, setBusy] = React.useState(false);
   const [hint, setHint] = React.useState<string | null>(null);
+  // Collapse the toolbar out of the way (DEC-068) + a redo stack + a single
+  // "send the whole batch with this instruction" note.
+  const [minimized, setMinimized] = React.useState(false);
+  const [redoStack, setRedoStack] = React.useState<Annotation[]>([]);
+  const [batchNote, setBatchNote] = React.useState("");
 
   // Load the live pins for this surface (survive navigation / restart). Re-keyed
   // by surface.key so switching Design patterns swaps the pin set.
@@ -170,30 +181,27 @@ export function AnnotationLayer({
     };
   }, []);
 
-  // --- pointer handlers (comment / pen / rect) ----------------------------
+  // --- pointer handlers ----------------------------------------------------
+  // Comment (Figma-style, DEC-068): press starts a tentative region; a tiny
+  // movement (a click) drops a POINT pin, a real drag drops an AREA rect. Pen
+  // stays active across strokes so you can draw many, then send once (DEC-068).
   const onPointerDown = (e: React.PointerEvent) => {
     const p = toFrac(e);
     if (tool === "comment") {
       e.preventDefault();
-      const a = newAnnotation("pin", p.x, p.y);
-      addAnnotation(a);
-      setActiveId(a.id);
-      setTool("cursor");
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      setDraftRect({ x: p.x, y: p.y, w: 0, h: 0 });
     } else if (tool === "pen") {
       e.preventDefault();
       (e.target as Element).setPointerCapture?.(e.pointerId);
       setDraftPath([p]);
-    } else if (tool === "rect") {
-      e.preventDefault();
-      (e.target as Element).setPointerCapture?.(e.pointerId);
-      setDraftRect({ x: p.x, y: p.y, w: 0, h: 0 });
     }
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (tool === "pen" && draftPath) {
       setDraftPath((cur) => (cur ? [...cur, toFrac(e)] : cur));
-    } else if (tool === "rect" && draftRect) {
+    } else if (tool === "comment" && draftRect) {
       const p = toFrac(e);
       setDraftRect((r) =>
         r ? { x: r.x, y: r.y, w: p.x - r.x, h: p.y - r.y } : r,
@@ -211,21 +219,45 @@ export function AnnotationLayer({
           { path: draftPath },
         );
         addAnnotation(a);
-        setActiveId(a.id);
+        setRedoStack([]);
+        // Stay in pen — draw more strokes; send them all at once.
       }
       setDraftPath(null);
-      setTool("cursor");
-    } else if (tool === "rect" && draftRect) {
+    } else if (tool === "comment" && draftRect) {
       const n = normRect(draftRect);
-      if (n.w > 0.015 && n.h > 0.015) {
-        const a = newAnnotation("rect", n.x, n.y, { rect: { w: n.w, h: n.h } });
-        addAnnotation(a);
-        setActiveId(a.id);
-      }
+      const a =
+        n.w < 0.015 && n.h < 0.015
+          ? newAnnotation("pin", draftRect.x, draftRect.y) // a click → point
+          : newAnnotation("rect", n.x, n.y, { rect: { w: n.w, h: n.h } }); // drag → area
+      addAnnotation(a);
+      setActiveId(a.id);
+      setRedoStack([]);
       setDraftRect(null);
       setTool("cursor");
     }
   };
+
+  // Undo / redo / clear over the UNSENT drafts (DEC-068).
+  const undoLast = React.useCallback(() => {
+    const removed = [...items].reverse().find((a) => a.status === "draft");
+    if (!removed) return;
+    removeItem(removed.id);
+    setRedoStack((r) => [...r, removed]);
+  }, [items, removeItem]);
+  const redoLast = React.useCallback(() => {
+    if (!redoStack.length) return;
+    addAnnotation(redoStack[redoStack.length - 1]);
+    setRedoStack((r) => r.slice(0, -1));
+  }, [redoStack, addAnnotation]);
+  const clearDrafts = React.useCallback(() => {
+    setItems((cur) => {
+      const next = cur.filter((a) => a.status !== "draft");
+      save(next);
+      return next;
+    });
+    setRedoStack([]);
+    setActiveId(null);
+  }, [save]);
 
   // --- element pick (cooperating preview via postMessage) -----------------
   React.useEffect(() => {
@@ -254,6 +286,7 @@ export function AnnotationLayer({
         });
         addAnnotation(a);
         setActiveId(a.id);
+        setRedoStack([]);
         setTool("cursor");
       }
     };
@@ -356,7 +389,7 @@ export function AnnotationLayer({
   );
 
   const send = React.useCallback(
-    async (batch: Annotation[]) => {
+    async (batch: Annotation[], note?: string) => {
       if (batch.length === 0) return;
       if (!surface.canSend) {
         await messageDialog(surface.cannotSendMessage, { title: "送信できません" });
@@ -365,9 +398,13 @@ export function AnnotationLayer({
       setBusy(true);
       try {
         const shot = await captureShot(false);
-        const lines = batch.map((a) => `${numberOf(a.id)}. [${describe(a)}] ${a.text.trim() || "(指示なし)"}`);
+        const marks = batch.map((a) => `${numberOf(a.id)}. [${describe(a)}] ${a.text.trim() || "(描画/指定を参照)"}`);
+        const lines = note?.trim()
+          ? [`（全体の指示）${note.trim()}`, "", ...marks]
+          : marks;
         const promptText = surface.buildPrompt(lines, shot);
         await surface.send(promptText, `${batch.length} 件の注釈`);
+        setBatchNote("");
         sentTurnRef.current = true;
         sawRunningRef.current = false;
         const ids = new Set(batch.map((a) => a.id));
@@ -392,9 +429,14 @@ export function AnnotationLayer({
     [surface, captureShot, numberOf, save],
   );
 
-  const drafts = items.filter((a) => a.status === "draft" && a.text.trim());
+  // Pen marks are visual (no text needed); comment/area/element need an
+  // instruction. All unsent ones batch together (DEC-068).
+  const drafts = items.filter(
+    (a) => a.status === "draft" && (a.kind === "pen" || a.text.trim() !== ""),
+  );
+  const hasDraftMark = items.some((a) => a.status === "draft");
   const active = activeId ? items.find((a) => a.id === activeId) : null;
-  const drawing = tool === "comment" || tool === "pen" || tool === "rect";
+  const drawing = tool === "comment" || tool === "pen";
   const showMarks = captureMode !== "clean";
   const showChrome = captureMode === "none";
 
@@ -404,10 +446,7 @@ export function AnnotationLayer({
           (element pick lets the iframe receive events). */}
       {drawing && (
         <div
-          className={cn(
-            "absolute inset-0 touch-none",
-            tool === "comment" ? "cursor-copy" : "cursor-crosshair",
-          )}
+          className="absolute inset-0 touch-none cursor-crosshair"
           style={{ pointerEvents: "auto" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -485,20 +524,22 @@ export function AnnotationLayer({
         </svg>
       )}
 
-      {/* Numbered badges (pins / pen / rect / element) */}
+      {/* Numbered badges — not for pen (the stroke IS the mark, DEC-068). */}
       {showMarks &&
-        items.map((a, i) => (
-          <PinBadge
-            key={a.id}
-            n={i + 1}
-            x={a.x}
-            y={a.y}
-            kind={a.kind}
-            status={a.status}
-            active={a.id === activeId}
-            onClick={() => setActiveId((cur) => (cur === a.id ? null : a.id))}
-          />
-        ))}
+        items.map((a, i) =>
+          a.kind === "pen" ? null : (
+            <PinBadge
+              key={a.id}
+              n={i + 1}
+              x={a.x}
+              y={a.y}
+              kind={a.kind}
+              status={a.status}
+              active={a.id === activeId}
+              onClick={() => setActiveId((cur) => (cur === a.id ? null : a.id))}
+            />
+          ),
+        )}
 
       {/* Composer for the active annotation */}
       {active && showChrome && (
@@ -514,28 +555,79 @@ export function AnnotationLayer({
         />
       )}
 
-      {/* Toolbar + batch bar + hint */}
+      {/* Toolbar (top, collapsible) + action bar + hint */}
       {showChrome && (
         <>
-          <Toolbar tool={tool} setTool={setTool} elementPick={surface.elementPick} />
-          {tool === "element" && (
+          <Toolbar
+            tool={tool}
+            setTool={setTool}
+            elementPick={surface.elementPick}
+            minimized={minimized}
+            onToggleMinimized={() => setMinimized((m) => !m)}
+          />
+          {!minimized && tool === "element" && (
             <Banner>要素をクリックして選択してください（Esc でツールバーから解除）</Banner>
           )}
-          {hint && <Banner tone="warn">{hint}</Banner>}
-          {drafts.length > 0 && (
+          {!minimized && hint && <Banner tone="warn">{hint}</Banner>}
+
+          {/* Action bar — one batch send for everything drawn (DEC-068): a single
+              optional instruction + undo / redo / clear + send. Pinned at the
+              TOP (below the toolbar) so it's never lost off-screen. */}
+          {(drafts.length > 0 || (tool === "pen" && hasDraftMark)) && (
             <div
-              className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-background/95 px-3 py-1.5 shadow-lg backdrop-blur"
+              className="absolute left-1/2 top-16 flex max-w-[92%] -translate-x-1/2 items-center gap-1.5 rounded-xl border bg-background/95 px-2 py-1.5 shadow-lg backdrop-blur"
               style={{ pointerEvents: "auto" }}
             >
-              <span className="text-xs text-muted-foreground">未送信 {drafts.length} 件</span>
+              <span className="shrink-0 px-1 text-xs whitespace-nowrap text-muted-foreground">
+                未送信 {drafts.length}
+              </span>
+              <input
+                value={batchNote}
+                onChange={(e) => setBatchNote(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && drafts.length && !busy) {
+                    e.preventDefault();
+                    void send(drafts, batchNote);
+                  }
+                }}
+                placeholder="まとめて指示（任意・Enter で送信）"
+                className="h-7 w-44 min-w-0 rounded-md border bg-background px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring sm:w-56"
+              />
               <button
                 type="button"
-                disabled={busy}
-                onClick={() => void send(drafts)}
-                className="flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+                title="元に戻す"
+                disabled={!hasDraftMark}
+                onClick={undoLast}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+              >
+                <Undo2 className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                title="やり直し"
+                disabled={!redoStack.length}
+                onClick={redoLast}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+              >
+                <Redo2 className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                title="すべてクリア"
+                disabled={!hasDraftMark}
+                onClick={clearDrafts}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive disabled:opacity-40"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                disabled={busy || drafts.length === 0}
+                onClick={() => void send(drafts, batchNote)}
+                className="flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                Agent にまとめて送信
+                送信
               </button>
             </div>
           )}
@@ -635,23 +727,51 @@ function Toolbar({
   tool,
   setTool,
   elementPick,
+  minimized,
+  onToggleMinimized,
 }: {
   tool: Tool;
   setTool: (t: Tool) => void;
   elementPick: boolean;
+  minimized: boolean;
+  onToggleMinimized: () => void;
 }) {
+  // Collapsed: a small pill at the top — tap to bring the tools back (DEC-068).
+  if (minimized) {
+    return (
+      <button
+        type="button"
+        onClick={onToggleMinimized}
+        title="注釈ツールを表示"
+        aria-label="注釈ツールを表示"
+        className="absolute left-1/2 top-3 flex size-7 -translate-x-1/2 items-center justify-center rounded-lg border bg-background/95 text-muted-foreground shadow-lg backdrop-blur transition-colors hover:text-foreground"
+        style={{ pointerEvents: "auto" }}
+      >
+        <PanelTop className="size-4" />
+      </button>
+    );
+  }
   return (
     <div
       className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-lg backdrop-blur"
       style={{ pointerEvents: "auto" }}
     >
       <ToolButton t="cursor" current={tool} setTool={setTool} icon={<MousePointer2 className="size-4" />} label="操作（カーソル）" />
-      <ToolButton t="comment" current={tool} setTool={setTool} icon={<MessageSquarePlus className="size-4" />} label="コメント" />
-      <ToolButton t="pen" current={tool} setTool={setTool} icon={<Pencil className="size-4" />} label="ペン" />
-      <ToolButton t="rect" current={tool} setTool={setTool} icon={<Square className="size-4" />} label="矩形リージョン" />
+      <ToolButton t="comment" current={tool} setTool={setTool} icon={<MessageSquarePlus className="size-4" />} label="コメント（クリック＝点 / ドラッグ＝範囲）" />
+      <ToolButton t="pen" current={tool} setTool={setTool} icon={<Pencil className="size-4" />} label="ペン（何度でも描いてまとめて送信）" />
       {elementPick && (
         <ToolButton t="element" current={tool} setTool={setTool} icon={<MousePointerClick className="size-4" />} label="要素を選択" />
       )}
+      <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
+      <button
+        type="button"
+        onClick={onToggleMinimized}
+        title="ツールバーを畳む"
+        aria-label="ツールバーを畳む"
+        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <Minus className="size-4" />
+      </button>
     </div>
   );
 }
@@ -873,9 +993,9 @@ function Composer({
 }
 
 const KIND_LABEL: Record<Annotation["kind"], string> = {
-  pin: "コメント",
+  pin: "コメント（点）",
   pen: "ペン注釈",
-  rect: "矩形リージョン",
+  rect: "コメント（範囲）",
   element: "要素",
 };
 
