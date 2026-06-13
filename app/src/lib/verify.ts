@@ -1,10 +1,13 @@
-// Verify → Spec (DEC-071). The old Verify sub-tab asked the AI to PASS/FAIL its
-// own work — which every persona distrusted (self-review). This replaces the
-// VERDICT with EVIDENCE collected into the Spec: when an Implement turn settles
-// we gather what's machine-knowable (change scope, sensitive-area flags, the
-// changed files) and write it into a managed "## 検証ログ" block in spec.md. The
-// maker self-scores the acceptance-criteria checkboxes with that evidence in
-// front of them. No verify.md.
+// Verify → Spec (DEC-071/072). The old Verify sub-tab asked the AI to PASS/FAIL
+// its own work — which every persona distrusted (self-review). No bespoke UI now
+// (DEC-072): verification lives IN the Spec. Two evidence sources, both written
+// into spec.md so the maker reads them in the editor and ticks the criteria:
+//   1. per-criterion GROUNDS — the agent writes them under each 受入基準 at the
+//      end of an Implement turn (Implement handoff), and
+//   2. this module's OBJECTIVE machine evidence — change scope + sensitive-area
+//      flags from git (the part the agent can't fudge) → a managed "## 検証ログ"
+//      block, collected when the turn settles.
+// The AI never scores; the maker does. No verify.md.
 
 import { readFile, writeFile } from "@/lib/ipc";
 import { gitDiff, gitStatus, parseDiff, changedPathsFromStatus } from "@/lib/git";
@@ -119,49 +122,6 @@ export async function syncVerifyBlock(
   const block = renderEvidenceBlock(e);
   const next = `${without.replace(/\s*$/, "")}\n\n${block}\n`;
   if (next !== text) await writeFile(path, next);
-}
-
-// ---------------------------------------------------------------------------
-// Acceptance-criteria parsing (the "受入基準" checkboxes the maker self-scores)
-// ---------------------------------------------------------------------------
-
-export interface Criterion {
-  /** 0-based line index in spec.md. */
-  line: number;
-  text: string;
-  checked: boolean;
-}
-
-const CRIT_RE = /^\s*[-*]\s+\[([ xX])\]\s?(.*)$/;
-
-/** Pull the checkbox items under the "## 受入基準" heading. */
-export function parseCriteria(specMd: string): Criterion[] {
-  const lines = specMd.split("\n");
-  const out: Criterion[] = [];
-  let inSection = false;
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    if (/^#{1,6}\s/.test(l)) {
-      inSection = /受入基準/.test(l);
-      continue;
-    }
-    if (!inSection) continue;
-    const m = CRIT_RE.exec(l);
-    if (m) out.push({ line: i, text: m[2].trim(), checked: m[1].toLowerCase() === "x" });
-  }
-  return out;
-}
-
-/** Flip a single criterion's checkbox in spec.md text and return the new text. */
-export function toggleCriterionText(specMd: string, line: number): string {
-  const lines = specMd.split("\n");
-  const l = lines[line];
-  if (l == null) return specMd;
-  const m = CRIT_RE.exec(l);
-  if (!m) return specMd;
-  const next = m[1].toLowerCase() === "x" ? " " : "x";
-  lines[line] = l.replace(/\[([ xX])\]/, `[${next}]`);
-  return lines.join("\n");
 }
 
 function escapeReg(s: string): string {

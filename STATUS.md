@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-13 / DEC-071 Verify→Spec 証拠ベース検証 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-071 Verify→Spec・DEC-070 重大バグ修正・DEC-069 Annotation パリティ・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-14 / DEC-072 Verify を Spec インライン根拠へピボット -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-072 Verify インライン化・DEC-070 重大バグ修正・DEC-069 Annotation パリティ・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+
+## ▶ 2026-06-14 セッション（DEC-072 — Verify を Spec インライン根拠へ）
+- CEO「UI パネルは微妙、Spec に直接 受入基準の根拠を付与したい」→ **DEC-071 の右レールパネルを撤去**。検証は **Spec md そのもの**。
+- ①**根拠はエージェントが付与**（Implement 後、各受入基準の直下に `- 根拠: …`・採点はしない）②**機械証拠は自動**（ターン終了で変更スコープ/機微フラグ→`## 検証ログ`）。**採点は maker** が Spec エディタでチェック。
+- `verify-panel.tsx` 削除・`verify.ts` 整理・`page.tsx` ターン終了 effect・`issues.ts` 手引き。**tsc+eslint green・実機 200**。DEC-072 で commit。
 
 ## ▶ 2026-06-13 セッション（DEC-071 — Verify→Spec 証拠ベース検証）
 - 撤去した自己採点 Verify の置き換え。**AI は採点しない／Bezier が証拠を自動収集／maker が受入基準をチェック／verify.md 廃止・spec.md に集約**。配置＝**Spec タブ右レール**（`VerifyPanel`）。

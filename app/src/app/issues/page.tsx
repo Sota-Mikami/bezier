@@ -72,12 +72,12 @@ import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignVariants } from "@/components/issues/design-variants";
 import { BuildReview } from "@/components/issues/build-review";
-import { VerifyPanel } from "@/components/issues/verify-panel";
 import {
   useImplementSession,
   type ImplementSession,
 } from "@/components/issues/use-implement-session";
 import { gitStatus } from "@/lib/git";
+import { collectEvidence, syncVerifyBlock } from "@/lib/verify";
 
 // Live change visualization (DEC-012 §7).
 // How often we poll the worktree's git status to detect the agent writing CODE
@@ -723,6 +723,24 @@ function IssueWorkbench({
     }
   }, [session.agentState, root, issue.id, setIssue]);
 
+  // Verify → Spec (DEC-071/072): when an Implement turn settles, auto-collect the
+  // OBJECTIVE machine evidence (change scope + sensitive-area flags, from git —
+  // the part the agent can't fudge) into spec.md's managed 検証ログ block. The
+  // per-criterion *grounds* come from the agent itself (Implement handoff writes
+  // them under each 受入基準). The maker reads both in the Spec and self-scores.
+  const prevAgentForVerify = React.useRef(session.agentState);
+  React.useEffect(() => {
+    const was = prevAgentForVerify.current;
+    prevAgentForVerify.current = session.agentState;
+    const wt = session.ref?.path;
+    if (!wt) return;
+    if (was === "running" && session.agentState !== "running") {
+      void collectEvidence(wt, Date.now())
+        .then((e) => syncVerifyBlock(issue, e))
+        .catch(() => {});
+    }
+  }, [session.agentState, session.ref?.path, issue]);
+
   // Delete this issue from the detail view → move to the trash (recoverable).
   // Stop the preview first (so nothing holds the worktree open), move the issue
   // to the trash (git untouched), then return to the list (unmounting the
@@ -900,20 +918,13 @@ function IssueWorkbench({
               Design variant iframes, and the Build preview iframe survive
               switching tabs. */}
           <div className="relative min-h-0 flex-1">
-            <div className={cn("absolute inset-0 flex", tab !== "spec" && "hidden")}>
+            <div className={cn("absolute inset-0", tab !== "spec" && "hidden")}>
               {issue.slots.spec ? (
-                <>
-                  <div className="min-w-0 flex-1">
-                    <SlotEditor
-                      path={slotPath(issue, "spec")}
-                      label="Spec"
-                      onExternalChange={() => signalChange("spec")}
-                    />
-                  </div>
-                  {/* DEC-071: verification lives here — evidence auto-collected
-                      into spec.md, criteria self-scored by the maker. */}
-                  <VerifyPanel session={session} />
-                </>
+                <SlotEditor
+                  path={slotPath(issue, "spec")}
+                  label="Spec"
+                  onExternalChange={() => signalChange("spec")}
+                />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
                   <Loader2 className="size-4 animate-spin" />
