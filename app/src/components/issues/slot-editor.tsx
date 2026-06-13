@@ -192,7 +192,7 @@ function SpecToc({
                 style={{ paddingLeft: `${10 + (h.level - minLevel) * 14}px` }}
               >
                 {active && (
-                  <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" />
+                  <span className="absolute inset-y-0 left-0 w-0.5 bg-foreground" />
                 )}
                 {h.text}
               </button>

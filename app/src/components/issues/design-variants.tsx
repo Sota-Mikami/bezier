@@ -182,8 +182,8 @@ export function DesignVariants({
           color + underline, hover = gray pill). Still move with the Chrome-like
           shortcuts (⌘1-9 / ⌘⌥←→ / Ctrl+Tab). + adds one; × (on hover) closes;
           the adopt action lives at the right end. */}
-      <div className="flex h-9 shrink-0 items-stretch border-b">
-        <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1">
+      <div className="flex shrink-0 items-stretch border-b">
+        <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1.5">
           {variants.map((v) => {
             const isActive = shown?.id === v.id;
             return (
