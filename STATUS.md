@@ -1,5 +1,13 @@
-<!-- 最終更新: 2026-06-13 / DEC-058 Lovable IA・SegmentedControl・ショートカット・Verify→Spec 方針 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-058 Lovable IA・DEC-057 dogfood バッチ・DEC-056 注釈駆動 Design・DEC-051 中央3タブ・DEC-050 ループ）
+<!-- 最終更新: 2026-06-13 / DEC-059 Implement に Code サブタブ（worktree 編集）・Verify 撤去 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-059 Code サブタブ・DEC-058 Lovable IA・DEC-057 dogfood バッチ・DEC-051 中央3タブ・DEC-050 ループ）
+
+## ▶ 2026-06-13 セッション（DEC-059 — Implement に Code サブタブ＋Verify 撤去）
+- **Implement のサブタブ＝Preview / Diff / Code**（Verify は撤去）。Code＝**worktree の実コードを閲覧＋編集**（`code-browser.tsx`）：左＝遅延ファイルツリー、右＝CodeMirror（言語ロード・⌘S 保存）。画像 blob プレビュー／バイナリ・2MB 超はプレースホルダ。
+- **編集（Phase 2 最初から）**: ⌘S→`write_file`→worktree 未コミット→**既存 git-status ウォッチャ→Commit/Ship に自動で乗る**。レース＝**実行中 read-only ロック／settle 時クリーンなら自動リロード／dirty は確認ダイアログで保護**。
+- **根＝開いたフォルダ**（monorepo 対応）: repo ルートでなく `<worktree>/<subPath>`。`subPath` を session 公開。
+- **Rust** `list_dir_all`（allowlist 無視で全ファイル・dotfiles と node_modules/target/.next/out 除外）。`list_dir` は不変。
+- **Verify 撤去＝DEC-058 方針の実現**（自己採点は全ペルソナ不信）。検証＝証拠を Spec に集約する**本実装は未着手**（当面 Verify UI 不在で OK）。
+- **tsc+eslint green・実機 200・Rust 再ビルド済**。**DEC-059 で commit 済**。**大相談の論点**: 統合 Files エクスプローラ（issue 成果物も同ツリー＋各ファイルを最適面へルーティング）。
 
 ## ▶ 2026-06-13 セッション（DEC-058 — Lovable 風 IA ＋ SegmentedControl ＋ ショートカット）
 - **トップバー1本化**（Lovable 参照）: 左＝Title＋`▾`メニュー＋状態、中央＝**SegmentedControl を一段上げ**（Spec/Design/Implement・スライドするサム）、右＝**`Ship▾`に finalize 全集約**（Commit＋Sync/PR/Merge）。`▾`に活動ログ/agent/再Implement/Discard/ゴミ箱を集約 → **左パネルは純チャット**（⋯撤去）。

@@ -116,6 +116,67 @@ fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
     Ok(entries)
 }
 
+/// Like `list_dir`, but surfaces EVERY file (raw extension, lowercased) instead
+/// of only the classify_ext allowlist. For the Code browser (DEC-059), which
+/// shows the real worktree source tree — .tsx/.ts/.css/.json/.rs/… — not just
+/// docs. Still skips dotfiles/dotdirs + SKIP_DIRS, dirs-first then by name.
+/// Lazy: returns one directory's immediate children (the tree expands on click).
+#[tauri::command]
+fn list_dir_all(path: String) -> Result<Vec<FileEntry>, String> {
+    let dir = Path::new(&path);
+    reject_traversal(dir)?;
+
+    let read = fs::read_dir(dir).map_err(|e| format!("list_dir_all {path}: {e}"))?;
+
+    let mut entries: Vec<FileEntry> = Vec::new();
+    for item in read {
+        let item = item.map_err(|e| format!("list_dir_all entry in {path}: {e}"))?;
+        let name = item.file_name().to_string_lossy().into_owned();
+
+        if name.starts_with('.') {
+            continue;
+        }
+
+        let file_type = item
+            .file_type()
+            .map_err(|e| format!("list_dir_all file_type {name}: {e}"))?;
+        let entry_path = item.path().to_string_lossy().into_owned();
+
+        if file_type.is_dir() {
+            if SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            entries.push(FileEntry {
+                path: entry_path,
+                name,
+                is_dir: true,
+                ext: String::new(),
+            });
+        } else if file_type.is_file() {
+            let ext = item
+                .path()
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())
+                .unwrap_or_default();
+            entries.push(FileEntry {
+                path: entry_path,
+                name,
+                is_dir: false,
+                ext,
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    Ok(entries)
+}
+
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
     reject_traversal(Path::new(&path))?;
@@ -1845,6 +1906,7 @@ pub fn run() {
         .manage(PtyState::default())
         .invoke_handler(tauri::generate_handler![
             list_dir,
+            list_dir_all,
             read_file,
             write_file,
             write_file_bytes,

@@ -59,6 +59,27 @@ export function listDir(path: string): Promise<FileEntry[]> {
   return invoke<FileEntry[]>("list_dir", { path });
 }
 
+/**
+ * A directory entry from `list_dir_all` — like FileEntry but `ext` is the raw
+ * lowercased extension ("tsx" | "css" | "json" | …), not the doc allowlist. For
+ * the Code browser's worktree source tree (DEC-059).
+ */
+export interface TreeEntry {
+  path: string;
+  name: string;
+  isDir: boolean;
+  ext: string;
+}
+
+/**
+ * List a directory's immediate children, surfacing EVERY file (raw extension)
+ * rather than only docs. Skips dotfiles + node_modules/target/.next/out.
+ * Lazy per-directory (the tree expands on click). -> invoke("list_dir_all", { path })
+ */
+export function listDirAll(path: string): Promise<TreeEntry[]> {
+  return invoke<TreeEntry[]>("list_dir_all", { path });
+}
+
 /** Read a file's contents as UTF-8 text. -> invoke("read_file", { path }) */
 export function readFile(path: string): Promise<string> {
   return invoke<string>("read_file", { path });

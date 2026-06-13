@@ -107,6 +107,11 @@ export interface ImplementSession {
   issue: Issue;
   gitRepo: boolean | null;
   ref: WorktreeRef | null;
+  /** The opened package's path relative to the worktree/repo root ("" when the
+   * opened folder IS the repo toplevel). The Code browser roots its tree at
+   * <worktree>/<subPath> — the folder you actually opened, not the whole
+   * monorepo. */
+  subPath: string;
   agents: AgentTool[];
   selectedAgentId: string | null;
   setSelectedAgentId: (id: string) => void;
@@ -1199,6 +1204,7 @@ export function useImplementSession(
     issue,
     gitRepo,
     ref,
+    subPath,
     agents,
     selectedAgentId,
     setSelectedAgentId,
