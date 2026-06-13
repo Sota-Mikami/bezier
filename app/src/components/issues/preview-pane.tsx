@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./use-implement-session";
-import { DesignAnnotations } from "./design-annotations";
+import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
 
 const STATUS_LABEL: Record<PreviewStatus, string> = {
   idle: "未起動",
@@ -36,6 +36,32 @@ const STATUS_LABEL: Record<PreviewStatus, string> = {
   error: "エラー",
   stopped: "停止",
 };
+
+// The "build" annotation surface (DEC-056): pins on the live preview become fix
+// requests against the worktree CODE. Element-pick is available (cooperating
+// preview); sending needs a worktree.
+function buildAnnotationSurface(session: ImplementSession): AnnotationSurface {
+  return {
+    key: "build",
+    elementPick: true,
+    canSend: !!session.ref,
+    cannotSendMessage:
+      "先に右パネルの「Build」で worktree を作成してください。",
+    buildPrompt: (lines, shot) =>
+      [
+        "## デザインフィードバック",
+        "プレビュー上の注釈への修正依頼です。下記の番号付き指示に従い、この worktree 内の UI を修正してください。",
+        shot
+          ? `注釈つきスクリーンショット: \`${shot}\`（この画像を開き、同じ番号の付いた箇所を確認してください）`
+          : "(スクリーンショットは取得できませんでした。位置％を参考にしてください)",
+        "",
+        ...lines,
+        "",
+        "対応したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+      ].join("\n"),
+    send: (p, n) => session.sendDesignFeedback(p, n),
+  };
+}
 
 function StatusBadge({ status }: { status: PreviewStatus }) {
   return (
@@ -178,9 +204,15 @@ export function PreviewPane({
               className="h-full w-full border-0 bg-white"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             />
-            {/* Figma-style comment/pen feedback over the live preview (DEC-045/046). */}
+            {/* Figma-style comment/pen feedback over the live preview (DEC-045/046).
+                The shared AnnotationLayer with a "build" surface → edits the
+                worktree CODE (DEC-056). */}
             {session && (
-              <DesignAnnotations session={session} iframeRef={iframeRef} />
+              <AnnotationLayer
+                session={session}
+                iframeRef={iframeRef}
+                surface={buildAnnotationSurface(session)}
+              />
             )}
           </>
         ) : status === "starting" ? (

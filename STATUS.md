@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-13 / DEC-055 Design をメインチャットのステップに（会話駆動） -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-055 会話駆動 Design・DEC-054 スタック非依存・DEC-053 ハイブリッド・DEC-052 左=純チャット・DEC-051 中央3タブ・DEC-050 Build ループ）
+<!-- 最終更新: 2026-06-13 / DEC-056 Design 注釈駆動（Build 共通化）＋パターンタブ＋Spec 追従 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-056 注釈駆動 Design・DEC-055 会話駆動・DEC-054 スタック非依存・DEC-053 ハイブリッド・DEC-052 左=純チャット・DEC-051 中央3タブ・DEC-050 Build ループ）
+
+## ▶ 2026-06-13 セッション（DEC-056 — 注釈駆動 Design）
+- CEO 要件: Design 指示は Chat でなく **Annotation**（Build と共通化）。Design タブ＝**パターン切替タブ / + 追加 / HTML 表示 / Annotation / 確定**。確定→Build。Spec に **パターン一覧＋採用を常に追従**。
+- 実装: `DesignAnnotations`→**`AnnotationLayer`**（`surface` で Build=コード/Design=ワイヤー改訂を切替・注釈ストアも surface 別）。Design タブ全面再構成（タブ＋単一表示＋注釈＋確定）。`handlePickVariant` が adopted 永続化→spec 管理ブロック同期→Build。`reviseDesignPattern`/`syncSpecDesignSection` 新設。
+- **tsc+eslint green・実機 200・未 commit**（feat/build-design-loop に積む想定）。詳細 = DEC-056。後続=左チャット context チップ。
 
 ## ▶ 2026-06-13 セッション（DEC-055 — 会話駆動 Design）
 - CEO「メインチャットの流れの中でステップとして Design を作りたい。今は Design ごとに別プロンプトで二度手間」。→ **Design 規約（`designConventionBlock`）をチャットの seed に常駐注入**。会話で「デザイン案を3つ」と言えば規約どおり `design/NN-slug.html` を書いてボードに自動表示（別プロンプト不要）。チャット手順を **Clarify→Spec→Design→Build** に。Design タブ（ボタン）も併存。

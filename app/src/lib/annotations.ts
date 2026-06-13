@@ -70,8 +70,16 @@ function strip(p: string): string {
   return p.replace(/\/+$/, "");
 }
 
-function annotationsPath(root: string, issueId: string): string {
-  return `${strip(root)}/.bezier/issues/${issueId}/annotations.json`;
+/** Surface-key sanitizer: "build" / "design:01" → filename-safe ("design-01"). */
+function sanitizeKey(key: string): string {
+  return key.replace(/[^A-Za-z0-9._-]/g, "-") || "default";
+}
+
+// DEC-056: annotations are scoped PER SURFACE (the Build preview = "build", each
+// Design pattern = "design:NN") so the shared AnnotationLayer keeps separate pin
+// sets. Stored under .bezier/issues/<id>/annotations/<key>.json.
+function annotationsPath(root: string, issueId: string, surfaceKey: string): string {
+  return `${strip(root)}/.bezier/issues/${issueId}/annotations/${sanitizeKey(surfaceKey)}.json`;
 }
 
 /** The dir handed to the agent (`--add-dir`) holding the feedback screenshots. */
@@ -143,9 +151,10 @@ function coerce(raw: unknown): Annotation[] {
 export async function readAnnotations(
   root: string,
   issueId: string,
+  surfaceKey: string,
 ): Promise<Annotation[]> {
   try {
-    const text = await readFile(annotationsPath(root, issueId));
+    const text = await readFile(annotationsPath(root, issueId, surfaceKey));
     return coerce(JSON.parse(text));
   } catch {
     return [];
@@ -155,10 +164,11 @@ export async function readAnnotations(
 export async function writeAnnotations(
   root: string,
   issueId: string,
+  surfaceKey: string,
   list: Annotation[],
 ): Promise<void> {
   await writeFile(
-    annotationsPath(root, issueId),
+    annotationsPath(root, issueId, surfaceKey),
     `${JSON.stringify(list, null, 2)}\n`,
   );
 }

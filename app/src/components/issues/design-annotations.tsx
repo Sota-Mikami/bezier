@@ -57,14 +57,37 @@ const raf2 = () =>
     requestAnimationFrame(() => requestAnimationFrame(() => r())),
   );
 
-export function DesignAnnotations({
+/**
+ * A surface the annotation layer targets (DEC-056). Build = the live preview
+ * (edits worktree code); Design = a wireframe pattern (revises design/NN.html).
+ * The shared component reads `surface` for the pin store key, which tools are
+ * available, the send guard, the agent prompt, and the send action.
+ */
+export interface AnnotationSurface {
+  /** Pin-store key ("build" | "design:NN"). */
+  key: string;
+  /** Whether element-pick (cooperating preview) applies (live preview only). */
+  elementPick: boolean;
+  /** Can a batch be sent now? (e.g. Build needs a worktree.) */
+  canSend: boolean;
+  /** Shown when canSend is false. */
+  cannotSendMessage: string;
+  /** Build the agent prompt from the numbered instruction lines + screenshot. */
+  buildPrompt: (lines: string[], shot: string | null) => string;
+  /** Send the batch to the agent (sendDesignFeedback / reviseDesignPattern). */
+  send: (promptText: string, note: string) => Promise<void>;
+}
+
+export function AnnotationLayer({
   session,
   iframeRef,
+  surface,
 }: {
   session: ImplementSession;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  surface: AnnotationSurface;
 }) {
-  const { root, issue, ref, sendDesignFeedback, agentState } = session;
+  const { root, issue, agentState } = session;
 
   const layerRef = React.useRef<HTMLDivElement | null>(null);
   const [tool, setTool] = React.useState<Tool>("cursor");
@@ -78,10 +101,11 @@ export function DesignAnnotations({
   const [busy, setBusy] = React.useState(false);
   const [hint, setHint] = React.useState<string | null>(null);
 
-  // Load the live pins for this issue (survive navigation / restart).
+  // Load the live pins for this surface (survive navigation / restart). Re-keyed
+  // by surface.key so switching Design patterns swaps the pin set.
   React.useEffect(() => {
     let cancelled = false;
-    readAnnotations(root, issue.id)
+    readAnnotations(root, issue.id, surface.key)
       .then((a) => {
         if (!cancelled) setItems(a);
       })
@@ -89,14 +113,14 @@ export function DesignAnnotations({
     return () => {
       cancelled = true;
     };
-  }, [root, issue.id]);
+  }, [root, issue.id, surface.key]);
 
   // Persist helpers — functional updates so effects never read a stale list.
   const save = React.useCallback(
     (next: Annotation[]) => {
-      void writeAnnotations(root, issue.id, next).catch(() => {});
+      void writeAnnotations(root, issue.id, surface.key, next).catch(() => {});
     },
-    [root, issue.id],
+    [root, issue.id, surface.key],
   );
   const addAnnotation = React.useCallback(
     (a: Annotation) => {
@@ -334,29 +358,16 @@ export function DesignAnnotations({
   const send = React.useCallback(
     async (batch: Annotation[]) => {
       if (batch.length === 0) return;
-      if (!ref) {
-        await messageDialog(
-          "先に右パネルの「Implement with AI」で worktree を作成してください。",
-          { title: "worktree がありません" },
-        );
+      if (!surface.canSend) {
+        await messageDialog(surface.cannotSendMessage, { title: "送信できません" });
         return;
       }
       setBusy(true);
       try {
         const shot = await captureShot(false);
         const lines = batch.map((a) => `${numberOf(a.id)}. [${describe(a)}] ${a.text.trim() || "(指示なし)"}`);
-        const promptText = [
-          "## デザインフィードバック",
-          "プレビュー上の注釈への修正依頼です。下記の番号付き指示に従い、この worktree 内の UI を修正してください。",
-          shot
-            ? `注釈つきスクリーンショット: \`${shot}\`（この画像を開き、同じ番号の付いた箇所を確認してください）`
-            : "(スクリーンショットは取得できませんでした。位置％を参考にしてください)",
-          "",
-          ...lines,
-          "",
-          "対応したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
-        ].join("\n");
-        await sendDesignFeedback(promptText, `${batch.length} 件の注釈`);
+        const promptText = surface.buildPrompt(lines, shot);
+        await surface.send(promptText, `${batch.length} 件の注釈`);
         sentTurnRef.current = true;
         sawRunningRef.current = false;
         const ids = new Set(batch.map((a) => a.id));
@@ -378,7 +389,7 @@ export function DesignAnnotations({
         setBusy(false);
       }
     },
-    [ref, captureShot, numberOf, sendDesignFeedback, save],
+    [surface, captureShot, numberOf, save],
   );
 
   const drafts = items.filter((a) => a.status === "draft" && a.text.trim());
@@ -506,7 +517,7 @@ export function DesignAnnotations({
       {/* Toolbar + batch bar + hint */}
       {showChrome && (
         <>
-          <Toolbar tool={tool} setTool={setTool} />
+          <Toolbar tool={tool} setTool={setTool} elementPick={surface.elementPick} />
           {tool === "element" && (
             <Banner>要素をクリックして選択してください（Esc でツールバーから解除）</Banner>
           )}
@@ -620,7 +631,15 @@ function ToolButton({
   );
 }
 
-function Toolbar({ tool, setTool }: { tool: Tool; setTool: (t: Tool) => void }) {
+function Toolbar({
+  tool,
+  setTool,
+  elementPick,
+}: {
+  tool: Tool;
+  setTool: (t: Tool) => void;
+  elementPick: boolean;
+}) {
   return (
     <div
       className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-lg backdrop-blur"
@@ -630,7 +649,9 @@ function Toolbar({ tool, setTool }: { tool: Tool; setTool: (t: Tool) => void }) 
       <ToolButton t="comment" current={tool} setTool={setTool} icon={<MessageSquarePlus className="size-4" />} label="コメント" />
       <ToolButton t="pen" current={tool} setTool={setTool} icon={<Pencil className="size-4" />} label="ペン" />
       <ToolButton t="rect" current={tool} setTool={setTool} icon={<Square className="size-4" />} label="矩形リージョン" />
-      <ToolButton t="element" current={tool} setTool={setTool} icon={<MousePointerClick className="size-4" />} label="要素を選択" />
+      {elementPick && (
+        <ToolButton t="element" current={tool} setTool={setTool} icon={<MousePointerClick className="size-4" />} label="要素を選択" />
+      )}
     </div>
   );
 }
@@ -858,4 +879,4 @@ const KIND_LABEL: Record<Annotation["kind"], string> = {
   element: "要素",
 };
 
-export default DesignAnnotations;
+export default AnnotationLayer;

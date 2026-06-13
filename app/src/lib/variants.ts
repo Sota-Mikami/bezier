@@ -14,8 +14,8 @@
 //   (logged to the thread). In-file metadata: <title> (name) +
 //   `<!-- bezier:prompt: ... -->` (the instruction that produced it).
 
-import { listDir, readFile } from "@/lib/ipc";
-import type { Issue } from "@/lib/issues";
+import { listDir, readFile, writeFile } from "@/lib/ipc";
+import { slotPath, type Issue } from "@/lib/issues";
 
 export interface Variant {
   /** Display id = the zero-padded index string ("01", "02"…), or the bare name
@@ -112,4 +112,90 @@ export function nextVariantId(existing: Variant[]): string {
 /** Read a design idea's HTML content (for the iframe srcdoc). */
 export async function readVariant(path: string): Promise<string> {
   return readFile(path);
+}
+
+// ---------------------------------------------------------------------------
+// Adopted direction + Spec↔Design sync (DEC-056)
+// ---------------------------------------------------------------------------
+//
+// The adopted pattern id is the durable DECISION ("code is not the asset"). It's
+// persisted beside the wireframes (design/.adopted) and mirrored into a managed
+// block in spec.md so the Spec always shows the design directions + which one was
+// chosen. The block is app-maintained between markers, so it can't drift.
+
+function adoptedPath(issue: Pick<Issue, "dir">): string {
+  return `${designDir(issue)}/.adopted`;
+}
+
+/** Read the adopted pattern id, or null. */
+export async function readAdoptedDesign(
+  issue: Pick<Issue, "dir">,
+): Promise<string | null> {
+  try {
+    const v = (await readFile(adoptedPath(issue))).trim();
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the adopted pattern id. */
+export async function writeAdoptedDesign(
+  issue: Pick<Issue, "dir">,
+  id: string,
+): Promise<void> {
+  await writeFile(adoptedPath(issue), `${id}\n`);
+}
+
+const DESIGN_MARK_START = "<!-- bezier:design:start -->";
+const DESIGN_MARK_END = "<!-- bezier:design:end -->";
+
+function escapeReg(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Rewrite the managed "デザイン方向" block in spec.md from the current patterns +
+ * adopted id (DEC-056). Idempotent: removes any existing block and appends a
+ * fresh one at the end; writes only when the content actually changes; no-ops
+ * when spec.md is missing. Each line: `- NN — title [✅ 採用]`.
+ */
+export async function syncSpecDesignSection(
+  issue: Pick<Issue, "dir">,
+  patterns: Pick<Variant, "id" | "title" | "slug">[],
+  adoptedId: string | null,
+): Promise<void> {
+  const path = slotPath(issue, "spec");
+  let text: string;
+  try {
+    text = await readFile(path);
+  } catch {
+    return; // no spec yet
+  }
+  const re = new RegExp(
+    `\\n*${escapeReg(DESIGN_MARK_START)}[\\s\\S]*?${escapeReg(DESIGN_MARK_END)}\\n*`,
+    "g",
+  );
+  const withoutBlock = text.replace(re, "\n");
+  let next = withoutBlock;
+  if (patterns.length > 0) {
+    const lines = patterns.map((p) => {
+      const name = p.title || p.slug;
+      const adopted = p.id === adoptedId ? " ✅ 採用" : "";
+      return `- ${p.id}${name ? ` — ${name}` : ""}${adopted}`;
+    });
+    const block = [
+      DESIGN_MARK_START,
+      "## デザイン方向（Bezier が自動更新）",
+      ...lines,
+      adoptedId ? "" : "<!-- まだ採用は決まっていません -->",
+      DESIGN_MARK_END,
+    ]
+      .filter((l) => l !== "")
+      .join("\n");
+    next = `${withoutBlock.replace(/\s*$/, "")}\n\n${block}\n`;
+  }
+  if (next !== text) {
+    await writeFile(path, next);
+  }
 }

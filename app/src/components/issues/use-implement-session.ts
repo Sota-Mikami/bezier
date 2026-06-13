@@ -59,6 +59,11 @@ import {
   changedPathsFromStatus,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
+import {
+  listVariants,
+  writeAdoptedDesign,
+  syncSpecDesignSection,
+} from "@/lib/variants";
 import { getSettings, resolveDark } from "@/lib/settings";
 import {
   ptyWrite,
@@ -190,6 +195,12 @@ export interface ImplementSession {
   canGenerateVariant: boolean;
   handleGenerateVariant: (ids: string[], context: string) => Promise<void>;
   handlePickVariant: (id: string) => Promise<void>;
+  /**
+   * Revise a Design wireframe from annotations (DEC-056): the agent edits the
+   * design/NN.html the annotations were drawn on (NOT code). Wired to the shared
+   * AnnotationLayer's "design" surface. The prompt already names the file.
+   */
+  reviseDesignPattern: (promptText: string, note: string) => Promise<void>;
   handleAccept: () => Promise<void>;
   handleDiscard: () => Promise<void>;
 }
@@ -839,6 +850,11 @@ export function useImplementSession(
       setError(null);
       setInfo(null);
       try {
+        // Record the DECISION (durable) + mirror it into spec.md (DEC-056).
+        await writeAdoptedDesign(issue, id).catch(() => {});
+        await listVariants(issue)
+          .then((vs) => syncSpecDesignSection(issue, vs, id))
+          .catch(() => {});
         await ptyKillKey(issue.id).catch(() => {});
         if (ref) {
           // Already building — continue in the worktree.
@@ -885,6 +901,25 @@ export function useImplementSession(
       onStatusChange,
       loadBehind,
     ],
+  );
+
+  // Revise a Design wireframe from annotations (DEC-056). Same launch shape as
+  // generation (cwd = worktree if building, else the issue folder; resume only
+  // when there's a build session). The prompt (built by the AnnotationLayer's
+  // design surface) already names design/NN.html and forbids touching code.
+  const reviseDesignPattern = React.useCallback(
+    async (promptText: string, note: string) => {
+      if (!selectedAgent?.available) {
+        throw new Error(
+          "利用可能なエージェント (claude / codex) が見つかりません。",
+        );
+      }
+      const cwd = ref ? workDir(ref.path) : issue.dir;
+      await ptyKillKey(issue.id).catch(() => {});
+      launchAgent(selectedAgent, cwd, { prompt: promptText, resume: !!ref });
+      void logEvent("variant", note);
+    },
+    [ref, selectedAgent, issue, launchAgent, logEvent, workDir],
   );
 
   // Resume the prior agent conversation in the existing worktree. For claude this
@@ -1209,6 +1244,7 @@ export function useImplementSession(
     canGenerateVariant,
     handleGenerateVariant,
     handlePickVariant,
+    reviseDesignPattern,
     handleAccept,
     handleDiscard,
   };
