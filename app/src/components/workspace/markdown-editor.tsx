@@ -115,6 +115,9 @@ export interface MarkdownEditorProps {
    * flash. Applied once per mount (this component remounts on each external reload).
    */
   flashLines?: number[];
+  /** Fired (rAF-throttled) with the 1-based line at the top of the viewport, so a
+   * ToC can highlight the section in view (DEC-057). */
+  onScrollLine?: (line: number) => void;
   className?: string;
 }
 
@@ -673,6 +676,7 @@ function MarkdownEditorInner(
     onSaved,
     flushOnUnmount,
     flashLines,
+    onScrollLine,
     className,
   } = props;
 
@@ -693,6 +697,7 @@ function MarkdownEditorInner(
   const onSavedRef = React.useRef(onSaved);
   const onDirtyRef = React.useRef(onDirtyChange);
   const onEditRef = React.useRef(onEdit);
+  const onScrollLineRef = React.useRef(onScrollLine);
   const flushOnUnmountRef = React.useRef(flushOnUnmount);
   const saveRef = React.useRef<() => Promise<void>>(async () => {});
   React.useEffect(() => {
@@ -702,6 +707,7 @@ function MarkdownEditorInner(
     onSavedRef.current = onSaved;
     onDirtyRef.current = onDirtyChange;
     onEditRef.current = onEdit;
+    onScrollLineRef.current = onScrollLine;
     flushOnUnmountRef.current = flushOnUnmount;
   });
 
@@ -833,12 +839,44 @@ function MarkdownEditorInner(
     viewRef.current = view;
     dirtyRef.current = false;
 
+    // Report the line at the top of the viewport (rAF-throttled) so a ToC can
+    // highlight the section in view (DEC-057).
+    let scrollRaf = 0;
+    const emitScrollLine = () => {
+      scrollRaf = 0;
+      const top = view.scrollDOM.scrollTop;
+      try {
+        const block = view.lineBlockAtHeight(top + 1);
+        const line = view.state.doc.lineAt(block.from).number;
+        onScrollLineRef.current?.(line);
+      } catch {
+        /* doc briefly empty during teardown */
+      }
+    };
+    const onScroll = () => {
+      if (scrollRaf) return;
+      scrollRaf = window.requestAnimationFrame(emitScrollLine);
+    };
+    view.scrollDOM.addEventListener("scroll", onScroll, { passive: true });
+    window.requestAnimationFrame(emitScrollLine); // initial
+
     // Live change flash (DEC-012 §7): on mount, paint the changed lines and clear
     // them after the fade. `flashLines` is fixed for this mounted instance (the
     // parent remounts via key on each external reload), so reading the closed-over
     // prop here is correct.
     if (flashLines && flashLines.length > 0) {
       view.dispatch({ effects: setFlashLines.of(flashLines) });
+      // Jump to the FIRST changed line so the user lands on what the agent just
+      // changed (DEC-057), not the top of the doc.
+      const firstLine = Math.min(
+        ...flashLines.filter((n) => n >= 1 && n <= view.state.doc.lines),
+      );
+      if (Number.isFinite(firstLine)) {
+        const pos = view.state.doc.line(firstLine).from;
+        view.dispatch({
+          effects: EditorView.scrollIntoView(pos, { y: "center" }),
+        });
+      }
       // Clear after the settle animation (cm-ai-settle 3.2s) completes.
       flashTimerRef.current = window.setTimeout(() => {
         flashTimerRef.current = null;
@@ -851,6 +889,8 @@ function MarkdownEditorInner(
         window.clearTimeout(flashTimerRef.current);
         flashTimerRef.current = null;
       }
+      if (scrollRaf) window.cancelAnimationFrame(scrollRaf);
+      view.scrollDOM.removeEventListener("scroll", onScroll);
       // Best-effort autosave flush before teardown (opt-in). Fire-and-forget:
       // save() reads viewRef BEFORE we destroy, so the latest text is captured.
       if (flushOnUnmountRef.current && dirtyRef.current) {

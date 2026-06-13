@@ -137,7 +137,10 @@ function parseHeadings(body: string): TocHeading[] {
     }
     if (inFence) continue;
     const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (m) out.push({ level: m[1].length, text: m[2].trim(), line: i + 1 });
+    // Skip H1 — that's the spec title; the ToC lists ## and deeper (DEC-057).
+    if (m && m[1].length >= 2) {
+      out.push({ level: m[1].length, text: m[2].trim(), line: i + 1 });
+    }
   }
   return out;
 }
@@ -153,36 +156,49 @@ function headingsEqual(a: TocHeading[], b: TocHeading[]): boolean {
 
 function SpecToc({
   headings,
+  activeLine,
   onJump,
 }: {
   headings: TocHeading[];
+  /** The heading line of the section currently in view (highlighted). */
+  activeLine: number | null;
   onJump: (line: number) => void;
 }) {
   const minLevel = Math.min(...headings.map((h) => h.level));
   return (
-    <nav className="hidden w-48 shrink-0 overflow-y-auto border-r bg-muted/20 py-2 lg:block">
-      <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+    <nav className="hidden w-56 shrink-0 overflow-y-auto border-r bg-muted/30 px-2 py-3 lg:block">
+      <div className="px-2 pb-2 text-[11px] font-semibold tracking-wide text-muted-foreground">
         目次
       </div>
-      <ul>
-        {headings.map((h, i) => (
-          <li key={`${h.line}-${i}`}>
-            <button
-              type="button"
-              onClick={() => onJump(h.line)}
-              title={h.text}
-              className={cn(
-                "block w-full truncate rounded-sm py-0.5 pr-2 text-left text-[11px] transition-colors hover:bg-muted hover:text-foreground",
-                h.level <= minLevel
-                  ? "font-medium text-foreground/80"
-                  : "text-muted-foreground",
-              )}
-              style={{ paddingLeft: `${12 + (h.level - minLevel) * 12}px` }}
-            >
-              {h.text}
-            </button>
-          </li>
-        ))}
+      <ul className="space-y-px">
+        {headings.map((h, i) => {
+          const top = h.level <= minLevel;
+          const active = h.line === activeLine;
+          return (
+            <li key={`${h.line}-${i}`}>
+              <button
+                type="button"
+                onClick={() => onJump(h.line)}
+                title={h.text}
+                className={cn(
+                  "relative block w-full truncate rounded-md py-1 pr-2 text-left text-xs leading-snug transition-colors",
+                  active
+                    ? "bg-foreground/[0.06] font-medium text-foreground"
+                    : cn(
+                        "hover:bg-muted hover:text-foreground",
+                        top ? "font-medium text-foreground/80" : "text-muted-foreground",
+                      ),
+                )}
+                style={{ paddingLeft: `${10 + (h.level - minLevel) * 14}px` }}
+              >
+                {active && (
+                  <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" />
+                )}
+                {h.text}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </nav>
   );
@@ -241,6 +257,8 @@ function SlotEditorInner({
   const [flashLines, setFlashLines] = React.useState<number[]>([]);
   // Read-only ToC headings (DEC-057), derived from the live body.
   const [headings, setHeadings] = React.useState<TocHeading[]>([]);
+  // 1-based body line at the top of the editor viewport → which section is active.
+  const [scrollTopLine, setScrollTopLine] = React.useState(1);
 
   const mdRef = React.useRef<MarkdownEditorHandle>(null);
   // Latest onExternalChange in a ref so applyExternal stays stable (it's a watch
@@ -459,6 +477,16 @@ function SlotEditorInner({
     };
   }, []);
 
+  // The section in view = the last heading at or above the viewport-top line.
+  const activeHeadingLine = React.useMemo<number | null>(() => {
+    let active: number | null = headings.length ? headings[0].line : null;
+    for (const h of headings) {
+      if (h.line <= scrollTopLine) active = h.line;
+      else break;
+    }
+    return active;
+  }, [headings, scrollTopLine]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center gap-2 border-b px-4 py-2">
@@ -516,6 +544,7 @@ function SlotEditorInner({
         {headings.length >= 2 && (
           <SpecToc
             headings={headings}
+            activeLine={activeHeadingLine}
             onJump={(line) => mdRef.current?.scrollToLine(line)}
           />
         )}
@@ -533,6 +562,7 @@ function SlotEditorInner({
               frontmatterDirty={false}
               onDirtyChange={setDirty}
               onEdit={handleEdit}
+              onScrollLine={setScrollTopLine}
               flashLines={flashLines}
               flushOnUnmount
             />

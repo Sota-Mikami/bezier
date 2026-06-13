@@ -1,5 +1,12 @@
-<!-- 最終更新: 2026-06-13 / DEC-057 dogfood バッチ（html修正/Implement改名/Design演出/title・ハーネス/Spec ToC） -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-057 dogfood バッチ・DEC-056 注釈駆動 Design・DEC-055 会話駆動・DEC-051 中央3タブ・DEC-050 ループ）
+<!-- 最終更新: 2026-06-13 / DEC-058 Lovable IA・SegmentedControl・ショートカット・Verify→Spec 方針 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-058 Lovable IA・DEC-057 dogfood バッチ・DEC-056 注釈駆動 Design・DEC-051 中央3タブ・DEC-050 ループ）
+
+## ▶ 2026-06-13 セッション（DEC-058 — Lovable 風 IA ＋ SegmentedControl ＋ ショートカット）
+- **トップバー1本化**（Lovable 参照）: 左＝Title＋`▾`メニュー＋状態、中央＝**SegmentedControl を一段上げ**（Spec/Design/Implement・スライドするサム）、右＝**`Ship▾`に finalize 全集約**（Commit＋Sync/PR/Merge）。`▾`に活動ログ/agent/再Implement/Discard/ゴミ箱を集約 → **左パネルは純チャット**（⋯撤去）。
+- **ショートカット**: ⌘⇧[ / ⌘⇧] でビュー循環。Design タブ内は**実 Chrome 準拠**（⌘1–8/⌘9/⌘⌥→←）。各所 `title` に hover ヒント（後続＝Tooltip＋一覧ページ）。Design はブラウザタブ化・幻「生成中…」撤去。Spec は変更セクションへ**自動ジャンプ**。
+- **token 戦略の転換**: 独自 type-scale token 量産をやめ**共有コンポーネント集約**へ（第1弾＝`SegmentedControl`）。
+- **Verify→Spec 方針（決定・実装は次段）**: 4ペルソナ discovery 結論＝AI 自己採点は全員不信 → **自己採点をやめ「証拠」を Spec に集約**（verify.md 廃止／受入基準にインライン status＋証拠リンク）。research = `playbook/research/2026-06-13_verify-ux-discovery-and-direction.md`。
+- **tsc+eslint green・実機 200**。**DEC-058 で commit & main 統合済**。詳細 = DEC-058。**次の大相談**: center に **Code ビュー追加**（/issues 配下の Spec/ログ/画像/html ＋ worktree 実コードを整理して閲覧・編集）。
 
 ## ▶ 2026-06-13 セッション（DEC-057 — dogfood 小issue連打バッチ）
 - **🐛 根本**: Rust `list_dir` が `.html` を捨てていた（`classify_ext` 未許可）→ Design 表示・Spec 同期・演出が全滅。`html/htm` 追加で連鎖回復。**🐛 タブ重複キー**（iframe/AnnotationLayer 同 key）→ `frame-/anno-` 分離。

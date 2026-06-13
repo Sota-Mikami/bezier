@@ -41,8 +41,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuGroup,
   DropdownMenuSeparator,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
 import { useWorkspaceRoot } from "@/lib/workspace-root";
@@ -466,7 +469,7 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
   if (loading) {
     return (
       <div className="flex h-full flex-col">
-        <DetailHeader />
+        <Header title="読み込み中…" />
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
           Loading…
@@ -478,7 +481,7 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
   if (notFound || !issue) {
     return (
       <div className="flex h-full flex-col">
-        <DetailHeader />
+        <Header title="Issue" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <div className="text-base font-medium">Issue が見つかりません</div>
           <Button render={<Link href="/issues" />} nativeButton={false} variant="outline" className="gap-2">
@@ -618,6 +621,29 @@ function IssueWorkbench({
     };
   }, []);
 
+  // Cycle the center view with ⌘⇧[ / ⌘⇧] (DEC-058). Brackets (not numbers /
+  // arrows) so it never collides with the Design tab's ⌘1–9 / ⌘⌥← → shortcuts;
+  // matched via e.code so Shift's "{ }" remapping is irrelevant.
+  React.useEffect(() => {
+    const order: DetailTab[] = ["spec", "design", "build"];
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        e.metaKey &&
+        e.shiftKey &&
+        !e.altKey &&
+        (e.code === "BracketLeft" || e.code === "BracketRight")
+      ) {
+        e.preventDefault();
+        const cur = order.indexOf(tab);
+        const back = e.code === "BracketLeft";
+        const next = ((cur < 0 ? 0 : cur) + (back ? -1 : 1) + order.length) % order.length;
+        handleManualTab(order[next]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, handleManualTab]);
+
   // Pulse the Design tab when a NEW variant file appears (the agent wrote one).
   // The first callback only establishes the baseline (no false-fire on load).
   const lastVariantCount = React.useRef<number | null>(null);
@@ -756,14 +782,25 @@ function IssueWorkbench({
 
   return (
     <div className="flex h-full flex-col">
-      <DetailHeader>
-        <TitleEditor
-          key={issue.title}
-          value={issue.title}
-          onCommit={(t) => void patchMeta({ title: t })}
-        />
-        <div className="ml-auto flex items-center gap-2">
-          <IssueFinalize session={session} />
+      {/* Unified Issue top bar (DEC-058, Lovable-style): title + ▾ menu + state
+          on the left, the Spec/Design/Implement SegmentedControl raised to the
+          center, the Ship finalize on the right. The canvas pane no longer has
+          its own tab header. */}
+      <header className="relative flex h-12 shrink-0 items-center gap-2 border-b px-3">
+        <div className="flex min-w-0 items-center gap-1">
+          <div className="min-w-0 max-w-[10rem] sm:max-w-[18rem]">
+            <TitleEditor
+              key={issue.title}
+              value={issue.title}
+              onCommit={(t) => void patchMeta({ title: t })}
+            />
+          </div>
+          <IssueMenu
+            session={session}
+            historyOpen={showHistory}
+            onToggleHistory={() => setShowHistory((v) => !v)}
+            onDelete={() => void handleDeleteIssue()}
+          />
           <StateBadge
             state={deriveState({
               status: issue.status,
@@ -772,31 +809,61 @@ function IssueWorkbench({
               hasWorktree: !!session.ref,
             })}
           />
-          <button
-            type="button"
-            title="活動ログ"
-            aria-label="活動ログ"
-            onClick={() => setShowHistory((v) => !v)}
-            className={cn(
-              "rounded p-2 transition-colors hover:bg-muted",
-              showHistory
-                ? "bg-muted text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <History className="size-4" />
-          </button>
-          <button
-            type="button"
-            title="Issue を削除"
-            aria-label="Issue を削除"
-            onClick={() => void handleDeleteIssue()}
-            className="rounded p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-          >
-            <Trash2 className="size-4" />
-          </button>
         </div>
-      </DetailHeader>
+
+        {/* Center: the view switcher, raised to the header (one level up). */}
+        <div className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 lg:block">
+          <div className="pointer-events-auto">
+            <SegmentedControl
+              value={tab}
+              onChange={handleManualTab}
+              ariaLabel="Spec / Design / Implement"
+              options={[
+                {
+                  value: "spec",
+                  icon: <FileText className="size-3.5" />,
+                  label: "Spec",
+                  trailing: specPulse ? <UpdatingPulse /> : undefined,
+                  title: "意図と受入基準 ・ ⌘⇧[ / ⌘⇧] で切替",
+                },
+                {
+                  value: "design",
+                  icon: <LayoutGrid className="size-3.5" />,
+                  label: "Design",
+                  trailing: designPulse ? <UpdatingPulse /> : undefined,
+                  title: "HTML の別案を見比べる ・ ⌘⇧[ / ⌘⇧] で切替",
+                },
+                {
+                  value: "build",
+                  icon: <MonitorPlay className="size-3.5" />,
+                  label: "Implement",
+                  trailing: buildPulse ? <UpdatingPulse /> : undefined,
+                  title: "実 repo のプレビュー / Diff / Verify ・ ⌘⇧[ / ⌘⇧] で切替",
+                },
+              ]}
+            />
+          </div>
+        </div>
+
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <IssueShip session={session} />
+        </div>
+      </header>
+
+      {/* Narrow fallback: the switcher under the bar when the header has no room
+          for a centered control. */}
+      <div className="flex shrink-0 items-center border-b px-3 py-1.5 lg:hidden">
+        <SegmentedControl
+          value={tab}
+          onChange={handleManualTab}
+          ariaLabel="Spec / Design / Implement"
+          options={[
+            { value: "spec", icon: <FileText className="size-3.5" />, label: "Spec", trailing: specPulse ? <UpdatingPulse /> : undefined },
+            { value: "design", icon: <LayoutGrid className="size-3.5" />, label: "Design", trailing: designPulse ? <UpdatingPulse /> : undefined },
+            { value: "build", icon: <MonitorPlay className="size-3.5" />, label: "Implement", trailing: buildPulse ? <UpdatingPulse /> : undefined },
+          ]}
+        />
+      </div>
 
       {/* Chat-first layout (DEC-033): LEFT = Agent chat (the driver), RIGHT =
           Spec/Design canvas (the result). The divider between them is draggable
@@ -825,43 +892,9 @@ function IssueWorkbench({
           <div className="mx-auto w-px bg-border transition-colors group-hover/resize:w-0.5 group-hover/resize:bg-primary/50" />
         </div>
 
-        {/* RIGHT: Spec/Design canvas — the result you're shaping. */}
+        {/* RIGHT: Spec/Design/Implement canvas — the result you're shaping. The
+            switcher lives in the top bar now (DEC-058), so no header here. */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
-            <Button
-              variant={tab === "spec" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 gap-1.5"
-              onClick={() => handleManualTab("spec")}
-            >
-              <FileText className="size-3.5" />
-              Spec
-              {specPulse && <UpdatingPulse />}
-            </Button>
-            <Button
-              variant={tab === "design" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 gap-1.5"
-              onClick={() => handleManualTab("design")}
-              title="HTML の別案を作って見比べる（使い捨ての考える層）"
-            >
-              <LayoutGrid className="size-3.5" />
-              Design
-              {designPulse && <UpdatingPulse />}
-            </Button>
-            <Button
-              variant={tab === "build" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 gap-1.5"
-              onClick={() => handleManualTab("build")}
-              title="実 repo のプレビュー ⇆ Diff ⇆ Verify"
-            >
-              <MonitorPlay className="size-3.5" />
-              Implement
-              {buildPulse && <UpdatingPulse />}
-            </Button>
-          </div>
-
           {/* All panes stay mounted (hidden toggling) so the Spec caret, the
               Design variant iframes, and the Build preview iframe survive
               switching tabs. */}
@@ -881,7 +914,11 @@ function IssueWorkbench({
               )}
             </div>
             <div className={cn("absolute inset-0", tab !== "design" && "hidden")}>
-              <DesignVariants session={session} onVariants={handleVariants} />
+              <DesignVariants
+                session={session}
+                onVariants={handleVariants}
+                active={tab === "design"}
+              />
             </div>
             <div className={cn("absolute inset-0", tab !== "build" && "hidden")}>
               <BuildReview session={session} />
@@ -995,16 +1032,6 @@ function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
   );
 }
 
-function DetailHeader({ children }: { children?: React.ReactNode }) {
-  // No toggle / back button here (DEC-024): the sidebar collapse lives in the app
-  // title bar, and the sidebar IS the navigation. This header is just the issue.
-  return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-      {children}
-    </header>
-  );
-}
-
 function TitleEditor({
   value,
   onCommit,
@@ -1035,7 +1062,7 @@ function TitleEditor({
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className="min-w-0 max-w-[36rem] flex-1 truncate rounded-md bg-transparent px-1.5 py-1 text-sm font-medium outline-none hover:bg-muted focus:bg-muted"
+      className="w-full truncate rounded-md bg-transparent px-1.5 py-1 text-sm font-medium outline-none hover:bg-muted focus:bg-muted"
       aria-label="Issue title"
     />
   );
@@ -1081,11 +1108,136 @@ function StateBadge({ state }: { state: DerivedState }) {
   );
 }
 
-// The persistent "ship" cluster in the issue header (DEC-052): Commit checkpoints
-// the branch; Ship ▾ holds the finalize paths (Sync with main / Open PR / Merge),
-// the behind-main status, the PR link, and conflict resolution. Only shown once a
-// worktree exists. All actions come from the shared session.
-function IssueFinalize({ session }: { session: ImplementSession }) {
+// The Issue title ▾ menu (DEC-058): consolidates the occasional, issue-level
+// controls that used to be scattered (left-panel ⋯, header History/Trash icons) —
+// activity log, the implementation agent picker, re-implement, discard, branch,
+// and move-to-trash. Lovable's project-name dropdown, adapted.
+function IssueMenu({
+  session,
+  historyOpen,
+  onToggleHistory,
+  onDelete,
+}: {
+  session: ImplementSession;
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    ref,
+    gitRepo,
+    agents,
+    selectedAgentId,
+    setSelectedAgentId,
+    selectedAgent,
+    action,
+    handleRerun,
+    handleDiscard,
+  } = session;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Issue メニュー"
+        title="活動ログ / エージェント / 破棄 / 削除"
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted"
+      >
+        <ChevronDown className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-56">
+        <DropdownMenuItem
+          className="cursor-pointer gap-2 text-xs"
+          onClick={onToggleHistory}
+        >
+          <History className="size-3.5" />
+          活動ログ{historyOpen ? "を閉じる" : ""}
+        </DropdownMenuItem>
+
+        {agents.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup
+              value={selectedAgentId ?? ""}
+              onValueChange={(v) => setSelectedAgentId(v)}
+            >
+              <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+                実装エージェント
+              </DropdownMenuLabel>
+              {agents.map((a) => (
+                <DropdownMenuRadioItem
+                  key={a.id}
+                  value={a.id}
+                  disabled={!a.available}
+                  className="text-xs"
+                >
+                  {a.name}
+                  {a.comingSoon
+                    ? "（coming soon）"
+                    : !a.available
+                      ? "（not found）"
+                      : ""}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </>
+        )}
+
+        {ref && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-xs"
+              disabled={!selectedAgent?.available || !!action}
+              onClick={() => void handleRerun()}
+            >
+              <RotateCcw className="size-3.5" />
+              編集後の Spec で再 Implement
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-xs text-destructive focus:text-destructive"
+              disabled={!!action}
+              onClick={() => void handleDiscard()}
+            >
+              <Trash2 className="size-3.5" />
+              変更を破棄（Discard）
+            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel
+                className="font-mono text-[10px] font-normal break-all text-muted-foreground"
+                title={ref.path}
+              >
+                {ref.branch}
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+          </>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="cursor-pointer gap-2 text-xs text-destructive focus:text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 className="size-3.5" />
+          Issue をゴミ箱へ移動
+        </DropdownMenuItem>
+
+        {gitRepo === false && (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-amber-600 dark:text-amber-400">
+              <TriangleAlert className="size-3" />
+              git リポジトリではありません
+            </DropdownMenuLabel>
+          </DropdownMenuGroup>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// The single "Ship ▾" finalize button in the top bar (DEC-058, CEO pick): all of
+// Commit (checkpoint) + Sync / Open PR / Merge live in one menu, like Lovable's
+// "Publish". Only shown once a worktree exists. Actions come from the session.
+function IssueShip({ session }: { session: ImplementSession }) {
   const {
     ref,
     action,
@@ -1105,33 +1257,16 @@ function IssueFinalize({ session }: { session: ImplementSession }) {
 
   if (!ref) return null;
   const canMerge = behind === 0 && mergeClean === true && !action;
-  const shipping = action === "pr" || action === "merge" || action === "sync";
 
   return (
     <div className="flex items-center gap-1.5">
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-8 gap-1.5"
-        disabled={!!action}
-        onClick={() => void handleAccept()}
-        title="変更を branch に commit（チェックポイント）"
-      >
-        {action === "accept" ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : (
-          <Check className="size-3.5" />
-        )}
-        Commit
-      </Button>
-
       <DropdownMenu>
         <DropdownMenuTrigger
-          aria-label="Ship（finalize）"
-          title="main へ反映 / PR を作成"
+          aria-label="Ship（commit / finalize）"
+          title="Commit / main へ反映 / PR を作成"
           className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground outline-none transition hover:bg-primary/90"
         >
-          {shipping ? (
+          {action ? (
             <Loader2 className="size-3.5 animate-spin" />
           ) : (
             <GitPullRequest className="size-3.5" />
@@ -1140,6 +1275,19 @@ function IssueFinalize({ session }: { session: ImplementSession }) {
           <ChevronDown className="size-3.5 opacity-80" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-60">
+          <DropdownMenuItem
+            className="cursor-pointer gap-2 text-xs"
+            disabled={!!action}
+            onClick={() => void handleAccept()}
+          >
+            {action === "accept" ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Check className="size-3.5" />
+            )}
+            Commit（チェックポイント）
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-muted-foreground">
               {behind === null ? (

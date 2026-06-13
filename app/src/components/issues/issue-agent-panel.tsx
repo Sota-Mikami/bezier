@@ -16,27 +16,12 @@ import dynamic from "next/dynamic";
 import {
   Loader2,
   MessageSquare,
-  MoreHorizontal,
-  RotateCcw,
-  Trash2,
-  TriangleAlert,
   Sparkles,
   Play,
   GitBranch,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuGroup,
-  DropdownMenuSeparator,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from "@/components/ui/dropdown-menu";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
 import type { ImplementSession } from "./use-implement-session";
 
@@ -78,22 +63,20 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header: チャット + branch + ⋯ */}
+      {/* Header: チャット + branch. The issue-level controls (agent / re-implement
+          / discard) moved to the title ▾ menu in the top bar (DEC-058). */}
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <MessageSquare className="size-3.5 text-muted-foreground" />
         <span className="text-xs font-medium">チャット</span>
         {ref && (
           <span
-            className="flex min-w-0 items-center gap-1 font-mono text-[10px] text-muted-foreground"
+            className="ml-auto flex min-w-0 items-center gap-1 font-mono text-[10px] text-muted-foreground"
             title={ref.branch}
           >
             <GitBranch className="size-3 shrink-0" />
             <span className="truncate">{ref.branch}</span>
           </span>
         )}
-        <div className="ml-auto shrink-0">
-          <SessionMenu session={session} />
-        </div>
       </div>
 
       {/* Body: the conversation. Terminal when live, else resume, else start. */}
@@ -135,110 +118,6 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
         </div>
       )}
     </div>
-  );
-}
-
-// The single ⋯ menu: the occasional controls that used to be buttons — the
-// implementation agent picker, re-running the build, and discarding the worktree.
-function SessionMenu({ session }: { session: ImplementSession }) {
-  const {
-    gitRepo,
-    ref,
-    agents,
-    selectedAgentId,
-    setSelectedAgentId,
-    selectedAgent,
-    action,
-    handleRerun,
-    handleDiscard,
-  } = session;
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="セッション操作"
-        title="エージェント / 再 Implement / Discard"
-        className="flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground"
-      >
-        <MoreHorizontal className="size-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-56">
-        {agents.length === 0 ? (
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
-              エージェントを検出中…
-            </DropdownMenuLabel>
-          </DropdownMenuGroup>
-        ) : (
-          <DropdownMenuRadioGroup
-            value={selectedAgentId ?? ""}
-            onValueChange={(v) => setSelectedAgentId(v)}
-          >
-            <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-              実装エージェント
-            </DropdownMenuLabel>
-            {agents.map((a) => (
-              <DropdownMenuRadioItem
-                key={a.id}
-                value={a.id}
-                disabled={!a.available}
-                className="text-xs"
-              >
-                {a.name}
-                {a.comingSoon
-                  ? "（coming soon）"
-                  : !a.available
-                    ? "（not found）"
-                    : ""}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        )}
-
-        {ref && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="cursor-pointer gap-2 text-xs"
-              disabled={!selectedAgent?.available || !!action}
-              onClick={() => void handleRerun()}
-            >
-              <RotateCcw className="size-3.5" />
-              編集後の Spec で再 Implement
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="cursor-pointer gap-2 text-xs text-destructive focus:text-destructive"
-              disabled={!!action}
-              onClick={() => void handleDiscard()}
-            >
-              <Trash2 className="size-3.5" />
-              変更を破棄（Discard）
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel
-                className="font-mono text-[10px] font-normal break-all text-muted-foreground"
-                title={ref.path}
-              >
-                {ref.branch}
-              </DropdownMenuLabel>
-            </DropdownMenuGroup>
-          </>
-        )}
-
-        {gitRepo === false && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-amber-600 dark:text-amber-400">
-                <TriangleAlert className="size-3" />
-                git リポジトリではありません
-              </DropdownMenuLabel>
-            </DropdownMenuGroup>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

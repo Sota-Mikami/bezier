@@ -14,10 +14,11 @@
 // land in design/ and show here.
 
 import * as React from "react";
-import { Loader2, Plus, Sparkles, ArrowRightCircle, Check } from "lucide-react";
+import { Loader2, Plus, Sparkles, ArrowRightCircle, Check, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { removePath } from "@/lib/ipc";
 import {
   listVariants,
   nextVariantIds,
@@ -35,10 +36,14 @@ import type { ImplementSession } from "./use-implement-session";
 export function DesignVariants({
   session,
   onVariants,
+  active = false,
 }: {
   session: ImplementSession;
   /** Called with the live variant list each refresh (parent pulses the tab). */
   onVariants?: (v: Variant[]) => void;
+  /** Whether the Design center-tab is the visible one (gates the browser-style
+   *  tab keyboard shortcuts so they don't fire from other tabs). */
+  active?: boolean;
 }) {
   const {
     issue,
@@ -140,13 +145,20 @@ export function DesignVariants({
     if (was === "running" && agentState !== "running") void reload();
   }, [agentState, reload]);
 
-  const generating = action === "variant";
-  const busy = generating || agentState === "running";
-
   const onAdd = () => {
     if (!canGenerateVariant) return;
     void handleGenerateVariant(nextVariantIds(variants, 1), "");
   };
+
+  // Close a tab = delete the throwaway wireframe (browser-tab metaphor, DEC-058).
+  const onDelete = React.useCallback(
+    async (v: Variant) => {
+      await removePath(v.path).catch(() => {});
+      setActiveId((cur) => (cur === v.id ? null : cur));
+      await reload();
+    },
+    [reload],
+  );
 
   // The shown pattern: the user's selection if valid, else the newest.
   const shown =
@@ -154,56 +166,145 @@ export function DesignVariants({
     variants[variants.length - 1] ||
     null;
 
+  // Browser-style tab shortcuts (only while the Design tab is visible, DEC-058),
+  // matching Chrome on macOS exactly (per Google's official shortcut docs):
+  //   ⌘1–8 → tab N    ⌘9 → last (rightmost) tab
+  //   ⌘⌥→ → next      ⌘⌥← → prev      Ctrl(+Shift)+Tab → next/prev
+  const shownId = shown?.id ?? null;
+  React.useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      const n = variants.length;
+      if (!n) return;
+      const cycle = (back: boolean) => {
+        const cur = variants.findIndex((v) => v.id === shownId);
+        const next = ((cur < 0 ? 0 : cur) + (back ? -1 : 1) + n) % n;
+        setActiveId(variants[next].id);
+      };
+      // ⌘1–8 → tab N ; ⌘9 → last tab (Chrome semantics)
+      if (e.metaKey && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        const idx = e.key === "9" ? n - 1 : Number(e.key) - 1;
+        if (idx >= 0 && idx < n) {
+          e.preventDefault();
+          setActiveId(variants[idx].id);
+        }
+        return;
+      }
+      // ⌘⌥→ next / ⌘⌥← prev
+      if (e.metaKey && e.altKey && e.key === "ArrowRight") {
+        e.preventDefault();
+        cycle(false);
+        return;
+      }
+      if (e.metaKey && e.altKey && e.key === "ArrowLeft") {
+        e.preventDefault();
+        cycle(true);
+        return;
+      }
+      // Ctrl+Tab → next ; Ctrl+Shift+Tab → prev
+      if (e.ctrlKey && e.key === "Tab") {
+        e.preventDefault();
+        cycle(e.shiftKey);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, variants, shownId]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Pattern tabs + add */}
-      <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
-        {variants.map((v) => (
-          <button
-            key={v.id}
-            type="button"
-            onClick={() => setActiveId(v.id)}
-            title={v.title || v.slug || `案 ${v.id}`}
-            className={cn(
-              "flex h-6 shrink-0 items-center gap-1 rounded-md px-2 font-mono text-[11px] transition-colors",
-              shown?.id === v.id
-                ? "bg-foreground text-background"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            {v.id}
-            {adopted === v.id && (
-              <Check
+      {/* Browser-style tab strip (DEC-058): each pattern is a Chrome-like tab with
+          its title; the active one connects to the canvas. + opens a new one; the
+          adopt action lives at the right end (not bottom). ⌘1-9 / Ctrl+Tab move. */}
+      <div className="flex h-9 shrink-0 items-stretch border-b bg-muted/40">
+        <div className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto px-1.5 pt-1">
+          {variants.map((v) => {
+            const isActive = shown?.id === v.id;
+            return (
+              <div
+                key={v.id}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveId(v.id)}
+                onAuxClick={(e) => {
+                  if (e.button === 1) {
+                    e.preventDefault();
+                    void onDelete(v);
+                  }
+                }}
+                title={v.title || v.slug || `案 ${v.id}`}
                 className={cn(
-                  "size-3",
-                  shown?.id === v.id ? "text-background" : "text-emerald-500",
+                  "group/tab relative flex h-7 min-w-0 max-w-[170px] shrink-0 cursor-default select-none items-center gap-1.5 rounded-t-lg border border-b-0 px-2.5 text-xs transition-colors",
+                  isActive
+                    ? "border-border bg-background text-foreground"
+                    : "border-transparent text-muted-foreground hover:bg-background/50",
                 )}
-              />
-            )}
-            {flashIds.has(v.id) && shown?.id !== v.id && (
-              <span
-                className="bz-dz-dot size-1.5 rounded-full"
-                style={{ background: "var(--ai)" }}
-                aria-hidden
-              />
+              >
+                <span className="font-mono text-[10px] text-muted-foreground/80">
+                  {v.id}
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  {v.title || v.slug || "無題"}
+                </span>
+                {adopted === v.id && (
+                  <Check className="size-3 shrink-0 text-emerald-500" />
+                )}
+                {flashIds.has(v.id) && !isActive && (
+                  <span
+                    className="bz-dz-dot size-1.5 shrink-0 rounded-full"
+                    style={{ background: "var(--ai)" }}
+                    aria-hidden
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onDelete(v);
+                  }}
+                  title="閉じる"
+                  aria-label={`案 ${v.id} を閉じる`}
+                  className="-mr-1 hidden size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground group-hover/tab:flex"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={onAdd}
+            disabled={!canGenerateVariant}
+            title="別案を追加（エージェントが新しい方向を1つ） ⌘T 風"
+            aria-label="別案を追加"
+            className="mb-px flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
+          >
+            {action === "variant" ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Plus className="size-3.5" />
             )}
           </button>
-        ))}
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={!canGenerateVariant}
-          title="別案を追加（エージェントが新しい方向を1つ）"
-          className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-dashed px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-        >
-          <Plus className="size-3" />
-          追加
-        </button>
-        {busy && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 pr-1 text-[11px] text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" />
-            生成中…
-          </span>
+        </div>
+
+        {/* Adopt this pattern → Implement (lives by the tabs, not bottom-right). */}
+        {shown && (
+          <div className="flex shrink-0 items-center border-l pl-2 pr-2">
+            <Button
+              size="sm"
+              className="h-6 gap-1.5 px-2.5 text-[11px]"
+              disabled={!!action}
+              onClick={() => void handlePickVariant(shown.id)}
+              title={`案 ${shown.id} を採用して Implement（実物の DS で実装）へ`}
+            >
+              {action === "variant" ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <ArrowRightCircle className="size-3" />
+              )}
+              {adopted === shown.id ? "再 Implement" : "この案で確定"}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -252,34 +353,6 @@ export function DesignVariants({
         )}
       </div>
 
-      {/* Confirm → Implement */}
-      {shown && (
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2">
-          <div className="min-w-0 truncate text-[11px] text-muted-foreground">
-            <span className="font-mono">{shown.id}</span>{" "}
-            {shown.title || shown.slug || "（無題の案）"}
-            {adopted === shown.id && (
-              <span className="ml-1 text-emerald-600 dark:text-emerald-400">
-                · 採用済み
-              </span>
-            )}
-          </div>
-          <Button
-            size="sm"
-            className="shrink-0 gap-1.5"
-            disabled={!!action}
-            onClick={() => void handlePickVariant(shown.id)}
-            title="この方向を採用してImplement（実物の DS で実装）へ"
-          >
-            {action === "variant" ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <ArrowRightCircle className="size-3.5" />
-            )}
-            {adopted === shown.id ? "この案で再 Implement" : "この案で確定 → Implement"}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
