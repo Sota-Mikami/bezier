@@ -23,12 +23,15 @@ import {
   Maximize2,
   RotateCwSquare,
   Route,
+  Ruler,
+  ExternalLink,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { openExternal } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
@@ -121,7 +124,7 @@ function RunningBadge({
 // Responsive viewport presets for the preview (DEC-064). `fluid` fills the pane;
 // the device presets constrain the iframe to a real width/height (centered) so
 // media queries / reflow can be checked. Rotate swaps w/h.
-type DeviceId = "fluid" | "desktop" | "tablet" | "mobile";
+type DeviceId = "fluid" | "desktop" | "tablet" | "mobile" | "custom";
 const DEVICES: {
   id: DeviceId;
   label: string;
@@ -133,6 +136,7 @@ const DEVICES: {
   { id: "desktop", label: "デスクトップ", icon: Monitor, w: 1280, h: 800 },
   { id: "tablet", label: "タブレット", icon: Tablet, w: 768, h: 1024 },
   { id: "mobile", label: "モバイル", icon: Smartphone, w: 390, h: 844 },
+  { id: "custom", label: "カスタム幅", icon: Ruler },
 ];
 
 export function PreviewPane({
@@ -149,9 +153,11 @@ export function PreviewPane({
 
   const [showSettings, setShowSettings] = React.useState(false);
   const [reloadNonce, setReloadNonce] = React.useState(0);
-  // Responsive viewport (DEC-064) + navigated path.
+  // Responsive viewport (DEC-064) + navigated path. Custom width/height (DEC-074).
   const [deviceId, setDeviceId] = React.useState<DeviceId>("fluid");
   const [portrait, setPortrait] = React.useState(true);
+  const [customW, setCustomW] = React.useState(420);
+  const [customH, setCustomH] = React.useState(900);
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
   // Ref to the live iframe — handed to the annotation overlay so the element
@@ -161,9 +167,22 @@ export function PreviewPane({
   const running = status === "starting" || status === "ready";
 
   const device = DEVICES.find((d) => d.id === deviceId) ?? DEVICES[0];
-  const isFluid = !device.w;
-  const vw = isFluid ? null : portrait ? device.w! : device.h!;
-  const vh = isFluid ? null : portrait ? device.h! : device.w!;
+  const isFluid = deviceId === "fluid";
+  const isCustom = deviceId === "custom";
+  const vw = isFluid
+    ? null
+    : isCustom
+      ? Math.max(160, customW)
+      : portrait
+        ? device.w!
+        : device.h!;
+  const vh = isFluid
+    ? null
+    : isCustom
+      ? Math.max(160, customH)
+      : portrait
+        ? device.h!
+        : device.w!;
 
   const src = url
     ? url.replace(/\/+$/, "") + (path.startsWith("/") ? path : `/${path}`)
@@ -241,7 +260,27 @@ export function PreviewPane({
                 );
               })}
             </div>
-            {!isFluid && (
+            {isCustom ? (
+              <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
+                <input
+                  type="number"
+                  value={customW}
+                  min={160}
+                  onChange={(e) => setCustomW(Number(e.target.value) || 0)}
+                  title="幅 (px)"
+                  className="h-6 w-14 rounded-md border bg-transparent px-1.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <span>×</span>
+                <input
+                  type="number"
+                  value={customH}
+                  min={160}
+                  onChange={(e) => setCustomH(Number(e.target.value) || 0)}
+                  title="高さ (px)"
+                  className="h-6 w-14 rounded-md border bg-transparent px-1.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              </div>
+            ) : !isFluid ? (
               <>
                 <button
                   type="button"
@@ -255,7 +294,7 @@ export function PreviewPane({
                   {vw} × {vh}
                 </span>
               </>
-            )}
+            ) : null}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -281,6 +320,16 @@ export function PreviewPane({
               className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <RotateCw className="size-3.5" />
+            </button>
+            {/* Open the current page (with the navigated path) in the real browser. */}
+            <button
+              type="button"
+              onClick={() => src && void openExternal(src).catch(() => {})}
+              disabled={!src}
+              title="外部ブラウザで開く"
+              className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            >
+              <ExternalLink className="size-3.5" />
             </button>
           </div>
         )}
@@ -345,7 +394,15 @@ export function PreviewPane({
                   "relative bg-white",
                   isFluid
                     ? "h-full w-full"
-                    : "shrink-0 overflow-hidden rounded-xl border shadow-sm",
+                    : cn(
+                        "shrink-0 overflow-hidden border shadow-sm",
+                        // Device-frame chrome (DEC-074): rounder corners per device.
+                        deviceId === "mobile"
+                          ? "rounded-[1.75rem]"
+                          : deviceId === "tablet"
+                            ? "rounded-2xl"
+                            : "rounded-lg",
+                      ),
                 )}
               >
                 <iframe
@@ -364,6 +421,15 @@ export function PreviewPane({
                     session={session}
                     surface={buildAnnotationSurface(session)}
                   />
+                )}
+                {/* A phone notch in portrait — purely decorative (DEC-074). */}
+                {deviceId === "mobile" && portrait && (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center"
+                  >
+                    <div className="h-[18px] w-[34%] rounded-b-2xl bg-foreground/85" />
+                  </div>
                 )}
               </div>
             </div>

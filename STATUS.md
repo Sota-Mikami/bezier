@@ -1,5 +1,9 @@
-<!-- 最終更新: 2026-06-14 / DEC-073 ショートカット可視化（Tooltip＋一覧 ?） -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-073 ショートカット可視化・DEC-072 Verify インライン化・DEC-070 重大バグ修正・DEC-069 Annotation パリティ・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-14 / DEC-074 Preview 拡張（任意幅/枠 chrome/外部で開く） -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-074 Preview 拡張・DEC-073 ショートカット可視化・DEC-072 Verify インライン化・DEC-070 重大バグ修正・DEC-060 Code Editor）
+
+## ▶ 2026-06-14 セッション（DEC-074 — Preview 拡張）
+- **任意幅**（「カスタム幅」＋ 幅×高さ px 入力）／**デバイス枠 chrome**（角丸をデバイス別＋mobile 縦にノッチ・装飾）／**外部ブラウザで開く**（Rust `open_external` http(s) 限定＋`ExternalLink` ボタン）。
+- **tsc+eslint green・実機 200・Rust 再ビルド**。DEC-074 で commit。**承認キュー残**: #37 左チャット composer 化。
 
 ## ▶ 2026-06-14 セッション（DEC-073 — ショートカット可視化）
 - `title` だけだったヒントを**本物の Tooltip**へ（`SegmentedControl` を base-ui Tooltip 化）。**`Kbd` 部品**（明暗両対応）。

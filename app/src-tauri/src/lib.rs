@@ -386,6 +386,25 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
     }
 }
 
+/// Open an http(s) URL in the user's default browser (DEC-074 — Preview "外部で
+/// 開く"). http(s) only; args are passed directly (no shell), so the URL can't
+/// be interpreted as a command.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("refusing non-http url: {url}"));
+    }
+    let status = std::process::Command::new("open")
+        .arg(&url)
+        .status()
+        .map_err(|e| format!("open {url}: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("ブラウザで開けませんでした: {url}"))
+    }
+}
+
 /// Capture a rectangular screen region to a PNG (DEC-045 — design feedback).
 /// Uses macOS `screencapture -x -R x,y,w,h` (no sound, non-interactive). The
 /// region is in POINTS in the global display coordinate space (top-left origin);
@@ -2084,6 +2103,7 @@ pub fn run() {
             write_file_bytes,
             read_file_bytes,
             reveal_in_finder,
+            open_external,
             open_in_editor,
             capture_region,
             remove_path,

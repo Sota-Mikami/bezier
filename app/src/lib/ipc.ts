@@ -137,6 +137,11 @@ export function revealInFinder(path: string): Promise<void> {
   return invoke<void>("reveal_in_finder", { path });
 }
 
+/** Open an http(s) URL in the default browser (DEC-074). -> invoke("open_external", { url }) */
+export function openExternal(url: string): Promise<void> {
+  return invoke<void>("open_external", { url });
+}
+
 /**
  * Capture a screen region (POINTS, global top-left origin) to a PNG (DEC-045 —
  * design feedback). Returns the written path. -> invoke("capture_region", …)
