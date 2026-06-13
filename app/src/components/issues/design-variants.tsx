@@ -8,7 +8,7 @@
 //   - the shared AnnotationLayer over it (a "design" surface) — pins/pen/rect on
 //     a pattern become a revise request for THAT design/NN.html (no Design chat;
 //     general talk stays in the left main chat),
-//   - 「この案で確定 → Build」 adopts the direction (records the decision, mirrors
+//   - 「この案で確定 → Implement」 adopts the direction (records the decision, mirrors
 //     it into spec.md, and builds it for real).
 // New patterns also arrive via the main chat ("デザイン案を3つ", DEC-055); both
 // land in design/ and show here.
@@ -56,6 +56,13 @@ export function DesignVariants({
   const [loading, setLoading] = React.useState(true);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+  // "AI just made / revised this" flourish (DEC-057): ids whose content changed
+  // in the last refresh → a one-shot shimmer on the shown pattern + a pulse dot
+  // on changed tabs. prevHtmlRef is the diff baseline; the first load only seeds
+  // it (no flash on mount / navigation).
+  const [flashIds, setFlashIds] = React.useState<Set<string>>(new Set());
+  const prevHtmlRef = React.useRef<Record<string, string>>({});
+  const seededRef = React.useRef(false);
 
   const onVariantsRef = React.useRef(onVariants);
   React.useEffect(() => {
@@ -74,15 +81,32 @@ export function DesignVariants({
       }),
     );
     const ad = await readAdoptedDesign(issue).catch(() => null);
+
+    // Diff against the previous snapshot to find what the AI just wrote/revised.
+    const prev = prevHtmlRef.current;
+    prevHtmlRef.current = nextHtml;
+    const seeded = seededRef.current;
+    seededRef.current = true;
+    const changedIds = seeded
+      ? list.filter((v) => (nextHtml[v.id] ?? "") !== (prev[v.id] ?? "")).map((v) => v.id)
+      : [];
+    const newIds = seeded ? list.filter((v) => !(v.id in prev)).map((v) => v.id) : [];
+
     setVariants(list);
     setHtml(nextHtml);
     setAdopted(ad);
     setActiveId((cur) => {
       if (list.length === 0) return null;
       const ids = list.map((v) => v.id);
+      // A freshly-generated pattern auto-opens (CEO: 自然にタブが切り替わって html も開く).
+      if (newIds.length) return newIds[newIds.length - 1];
       return cur && ids.includes(cur) ? cur : list[0].id;
     });
     setLoading(false);
+    if (changedIds.length) {
+      setFlashIds(new Set(changedIds));
+      window.setTimeout(() => setFlashIds(new Set()), 2000);
+    }
     onVariantsRef.current?.(list);
     void syncSpecDesignSection(issue, list, ad).catch(() => {});
   }, [issue]);
@@ -156,6 +180,13 @@ export function DesignVariants({
                 )}
               />
             )}
+            {flashIds.has(v.id) && shown?.id !== v.id && (
+              <span
+                className="bz-dz-dot size-1.5 rounded-full"
+                style={{ background: "var(--ai)" }}
+                aria-hidden
+              />
+            )}
           </button>
         ))}
         <button
@@ -178,6 +209,7 @@ export function DesignVariants({
 
       {/* Active pattern view + annotation overlay */}
       <div className="relative min-h-0 flex-1 bg-background">
+        <DesignFlairStyle />
         {loading ? (
           <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
@@ -188,15 +220,30 @@ export function DesignVariants({
         ) : (
           <>
             <iframe
-              key={shown.id}
+              key={`frame-${shown.id}`}
               ref={iframeRef}
               sandbox=""
               srcDoc={html[shown.id] ?? ""}
               title={`案 ${shown.id}`}
               className="size-full bg-white"
             />
+            {/* "AI just made this" flourish (DEC-057): one light sweep + a fading
+                chip, over the freshly written/revised wireframe. */}
+            {flashIds.has(shown.id) && (
+              <div
+                key={`flash-${shown.id}`}
+                className="pointer-events-none absolute inset-0 z-[5] overflow-hidden"
+                aria-hidden
+              >
+                <div className="bz-dz-sweep absolute inset-0" />
+                <div className="bz-dz-chip absolute right-3 top-3 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm" style={{ background: "var(--ai)" }}>
+                  <Sparkles className="size-3" />
+                  Bezier が生成
+                </div>
+              </div>
+            )}
             <AnnotationLayer
-              key={shown.id}
+              key={`anno-${shown.id}`}
               session={session}
               iframeRef={iframeRef}
               surface={designSurface(session, shown, canGenerateVariant, reviseDesignPattern)}
@@ -205,7 +252,7 @@ export function DesignVariants({
         )}
       </div>
 
-      {/* Confirm → Build */}
+      {/* Confirm → Implement */}
       {shown && (
         <div className="flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2">
           <div className="min-w-0 truncate text-[11px] text-muted-foreground">
@@ -222,18 +269,52 @@ export function DesignVariants({
             className="shrink-0 gap-1.5"
             disabled={!!action}
             onClick={() => void handlePickVariant(shown.id)}
-            title="この方向を採用して実 Build（実物の DS で実装）へ"
+            title="この方向を採用してImplement（実物の DS で実装）へ"
           >
             {action === "variant" ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <ArrowRightCircle className="size-3.5" />
             )}
-            {adopted === shown.id ? "この案で再 Build" : "この案で確定 → Build"}
+            {adopted === shown.id ? "この案で再 Implement" : "この案で確定 → Implement"}
           </Button>
         </div>
       )}
     </div>
+  );
+}
+
+// One-shot "AI generated this" flourish styles (DEC-057): a light sweep + a
+// fading "Bezier が生成" chip over a fresh wireframe, and a soft pulse for the
+// tab dot. Bézier easing, reduced-motion safe.
+function DesignFlairStyle() {
+  return (
+    <style>{`
+      @keyframes bz-dz-sweep {
+        0% { background-position: -30% 0; opacity: 0; }
+        20% { opacity: 1; }
+        100% { background-position: 150% 0; opacity: 0; }
+      }
+      .bz-dz-sweep {
+        background: linear-gradient(100deg, transparent 18%, color-mix(in oklab, var(--ai) 22%, transparent) 50%, transparent 82%);
+        background-size: 220% 100%;
+        background-repeat: no-repeat;
+        animation: bz-dz-sweep 1.6s ease-out forwards;
+      }
+      @keyframes bz-dz-chip {
+        0% { opacity: 0; transform: translateY(-4px); }
+        14% { opacity: 1; transform: none; }
+        70% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      .bz-dz-chip { animation: bz-dz-chip 2s cubic-bezier(0.22,1,0.36,1) forwards; }
+      @keyframes bz-dz-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+      .bz-dz-dot { animation: bz-dz-dot 1s ease-in-out infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .bz-dz-sweep, .bz-dz-chip, .bz-dz-dot { animation: none; }
+        .bz-dz-sweep { opacity: 0; }
+      }
+    `}</style>
   );
 }
 
@@ -286,7 +367,7 @@ function EmptyDesign({
         <span className="font-medium">デザイン案を3つ</span>」とまとめて頼むことも可能。各案には
         <span className="font-medium"> 注釈（コメント/ペン/矩形）</span>
         で直接指示でき、良い方向を「
-        <span className="font-medium">この案で確定 → Build</span>」で実装に進めます。
+        <span className="font-medium">この案で確定 → Implement</span>」で実装に進めます。
       </p>
       <Button size="sm" className="gap-1.5" disabled={!canAdd} onClick={onAdd}>
         <Plus className="size-3.5" />

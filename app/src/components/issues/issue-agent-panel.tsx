@@ -6,7 +6,7 @@
 // (Spec / Design / Build). All the git "plumbing" that used to crowd this panel
 // moved to where it's relevant: Verify → the Build tab, Commit / Ship (Sync /
 // Open PR / Merge) → the issue header, and the occasional controls (agent
-// picker, 再 Build, Discard) → a single ⋯ menu. So this panel is just: a slim
+// picker, 再 Implement, Discard) → a single ⋯ menu. So this panel is just: a slim
 // header (chat + branch + ⋯), the agent terminal (the conversation), and a thin
 // status line. The session state is still owned by the shared useImplementSession
 // hook so the terminal persists across center-tab switches.
@@ -157,7 +157,7 @@ function SessionMenu({ session }: { session: ImplementSession }) {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="セッション操作"
-        title="エージェント / 再 Build / Discard"
+        title="エージェント / 再 Implement / Discard"
         className="flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground"
       >
         <MoreHorizontal className="size-4" />
@@ -204,7 +204,7 @@ function SessionMenu({ session }: { session: ImplementSession }) {
               onClick={() => void handleRerun()}
             >
               <RotateCcw className="size-3.5" />
-              編集後の Spec で再 Build
+              編集後の Spec で再 Implement
             </DropdownMenuItem>
             <DropdownMenuItem
               className="cursor-pointer gap-2 text-xs text-destructive focus:text-destructive"
@@ -314,7 +314,7 @@ function ChatStart({
         <p className="max-w-xs text-xs text-muted-foreground">
           {gitRepo === false ? (
             <>
-              Build には git リポジトリが必要です。リポジトリのフォルダを開いてください。
+              Implement には git リポジトリが必要です。リポジトリのフォルダを開いてください。
             </>
           ) : (
             <>

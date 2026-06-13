@@ -110,8 +110,8 @@ function fmtDateTime(iso: string): string {
 
 // JA labels for the structured thread events (DEC-012 chat-first loop).
 const THREAD_EVENT_LABEL: Record<ThreadEventType, string> = {
-  implement: "Build を開始",
-  rerun: "再 Build",
+  implement: "Implement を開始",
+  rerun: "再 Implement",
   resume: "セッションを再開",
   sync: "main を同期",
   accept: "Commit（branch に確定）",
@@ -418,7 +418,7 @@ function Header({
 // ---------------------------------------------------------------------------
 
 // DEC-051: the center is now a 3-stage workbench — Spec (md) → Design (throwaway
-// HTML 別案 / 考える層) → Build (the real repo: preview ⇆ diff ⇆ verify).
+// HTML 別案 / 考える層) → Implement (the real repo: preview ⇆ diff ⇆ verify).
 type DetailTab = "spec" | "design" | "build";
 
 function IssueDetail({ root, id }: { root: string; id: string }) {
@@ -674,6 +674,28 @@ function IssueWorkbench({
   // (terminal + controls) and the center Design tab (Preview + Diff).
   const session = useImplementSession(root, issue, handleStatusChange);
 
+  // Title (and frontmatter) is set by the agent in issue.md — re-read it when the
+  // agent settles so the header updates without a manual reload (DEC-057: derive
+  // from facts, don't depend on the prompt being followed perfectly). The first
+  // tick only seeds the baseline.
+  const prevAgentRef = React.useRef(session.agentState);
+  React.useEffect(() => {
+    const was = prevAgentRef.current;
+    prevAgentRef.current = session.agentState;
+    if (was === "running" && session.agentState !== "running") {
+      void readIssue(root, issue.id)
+        .then((fresh) => {
+          if (!fresh) return;
+          setIssue((prev) =>
+            prev
+              ? { ...prev, title: fresh.title, body: fresh.body, slots: fresh.slots }
+              : prev,
+          );
+        })
+        .catch(() => {});
+    }
+  }, [session.agentState, root, issue.id, setIssue]);
+
   // Delete this issue from the detail view → move to the trash (recoverable).
   // Stop the preview first (so nothing holds the worktree open), move the issue
   // to the trash (git untouched), then return to the list (unmounting the
@@ -835,7 +857,7 @@ function IssueWorkbench({
               title="実 repo のプレビュー ⇆ Diff ⇆ Verify"
             >
               <MonitorPlay className="size-3.5" />
-              Build
+              Implement
               {buildPulse && <UpdatingPulse />}
             </Button>
           </div>

@@ -77,6 +77,8 @@ export interface MarkdownEditorHandle {
    * no-op so the about-to-be-discarded edits aren't written back.
    */
   clearDirty: () => void;
+  /** Scroll the editor to a 1-based body line (the Spec ToC, DEC-057). */
+  scrollToLine: (line: number) => void;
 }
 
 export interface MarkdownEditorProps {
@@ -328,13 +330,12 @@ const editorTheme = EditorView.theme({
   },
   ".cm-placeholder": { color: "var(--muted-foreground)" },
 
-  // AI change highlight (DEC-037): when the agent rewrites the Spec, the changed
-  // lines get (1) a crisp left gutter bar so you instantly see WHICH lines
-  // changed, (2) a single light "shimmer" sweep across them — an AI-generation
-  // feel — and (3) a soft violet tint that settles and fades. All one-shot and
-  // self-clearing, so it's noticeable but never しつこい. Violet (--ai) reads as
-  // "AI" against the neutral editor. Background-only + box-shadow, so it never
-  // affects CM6's line-height measurement.
+  // AI change highlight (DEC-037 / DEC-057): when the agent rewrites the Spec, the
+  // changed lines get (1) a single light "shimmer" sweep across them — an
+  // AI-generation feel — and (2) a soft violet tint that settles and fades. The
+  // left gutter bar was removed (CEO: ハイライトだけで OK). One-shot + self-clearing
+  // so it's noticeable but never しつこい. Background-only, so it never affects CM6's
+  // line-height measurement.
   ".cm-ai-change": {
     position: "relative",
     borderRadius: "3px",
@@ -343,15 +344,12 @@ const editorTheme = EditorView.theme({
   "@keyframes cm-ai-settle": {
     "0%": {
       backgroundColor: "color-mix(in oklab, var(--ai) 15%, transparent)",
-      boxShadow: "inset 2px 0 0 0 var(--ai)",
     },
     "60%": {
       backgroundColor: "color-mix(in oklab, var(--ai) 9%, transparent)",
-      boxShadow: "inset 2px 0 0 0 color-mix(in oklab, var(--ai) 55%, transparent)",
     },
     "100%": {
       backgroundColor: "transparent",
-      boxShadow: "inset 2px 0 0 0 transparent",
     },
   },
   // The shimmer sweep: a soft light band crossing the line once, left→right.
@@ -898,6 +896,17 @@ function MarkdownEditorInner(
       isDirty: () => dirtyRef.current,
       getText: () => viewRef.current?.state.doc.toString() ?? docRef.current.body,
       clearDirty: () => markDirty(false),
+      scrollToLine: (line: number) => {
+        const view = viewRef.current;
+        if (!view) return;
+        const ln = Math.min(Math.max(1, Math.round(line)), view.state.doc.lines);
+        const pos = view.state.doc.line(ln).from;
+        view.dispatch({
+          selection: { anchor: pos },
+          effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 28 }),
+        });
+        view.focus();
+      },
     }),
     [save, markDirty],
   );

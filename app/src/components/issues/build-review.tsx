@@ -153,7 +153,7 @@ function DiffView({
   if (!hasRef) {
     return (
       <p className="p-4 text-sm text-muted-foreground">
-        worktree がありません。右の「Build」で branch + worktree を作成してください。
+        worktree がありません。右の「Implement」で branch + worktree を作成してください。
       </p>
     );
   }
@@ -314,7 +314,7 @@ function VerifyView({ session }: { session: ImplementSession }) {
   if (!ref) {
     return (
       <p className="p-4 text-sm text-muted-foreground">
-        worktree がありません。右の「Build」で実装してから Verify を回してください。
+        worktree がありません。右の「Implement」で実装してから Verify を回してください。
       </p>
     );
   }

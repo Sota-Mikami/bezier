@@ -46,7 +46,7 @@ function buildAnnotationSurface(session: ImplementSession): AnnotationSurface {
     elementPick: true,
     canSend: !!session.ref,
     cannotSendMessage:
-      "先に右パネルの「Build」で worktree を作成してください。",
+      "先に右パネルの「Implement」で worktree を作成してください。",
     buildPrompt: (lines, shot) =>
       [
         "## デザインフィードバック",

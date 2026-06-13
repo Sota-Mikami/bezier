@@ -113,6 +113,81 @@ function changedLineNumbers(prev: string, next: string): number[] {
   return out;
 }
 
+// --- Table of contents (DEC-057) ------------------------------------------
+// A read-only ToC for the Spec, derived from the md headings. It is NOT editable
+// — it just follows the content. Clicking a heading scrolls the editor to it.
+
+interface TocHeading {
+  level: number;
+  text: string;
+  /** 1-based body line (matches MarkdownEditor.scrollToLine). */
+  line: number;
+}
+
+/** Parse `# … ###### …` headings from the body, skipping fenced code blocks. */
+function parseHeadings(body: string): TocHeading[] {
+  const lines = body.split("\n");
+  const out: TocHeading[] = [];
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (m) out.push({ level: m[1].length, text: m[2].trim(), line: i + 1 });
+  }
+  return out;
+}
+
+function headingsEqual(a: TocHeading[], b: TocHeading[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].line !== b[i].line || a[i].level !== b[i].level || a[i].text !== b[i].text)
+      return false;
+  }
+  return true;
+}
+
+function SpecToc({
+  headings,
+  onJump,
+}: {
+  headings: TocHeading[];
+  onJump: (line: number) => void;
+}) {
+  const minLevel = Math.min(...headings.map((h) => h.level));
+  return (
+    <nav className="hidden w-48 shrink-0 overflow-y-auto border-r bg-muted/20 py-2 lg:block">
+      <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        目次
+      </div>
+      <ul>
+        {headings.map((h, i) => (
+          <li key={`${h.line}-${i}`}>
+            <button
+              type="button"
+              onClick={() => onJump(h.line)}
+              title={h.text}
+              className={cn(
+                "block w-full truncate rounded-sm py-0.5 pr-2 text-left text-[11px] transition-colors hover:bg-muted hover:text-foreground",
+                h.level <= minLevel
+                  ? "font-medium text-foreground/80"
+                  : "text-muted-foreground",
+              )}
+              style={{ paddingLeft: `${12 + (h.level - minLevel) * 12}px` }}
+            >
+              {h.text}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
 export function SlotEditor({
   path,
   label,
@@ -164,6 +239,8 @@ function SlotEditorInner({
   // when adopting an external rewrite on the CLEAN path; the re-keyed
   // MarkdownEditor paints + fades them. [] = no flash (e.g. dirty-path reload).
   const [flashLines, setFlashLines] = React.useState<number[]>([]);
+  // Read-only ToC headings (DEC-057), derived from the live body.
+  const [headings, setHeadings] = React.useState<TocHeading[]>([]);
 
   const mdRef = React.useRef<MarkdownEditorHandle>(null);
   // Latest onExternalChange in a ref so applyExternal stays stable (it's a watch
@@ -190,6 +267,7 @@ function SlotEditorInner({
       .then((d) => {
         if (cancelled) return;
         setDoc(d);
+        setHeadings(parseHeadings(d.body));
         baselineRef.current = fullText(d);
         frontmatterRef.current = d.rawFrontmatter ?? "";
       })
@@ -250,13 +328,21 @@ function SlotEditorInner({
     doSaveRef.current = doSave;
   }, [doSave]);
 
-  // Reset the debounce on every edit (onEdit fires per keystroke).
+  // Reset the debounce on every edit (onEdit fires per keystroke) + refresh the
+  // ToC from the live text (cheap; only re-renders when the heading set changes).
   const handleEdit = React.useCallback(() => {
     clearTimer();
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
       void doSaveRef.current();
     }, AUTOSAVE_DEBOUNCE_MS);
+    const t = mdRef.current?.getText();
+    if (t != null) {
+      setHeadings((prev) => {
+        const next = parseHeadings(t);
+        return headingsEqual(prev, next) ? prev : next;
+      });
+    }
   }, [clearTimer]);
 
   // Flush immediately on blur (e.g. clicking into the terminal / Design).
@@ -286,6 +372,7 @@ function SlotEditorInner({
         baselineRef.current = fullText(fresh);
         frontmatterRef.current = fresh.rawFrontmatter ?? "";
         setDoc(fresh);
+        setHeadings(parseHeadings(fresh.body));
         setConflict(false);
         setReloadNonce((n) => n + 1); // remount -> re-baseline from fresh.body
         if (flash) onExternalChangeRef.current?.();
@@ -423,27 +510,34 @@ function SlotEditorInner({
         </div>
       )}
 
-      <div
-        className="min-h-0 flex-1 overflow-hidden"
-        onBlur={flush}
-      >
-        {loading && <p className="p-4 text-sm text-muted-foreground">Loading…</p>}
-        {error && (
-          <p className={cn("p-4 text-sm text-destructive")}>{error}</p>
-        )}
-        {doc && !loading && (
-          <MarkdownEditor
-            key={reloadNonce}
-            ref={mdRef}
-            doc={doc}
-            frontmatter={doc.frontmatter}
-            frontmatterDirty={false}
-            onDirtyChange={setDirty}
-            onEdit={handleEdit}
-            flashLines={flashLines}
-            flushOnUnmount
+      <div className="flex min-h-0 flex-1 overflow-hidden" onBlur={flush}>
+        {/* Read-only ToC (DEC-057): follows the md, jumps the editor. Shown once
+            there are a couple of headings, lg+ only (narrow stacks the editor). */}
+        {headings.length >= 2 && (
+          <SpecToc
+            headings={headings}
+            onJump={(line) => mdRef.current?.scrollToLine(line)}
           />
         )}
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {loading && (
+            <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+          )}
+          {error && <p className={cn("p-4 text-sm text-destructive")}>{error}</p>}
+          {doc && !loading && (
+            <MarkdownEditor
+              key={reloadNonce}
+              ref={mdRef}
+              doc={doc}
+              frontmatter={doc.frontmatter}
+              frontmatterDirty={false}
+              onDirtyChange={setDirty}
+              onEdit={handleEdit}
+              flashLines={flashLines}
+              flushOnUnmount
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -17,7 +17,7 @@ pub struct FileEntry {
     pub path: String,
     pub name: String,
     pub is_dir: bool,
-    /// "md" | "mdx" | "yaml" | ""
+    /// "md" | "mdx" | "yaml" | "html" | ""
     pub ext: String,
 }
 
@@ -33,6 +33,9 @@ fn classify_ext(ext: &str) -> Option<&'static str> {
         "md" => Some("md"),
         "mdx" => Some("mdx"),
         "yaml" | "yml" => Some("yaml"),
+        // Design wireframes (DEC-056) live as design/NN-slug.html under the issue
+        // store; surface them so the Design board (list_dir) can see them.
+        "html" | "htm" => Some("html"),
         _ => None,
     }
 }

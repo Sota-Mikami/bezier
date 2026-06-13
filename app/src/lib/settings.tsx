@@ -18,7 +18,7 @@ import * as React from "react";
  * to it.
  *
  * DEC-050 (evals 層A): 受入基準は「完成の定義（Definition of Done）」として
- * **Build の前に・観察可能でチェック可能な文で** 書く。Build 後の Verify が
+ * **Implement の前に・観察可能でチェック可能な文で** 書く。Build 後の Verify が
  * この一つひとつを PASS/FAIL で採点する。Clarify（着手時の確認対話）の答えは
  * この「受入基準 / やらないこと」に凝縮される。 */
 export const DEFAULT_SPEC_TEMPLATE = `---
@@ -32,13 +32,13 @@ issue: {{id}}
 ## 何を
 <!-- 何を作るのか。1〜3 行で芯を -->
 
-## 受入基準（= 完成の定義 / Build の前に決める）
-<!-- 観察可能・チェック可能な文で書く。Build 後に Verify がこの一行ずつを採点する。 -->
+## 受入基準（= 完成の定義 / Implement の前に決める）
+<!-- 観察可能・チェック可能な文で書く。Implement 後に Verify がこの一行ずつを採点する。 -->
 - [ ]
 - [ ]
 
 ## やらないこと
-<!-- スコープ外。Build が広がらないための境界 -->
+<!-- スコープ外。Implement が広がらないための境界 -->
 -
 
 ## 未解決

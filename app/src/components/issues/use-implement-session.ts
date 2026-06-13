@@ -862,11 +862,11 @@ export function useImplementSession(
             prompt: pickPrompt,
             resume: true,
           });
-          void logEvent("variant", `案 ${id} を採用 → Build`);
+          void logEvent("variant", `案 ${id} を採用 → Implement`);
         } else {
           // Promote: pre-Build design → create the worktree, then build.
           if (!gitRepo) {
-            setError("Build には git リポジトリが必要です。");
+            setError("Implement には git リポジトリが必要です。");
             setAction(null);
             return;
           }
@@ -879,7 +879,7 @@ export function useImplementSession(
           onStatusChange("in-progress");
           setRef(newRef);
           launchAgent(selectedAgent, workDir(wt), { prompt: pickPrompt });
-          void logEvent("variant", `案 ${id} を採用 → Build 開始`);
+          void logEvent("variant", `案 ${id} を採用 → Implement 開始`);
           void loadBehind(wt);
         }
       } catch (e) {

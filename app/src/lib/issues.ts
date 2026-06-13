@@ -716,6 +716,35 @@ export function designConventionBlock(issue: Pick<Issue, "dir">): string[] {
   ];
 }
 
+/**
+ * The STABLE Bezier working conventions for an issue (DEC-057 harness), written
+ * once to <issue.dir>/BEZIER.md so the per-turn handoff can REFERENCE them rather
+ * than re-inject the same blocks every turn (prompt bloat → dropped instructions,
+ * e.g. the title not getting set). Combines the living-spec rules, the title
+ * reminder, the Design convention, and the Verify expectation.
+ */
+export function bezierGuide(issue: Issue): string {
+  const specPath = slotPath(issue, "spec");
+  return [
+    "# Bezier — この issue での作法（自動生成。毎ターン従う）",
+    "",
+    "Bezier 経由でこの issue を進めています。タスク指示が薄くても、以下の共通ルールに従ってください。",
+    "",
+    "## 生きた Spec",
+    `- 仕様書は \`${specPath}\`（worktree の外。\`--add-dir\` で読み書きできます）。`,
+    "- **実装の前に必ず spec.md を読み直す**。会話で意図/要件が変わったら **まず spec.md を更新**してから実装し、Spec⇆実装を常に同期する。",
+    "- **「受入基準」= 完成の定義（DoD）**。Implement 後に Verify が PASS/FAIL で採点するので、チェック可能な文に保つ。",
+    "",
+    "## タイトル",
+    "- issue.md の frontmatter `title` が空 or「Untitled」なら、**最優先で**内容を表す簡潔なタイトルに更新する（忘れない）。",
+    "",
+    ...designConventionBlock(issue),
+    "## Verify（検証）",
+    "- 「検証して」と言われたら、受入基準を1つずつ **PASS / FAIL / BLOCKED / SKIP** で採点し、根拠付きで報告する（別ハンドオフで詳細指示が来ます）。",
+    "",
+  ].join("\n");
+}
+
 export async function buildImplementHandoff(
   root: string,
   issue: Issue,
@@ -757,7 +786,7 @@ export async function buildImplementHandoff(
     : opts?.followUp
       ? [
           `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-          "これは **追記の再 Build 依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
+          "これは **追記の再 Implement 依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
           "**ゼロからやり直さず**、更新後の Issue / Spec（特に **受入基準**）に合わせて既存の変更を調整・拡張してください。",
           "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
         ]
@@ -768,21 +797,6 @@ export async function buildImplementHandoff(
           "受入基準は「完成の定義」です。これを満たすことをゴールにしてください（後で Verify が採点します）。",
           "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
         ];
-  // The Spec is the LIVING spec for this issue. It lives OUTSIDE the worktree
-  // (in the main repo's .bezier tree) but is made readable+writable to the
-  // agent via `claude --add-dir <issue.dir>`. Telling the agent to (1) re-read it
-  // before every implementation and (2) update it when the conversation changes
-  // the intent keeps Spec⇆code in sync without the human manually saying
-  // "re-read" each turn (DEC-012 chat-first loop).
-  const livingSpec = [
-    `## 生きた仕様 (Spec)`,
-    "",
-    `この issue の仕様書は \`${specPath}\` です。worktree の外にありますが、\`--add-dir\` で **読み書きできます**。`,
-    "- **実装の前に必ず spec.md を読み直して**、最新の仕様に従ってください（毎回・自動で）。",
-    "- 会話で意図や要件が変わったら、**まず spec.md を更新**してから実装し、Spec と実装を常に同期させてください。",
-    "- **「受入基準」は完成の定義（Definition of Done）** です。Build 後に Verify がこの一行ずつを PASS/FAIL で採点するので、満たせる粒度のチェック可能な文に保ってください。",
-    "",
-  ];
   // Monorepo scope (DEC-039): when the issue is scoped to a subfolder of a
   // larger repo, the agent's cwd IS that subfolder. Tell it to stay within it.
   const monorepoNote = opts?.subPath
@@ -791,11 +805,17 @@ export async function buildImplementHandoff(
         "",
       ]
     : [];
-  // Chat-driven Design (DEC-055): the convention is carried INTO the main chat's
-  // context, so the agent can produce design wireframes whenever the user asks
-  // ("デザイン案を3つ") — they land in design/ and the Design board picks them up
-  // automatically, with NO separate Design-tab prompt to re-author.
-  const designConvention = designConventionBlock(issue);
+  // DEC-057 harness: the STABLE conventions (living-spec rules, title reminder,
+  // Design convention, Verify) live in a written BEZIER.md the agent reads — so
+  // this per-turn handoff REFERENCES it instead of re-injecting every block each
+  // turn (prompt bloat → dropped instructions). Keeps the handoff focused on the
+  // task; the spec is still inlined (small + task-specific).
+  const guidePath = `${issue.dir}/BEZIER.md`;
+  const guideRef = [
+    "## 作法（重要・先に読む）",
+    `この issue の共通ルールは \`${guidePath}\` にあります（\`--add-dir\` で読めます）。**まず読んでから**進めてください — 生きた Spec / 受入基準=DoD / タイトル更新 / デザイン別案の作り方 / 検証。`,
+    "",
+  ];
   const content = [
     `# 実装ハンドオフ — ${issue.title || "(無題)"}`,
     "",
@@ -807,10 +827,7 @@ export async function buildImplementHandoff(
     ...(opts?.userMessage
       ? ["## ユーザーの最初のリクエスト", "", opts.userMessage, "", "---", ""]
       : []),
-    ...livingSpec,
-    "---",
-    "",
-    ...designConvention,
+    ...guideRef,
     "---",
     "",
     "## Issue",
@@ -822,6 +839,8 @@ export async function buildImplementHandoff(
     specMd,
     "",
   ].join("\n");
+  // Write the durable guide alongside the handoff (read via --add-dir issue.dir).
+  await writeFile(guidePath, bezierGuide(issue));
   await writeFile(outPath, content);
   return { path: outPath, content };
 }
@@ -922,7 +941,7 @@ export async function buildVariantHandoff(
   const content = [
     `# デザイン別案（ワイヤー）— ${issue.title || "(無題)"}`,
     "",
-    `あなたの作業ディレクトリは \`${worktreePath}\` です。これは **Design（考える層）** の依頼で、**Build（実装）の前段**でも構いません。`,
+    `あなたの作業ディレクトリは \`${worktreePath}\` です。これは **Design（考える層）** の依頼で、**Implementの前段**でも構いません。`,
     `**実装コードは書かないでください。** 代わりに、**${ids.length} 案**を **それぞれ別の方向**で書き出します。`,
     "",
     "## 出力先と命名（厳守）",
@@ -933,12 +952,12 @@ export async function buildVariantHandoff(
     "",
     "## スタックに依存しない自由なアイデア（重要）",
     "",
-    "- ここは **repo の技術スタックから独立**しています。**repo のフレームワーク・コンポーネント・既存コードを読みに行かない／真似ない**。Spec が示す「何を解くか」から、**自由に**ビジュアルの方向を出す（実装の制約は後段 Build の仕事）。",
+    "- ここは **repo の技術スタックから独立**しています。**repo のフレームワーク・コンポーネント・既存コードを読みに行かない／真似ない**。Spec が示す「何を解くか」から、**自由に**ビジュアルの方向を出す（実装の制約は後段 Implement の仕事）。",
     "- **完全に自己完結した HTML**：**プレーンなインライン CSS のみ**。**Tailwind の class・外部 CSS/JS/CDN・外部画像は使わない**（fully sandboxed iframe で静的描画されるため）。アイコンは文字（▾ × ＋ ⌕ 等）や CSS シェイプで。",
     "",
     "## これは『ワイヤー（構造スケッチ）』— 作り込まない",
     "",
-    "- 目的は **レイアウト / 構造 / 情報設計の方向を見比べる**こと。ピクセル忠実は不要（採用案だけ後で Build が実物を描画）。",
+    "- 目的は **レイアウト / 構造 / 情報設計の方向を見比べる**こと。ピクセル忠実は不要（採用案だけ後で Implement が実物を描画）。",
     "- **グレースケール**（白〜グレー: #fff / #f3f4f6 / #e5e7eb / #d1d5db / #9ca3af / #374151 程度）。**色は使わない**（方向差は構造で出す）。本文/ラベルはグレーのバー・箱・短文で represent。",
     "- 各案は別方向に振る：ツールバー型 / 列ヘッダメニュー型 / サイドパネル型、密 vs 余白、タブ vs アコーディオン、一覧 vs カード… 似た案を量産しない。",
     "",
@@ -1067,8 +1086,8 @@ export async function appendThreadEvent(
 
 /** Human-readable label per thread event type (for the PR activity summary). */
 const THREAD_LABELS: Record<ThreadEventType, string> = {
-  implement: "Build 開始",
-  rerun: "再 Build",
+  implement: "Implement 開始",
+  rerun: "再 Implement",
   resume: "セッション再開",
   sync: "main を同期",
   accept: "Commit（branch に確定）",

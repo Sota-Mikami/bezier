@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-13 / DEC-056 Design 注釈駆動（Build 共通化）＋パターンタブ＋Spec 追従 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-056 注釈駆動 Design・DEC-055 会話駆動・DEC-054 スタック非依存・DEC-053 ハイブリッド・DEC-052 左=純チャット・DEC-051 中央3タブ・DEC-050 Build ループ）
+<!-- 最終更新: 2026-06-13 / DEC-057 dogfood バッチ（html修正/Implement改名/Design演出/title・ハーネス/Spec ToC） -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-057 dogfood バッチ・DEC-056 注釈駆動 Design・DEC-055 会話駆動・DEC-051 中央3タブ・DEC-050 ループ）
+
+## ▶ 2026-06-13 セッション（DEC-057 — dogfood 小issue連打バッチ）
+- **🐛 根本**: Rust `list_dir` が `.html` を捨てていた（`classify_ext` 未許可）→ Design 表示・Spec 同期・演出が全滅。`html/htm` 追加で連鎖回復。**🐛 タブ重複キー**（iframe/AnnotationLayer 同 key）→ `frame-/anno-` 分離。
+- **Build→Implement 改名**（CI build 混同回避）。**A** Design 演出（シマー＋チップ＋ドット＋自動切替）。**B** Spec の左 outline 撤去。**D** title 再読込＋**ハーネス**（定型→`BEZIER.md`・handoff スリム化）。**Spec ToC**（左・読み取り専用・追従・クリックでスクロール）。
+- **tsc+eslint green・実機 200**。**DEC-057 で commit & main 統合**。詳細 = DEC-057。
 
 ## ▶ 2026-06-13 セッション（DEC-056 — 注釈駆動 Design）
 - CEO 要件: Design 指示は Chat でなく **Annotation**（Build と共通化）。Design タブ＝**パターン切替タブ / + 追加 / HTML 表示 / Annotation / 確定**。確定→Build。Spec に **パターン一覧＋採用を常に追従**。
