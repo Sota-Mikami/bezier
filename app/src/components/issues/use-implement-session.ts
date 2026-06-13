@@ -405,6 +405,12 @@ export function useImplementSession(
   const refBranch = ref?.branch ?? null;
   React.useEffect(() => {
     if (!refPrUrl || !refBranch) return;
+    // Already merged → do NOT re-check. Re-checking loops forever and floods
+    // `gh pr view`: onStatusChange("merged") makes a fresh `issue` object, which
+    // (being an effect dep) re-fires this effect, which calls onStatusChange
+    // again… For a merged issue that's a runaway loop of GitHub network calls,
+    // which is exactly what made "完了済み Issue があると激重" (DEC-070).
+    if (issue.status === "merged") return;
     let cancelled = false;
     (async () => {
       const state = await ghPrState(root, refBranch).catch(() => "");

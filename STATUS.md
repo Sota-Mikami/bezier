@@ -1,5 +1,11 @@
-<!-- 最終更新: 2026-06-13 / DEC-069 Annotation を Design/Preview 完全パリティに -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-069 Annotation パリティ・DEC-068 Annotation 磨き込み・DEC-066 タブ・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-13 / DEC-070 🐛 完了 Issue で gh pr view 無限ループ→激重 を修正 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-070 重大バグ修正・DEC-069 Annotation パリティ・DEC-068 Annotation 磨き込み・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+
+## ▶ 2026-06-13 セッション（DEC-070 — 🐛 完了 Issue で激重 を修正）
+- **症状**: 完了(merged) Issue があると激重・使い物にならない（普通使用は問題なし）。本番でも再現＝dev ビルド無関係。CPU サンプリングは全部 idle（＝ブロッキング I/O）。
+- **確定**: 重い最中に bezier プロセスツリーを `ps` → 子に **`gh pr view`（PR マージ確認）常駐**を発見。
+- **原因**: PR-merged 確認 effect が merged 時 `onStatusChange("merged")` → `setIssue` が新 `issue` 生成 → effect の dep `issue` 変化 → 再実行 → `gh pr view` → … 無限ループ（in-progress は早期 return でループしない）。
+- **修正**: effect 冒頭に `if (issue.status === "merged") return;`。**tsc+eslint green**。DEC-070 で commit。本番 .app 再ビルドして再起動。
 
 ## ▶ 2026-06-13 セッション（DEC-069 — Annotation 完全パリティ）
 - CEO「Design と Preview で同じツールに・片方だけは避ける」→ **テキスト編集 中止**＋**element-pick 削除**（同じ非対称）。ツールは **cursor / comment / pen の3つ**に統一（Design も Preview も同一）。cooperating preview 依存（iframeRef/inspect script）を AnnotationLayer から除去。
