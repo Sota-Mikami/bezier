@@ -21,7 +21,7 @@ import {
   Tablet,
   Smartphone,
   Maximize2,
-  RotateCcw,
+  RotateCwSquare,
   Route,
 } from "lucide-react";
 
@@ -246,11 +246,11 @@ export function PreviewPane({
               <>
                 <button
                   type="button"
-                  title="向きを回転"
+                  title="向きを回転（縦 ⇄ 横）"
                   onClick={() => setPortrait((p) => !p)}
-                  className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                  className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  <RotateCcw className="size-3.5" />
+                  <RotateCwSquare className="size-3.5" />
                 </button>
                 <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
                   {vw} × {vh}
@@ -274,6 +274,15 @@ export function PreviewPane({
                 className="h-6 w-28 bg-transparent font-mono text-[11px] outline-none placeholder:text-muted-foreground"
               />
             </form>
+            {/* Reload lives with the center viewport controls, not the right. */}
+            <button
+              type="button"
+              onClick={() => setReloadNonce((n) => n + 1)}
+              title="再読み込み"
+              className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <RotateCw className="size-3.5" />
+            </button>
           </div>
         )}
 
@@ -287,18 +296,6 @@ export function PreviewPane({
             >
               <Play className="size-3.5" />
               Start
-            </Button>
-          )}
-          {status === "ready" && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 gap-1.5"
-              onClick={() => setReloadNonce((n) => n + 1)}
-              title="iframe を再読み込み"
-            >
-              <RotateCw className="size-3.5" />
-              Reload
             </Button>
           )}
           <Button

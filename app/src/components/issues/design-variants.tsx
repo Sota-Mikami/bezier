@@ -17,7 +17,7 @@ import * as React from "react";
 import { Loader2, Plus, Sparkles, ArrowRightCircle, Check, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { UnderlineTab } from "@/components/ui/underline-tab";
 import { removePath } from "@/lib/ipc";
 import {
   listVariants,
@@ -213,18 +213,18 @@ export function DesignVariants({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Browser-style tab strip (DEC-058): each pattern is a Chrome-like tab with
-          its title; the active one connects to the canvas. + opens a new one; the
-          adopt action lives at the right end (not bottom). ⌘1-9 / Ctrl+Tab move. */}
-      <div className="flex h-9 shrink-0 items-stretch border-b bg-muted/40">
-        <div className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto px-1.5 pt-1">
+      {/* Underline tab strip (DEC-065): patterns as Facebook-style tabs (active =
+          color + underline, hover = gray pill). Still move with the Chrome-like
+          shortcuts (⌘1-9 / ⌘⌥←→ / Ctrl+Tab). + adds one; × (on hover) closes;
+          the adopt action lives at the right end. */}
+      <div className="flex h-9 shrink-0 items-stretch border-b">
+        <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1">
           {variants.map((v) => {
             const isActive = shown?.id === v.id;
             return (
-              <div
+              <UnderlineTab
                 key={v.id}
-                role="tab"
-                aria-selected={isActive}
+                active={isActive}
                 onClick={() => setActiveId(v.id)}
                 onAuxClick={(e) => {
                   if (e.button === 1) {
@@ -233,12 +233,7 @@ export function DesignVariants({
                   }
                 }}
                 title={v.title || v.slug || `案 ${v.id}`}
-                className={cn(
-                  "group/tab relative flex h-7 min-w-0 max-w-[170px] shrink-0 cursor-default select-none items-center gap-1.5 rounded-t-lg border border-b-0 px-2.5 text-xs transition-colors",
-                  isActive
-                    ? "border-border bg-background text-foreground"
-                    : "border-transparent text-muted-foreground hover:bg-background/50",
-                )}
+                className="max-w-[180px]"
               >
                 <span className="font-mono text-[10px] text-muted-foreground/80">
                   {v.id}
@@ -264,20 +259,20 @@ export function DesignVariants({
                   }}
                   title="閉じる"
                   aria-label={`案 ${v.id} を閉じる`}
-                  className="-mr-1 hidden size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground group-hover/tab:flex"
+                  className="-mr-1 hidden size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground group-hover/tab:flex"
                 >
                   <X className="size-3" />
                 </button>
-              </div>
+              </UnderlineTab>
             );
           })}
           <button
             type="button"
             onClick={onAdd}
             disabled={!canGenerateVariant}
-            title="別案を追加（エージェントが新しい方向を1つ） ⌘T 風"
+            title="別案を追加（エージェントが新しい方向を1つ）"
             aria-label="別案を追加"
-            className="mb-px flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
+            className="my-auto ml-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
           >
             {action === "variant" ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -289,7 +284,7 @@ export function DesignVariants({
 
         {/* Adopt this pattern → Implement (lives by the tabs, not bottom-right). */}
         {shown && (
-          <div className="flex shrink-0 items-center border-l pl-2 pr-2">
+          <div className="flex shrink-0 items-center border-l px-2">
             <Button
               size="sm"
               className="h-6 gap-1.5 px-2.5 text-[11px]"

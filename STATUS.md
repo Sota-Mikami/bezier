@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-13 / DEC-064 Preview レスポンシブ＋Stop を稼働中バッジに -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-064 Preview レスポンシブ・DEC-063 ⌘Q確認・DEC-062 ⌘W 文脈分岐・DEC-060 Code Editor・DEC-059 Code サブタブ）
+<!-- 最終更新: 2026-06-13 / DEC-065 タブを下線タブに統一 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-065 下線タブ・DEC-064 Preview レスポンシブ・DEC-063 ⌘Q確認・DEC-062 ⌘W 文脈分岐・DEC-060 Code Editor）
+
+## ▶ 2026-06-13 セッション（DEC-065 — タブを Facebook 風下線タブに統一）
+- 共有 `UnderlineTab`（active＝色＋下線 / hover＝グレーのピル）を新設。Implement の Preview/Diff/Code と Design 候補タブを統一。Design は Chrome 風をやめ下線タブに戻すが **+追加・×・Chrome ショートカット（⌘1-9/⌘⌥←→/Ctrl+Tab）は維持**。
+- Preview ヘッダー追補: 回転アイコンを `RotateCwSquare` に・Reload を中央ビューポート群へ集約。
+- **tsc+eslint green・実機 200・Rust 変更なし**。DEC-065 で commit 済。
 
 ## ▶ 2026-06-13 セッション（DEC-064 — Preview レスポンシブ＋Stop 内包）
 - Implement Preview ツールバー中央に **デバイス切替（フィット/デスクトップ/タブレット/モバイル）＋回転＋寸法**と **パス入力**。プリセット時は iframe を実寸デバイス枠（中央寄せ・スクロール）に。iframe と注釈レイヤーを同枠に入れピン整合維持。

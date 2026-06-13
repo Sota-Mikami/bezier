@@ -23,6 +23,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { UnderlineTab } from "@/components/ui/underline-tab";
 import { cn } from "@/lib/utils";
 import { parseDiff, changedPathsFromStatus } from "@/lib/git";
 import { PreviewPane } from "./preview-pane";
@@ -46,40 +47,34 @@ export function BuildReview({ session }: { session: ImplementSession }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
-        <Button
-          size="sm"
-          variant={reviewTab === "preview" ? "secondary" : "ghost"}
-          className="h-7 gap-1.5"
+      <div className="flex shrink-0 items-stretch border-b px-1.5">
+        <UnderlineTab
+          active={reviewTab === "preview"}
           onClick={() => setReviewTab("preview")}
         >
           <MonitorPlay className="size-3.5" />
           Preview
-        </Button>
-        <Button
-          size="sm"
-          variant={reviewTab === "diff" ? "secondary" : "ghost"}
-          className="h-7 gap-1.5"
+        </UnderlineTab>
+        <UnderlineTab
+          active={reviewTab === "diff"}
           onClick={() => setReviewTab("diff")}
         >
           <FileDiff className="size-3.5" />
           Diff
-        </Button>
-        <Button
-          size="sm"
-          variant={reviewTab === "code" ? "secondary" : "ghost"}
-          className="h-7 gap-1.5"
+        </UnderlineTab>
+        <UnderlineTab
+          active={reviewTab === "code"}
           onClick={() => setReviewTab("code")}
           title="worktree の実コードを見て編集する"
         >
           <Code2 className="size-3.5" />
           Code
-        </Button>
+        </UnderlineTab>
         {reviewTab === "diff" && (
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto h-7 gap-1.5"
+            className="my-auto ml-auto h-7 gap-1.5"
             disabled={!ref || diffLoading}
             onClick={() => ref && void refreshDiff(ref.path)}
           >
