@@ -26,13 +26,23 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { cn } from "@/lib/utils";
 import { parseDiff, changedPathsFromStatus } from "@/lib/git";
+import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
 import { PreviewPane } from "./preview-pane";
 import { CodeBrowser } from "./code-browser";
 import type { ImplementSession } from "./use-implement-session";
 
 type ReviewTab = "preview" | "diff" | "code";
+const REVIEW_TABS: ReviewTab[] = ["preview", "diff", "code"];
 
-export function BuildReview({ session }: { session: ImplementSession }) {
+export function BuildReview({
+  session,
+  active = false,
+}: {
+  session: ImplementSession;
+  /** Whether Implement is the visible center tab — gates the tab shortcuts so
+   *  ⌘1-9 / ⌘⌥←→ only move the sub-tabs while Implement is on screen (DEC-066). */
+  active?: boolean;
+}) {
   const {
     ref,
     preview,
@@ -44,6 +54,14 @@ export function BuildReview({ session }: { session: ImplementSession }) {
 
   // Implement defaults to the visual iframe (Preview); Diff + Code are secondary.
   const [reviewTab, setReviewTab] = React.useState<ReviewTab>("preview");
+
+  // Chrome-style tab nav, same as the Design candidate tabs (DEC-066).
+  useTabShortcuts({
+    active,
+    ids: REVIEW_TABS,
+    currentId: reviewTab,
+    onSelect: (id) => setReviewTab(id as ReviewTab),
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col">

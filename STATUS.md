@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-13 / DEC-065 タブを下線タブに統一 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-065 下線タブ・DEC-064 Preview レスポンシブ・DEC-063 ⌘Q確認・DEC-062 ⌘W 文脈分岐・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-13 / DEC-066 Implement タブもショートカット＋サイズ統一 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-066 タブ shortcut/サイズ・DEC-065 下線タブ・DEC-064 Preview レスポンシブ・DEC-063 ⌘Q確認・DEC-060 Code Editor）
+
+## ▶ 2026-06-13 セッション（DEC-066 — Implement タブもショートカット＋サイズ統一）
+- 共有 `useTabShortcuts`（⌘1-9/⌘⌥←→/Ctrl+Tab・`active` 列のみ反応）を新設し **Implement の Preview/Diff/Code** と Design 候補タブの両方で使用（design-variants の自前実装は置換）。`page.tsx` が BuildReview に `active` を渡す。
+- **サイズ統一**: タブ的役割の3要素（Implement タブ / Design タブ / Spec ToC）を **13px** に揃え（Design id バッジ 10→11px・ToC 12→13px・行間調整）。
+- **tsc+eslint green・実機 200・Rust 変更なし**。DEC-066 で commit 済。
 
 ## ▶ 2026-06-13 セッション（DEC-065 — タブを Facebook 風下線タブに統一）
 - 共有 `UnderlineTab`（active＝色＋下線 / hover＝グレーのピル）を新設。Implement の Preview/Diff/Code と Design 候補タブを統一。Design は Chrome 風をやめ下線タブに戻すが **+追加・×・Chrome ショートカット（⌘1-9/⌘⌥←→/Ctrl+Tab）は維持**。

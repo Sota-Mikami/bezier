@@ -921,7 +921,7 @@ function IssueWorkbench({
               />
             </div>
             <div className={cn("absolute inset-0", tab !== "build" && "hidden")}>
-              <BuildReview session={session} />
+              <BuildReview session={session} active={tab === "build"} />
             </div>
           </div>
         </section>

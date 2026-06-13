@@ -181,7 +181,7 @@ function SpecToc({
                 onClick={() => onJump(h.line)}
                 title={h.text}
                 className={cn(
-                  "relative block w-full truncate rounded-md py-1 pr-2 text-left text-xs leading-snug transition-colors",
+                  "relative block w-full truncate rounded-md py-1.5 pr-2 text-left text-[13px] leading-snug transition-colors",
                   active
                     ? "bg-foreground/[0.06] font-medium text-foreground"
                     : cn(

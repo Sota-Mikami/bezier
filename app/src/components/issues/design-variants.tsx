@@ -19,6 +19,7 @@ import { Loader2, Plus, Sparkles, ArrowRightCircle, Check, X } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { removePath } from "@/lib/ipc";
+import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
 import {
   listVariants,
   nextVariantIds,
@@ -166,50 +167,14 @@ export function DesignVariants({
     variants[variants.length - 1] ||
     null;
 
-  // Browser-style tab shortcuts (only while the Design tab is visible, DEC-058),
-  // matching Chrome on macOS exactly (per Google's official shortcut docs):
-  //   ⌘1–8 → tab N    ⌘9 → last (rightmost) tab
-  //   ⌘⌥→ → next      ⌘⌥← → prev      Ctrl(+Shift)+Tab → next/prev
+  // Chrome-style tab nav (only while the Design tab is visible, DEC-058/066).
   const shownId = shown?.id ?? null;
-  React.useEffect(() => {
-    if (!active) return;
-    const onKey = (e: KeyboardEvent) => {
-      const n = variants.length;
-      if (!n) return;
-      const cycle = (back: boolean) => {
-        const cur = variants.findIndex((v) => v.id === shownId);
-        const next = ((cur < 0 ? 0 : cur) + (back ? -1 : 1) + n) % n;
-        setActiveId(variants[next].id);
-      };
-      // ⌘1–8 → tab N ; ⌘9 → last tab (Chrome semantics)
-      if (e.metaKey && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
-        const idx = e.key === "9" ? n - 1 : Number(e.key) - 1;
-        if (idx >= 0 && idx < n) {
-          e.preventDefault();
-          setActiveId(variants[idx].id);
-        }
-        return;
-      }
-      // ⌘⌥→ next / ⌘⌥← prev
-      if (e.metaKey && e.altKey && e.key === "ArrowRight") {
-        e.preventDefault();
-        cycle(false);
-        return;
-      }
-      if (e.metaKey && e.altKey && e.key === "ArrowLeft") {
-        e.preventDefault();
-        cycle(true);
-        return;
-      }
-      // Ctrl+Tab → next ; Ctrl+Shift+Tab → prev
-      if (e.ctrlKey && e.key === "Tab") {
-        e.preventDefault();
-        cycle(e.shiftKey);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [active, variants, shownId]);
+  useTabShortcuts({
+    active,
+    ids: variants.map((v) => v.id),
+    currentId: shownId,
+    onSelect: setActiveId,
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -235,7 +200,7 @@ export function DesignVariants({
                 title={v.title || v.slug || `案 ${v.id}`}
                 className="max-w-[180px]"
               >
-                <span className="font-mono text-[10px] text-muted-foreground/80">
+                <span className="font-mono text-[11px] text-muted-foreground/80">
                   {v.id}
                 </span>
                 <span className="min-w-0 flex-1 truncate">

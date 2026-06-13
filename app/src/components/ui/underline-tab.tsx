@@ -47,7 +47,7 @@ export function UnderlineTab({
     >
       <span
         className={cn(
-          "flex min-w-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+          "flex min-w-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors",
           active
             ? "text-foreground"
             : "text-muted-foreground group-hover/tab:bg-muted group-hover/tab:text-foreground",
