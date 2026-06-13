@@ -1,7 +1,13 @@
-<!-- 最終更新: 2026-06-12 / DEC-048 ロゴ確定(D1)＋完全モノクロ化 -->
-# Bezier — 現在地（2026-06-12 / ▶ DEC-048 ロゴ確定＋モノクロ）
+<!-- 最終更新: 2026-06-13 / DEC-049 LP=創刊号で全面再構築（公開品質） -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-049 LP 公開品質）
 
 > ⭐ **再開時はまず `playbook/strategy/2026-06-11_coevolution-positioning-and-repo-sor-model.md` を読む**（共進化コア価値・repo-as-SoR データモデル・B監査・v0.5作業リスト）。次に `playbook/operations/2026-06-08_session-handoff.md`（v0.1〜v0.4 実装の全状況）。
+
+## ▶ 2026-06-13 セッション（DEC-049 — LP「創刊号」全面再構築・公開品質）
+- **ヒーロー11案を FAB 切替で比較**（v1: Atelier/Grip/Swarm/Blueprint/Tiles/Orb、v2: Gallery/Editorial/Obsidian/Proof/Signature）→ CEO が **Editorial** 採用。
+- **LP 全体を「雑誌 Vol.001」としてゼロベース再構築**: 表紙→目次→特集→実演(ProofTheater)→収録機能→読者→仕様→購読→奥付。site commit `4b6172d`、tsc/eslint/build green。OG画像(表紙1200×630)・metadataBase・a11y・mobile・reduced-motion/print まで QA 済（4並行レビュアー33件対応）。
+- **公開前の残り1タスク**: `site/src/lib/site.ts` の `WAITLIST.endpoint` を本物のフォームに1行設定（現デモモード）。ドメイン確定後 `metadataBase` 更新。site は remote 無し（公開するならホスティングへ）。
+- 詳細 = `playbook/decisions-log.md` DEC-049。
 
 ## ▶ 2026-06-12 セッション（DEC-048 — ロゴ確定＋完全モノクロ化）
 - **ロゴ確定 = D1**（抽象ペンツール：中空ダイヤ＋ハンドル線＋中空サークル＋collinear 曲線、W13、モノクロ "lit black" sheen）。多数の探索を経て CEO が D1 で確定。探索一式＝`design/brand/logo/explore/`、生成＝`explore/build-locked.mjs`。
