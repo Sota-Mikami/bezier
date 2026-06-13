@@ -2030,7 +2030,14 @@ pub fn run() {
             // (copy/cut/paste/select-all) keep working in the WKWebView.
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{MenuBuilder, SubmenuBuilder};
+                use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+                use tauri::Emitter;
+                // Custom Quit so ⌘Q doesn't terminate abruptly: it emits an event
+                // the frontend confirms first (DEC-063), instead of the predefined
+                // .quit() which exits immediately.
+                let quit_item = MenuItemBuilder::with_id("quit-confirm", "Bezier を終了")
+                    .accelerator("CmdOrCtrl+Q")
+                    .build(app)?;
                 let app_menu = SubmenuBuilder::new(app, "Bezier")
                     .about(None)
                     .separator()
@@ -2040,7 +2047,7 @@ pub fn run() {
                     .hide_others()
                     .show_all()
                     .separator()
-                    .quit()
+                    .item(&quit_item)
                     .build()?;
                 let edit_menu = SubmenuBuilder::new(app, "Edit")
                     .undo()
@@ -2059,6 +2066,12 @@ pub fn run() {
                     .items(&[&app_menu, &edit_menu, &window_menu])
                     .build()?;
                 app.set_menu(menu)?;
+                // ⌘Q → ask the frontend to confirm before quitting.
+                app.on_menu_event(|app, event| {
+                    if event.id().as_ref() == "quit-confirm" {
+                        let _ = app.emit("bezier://quit-requested", ());
+                    }
+                });
             }
             Ok(())
         })

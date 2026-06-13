@@ -11,35 +11,59 @@
 // the window — which goes through the same confirm. So:
 //   - viewing Code → ⌘W closes a Code tab
 //   - anywhere else → ⌘W closes the app (with confirm)
-// Note: ⌘Q (Quit) is an explicit quit and bypasses this; that's intentional.
+//
+// ⌘Q: the native Quit was replaced (Rust) by a custom item that EMITS
+// `bezier://quit-requested` instead of quitting; we confirm here too (DEC-063),
+// so the app never terminates abruptly.
 
 import * as React from "react";
 
 export function AppCloseGuard() {
   React.useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenClose: (() => void) | undefined;
+    let unlistenQuit: (() => void) | undefined;
     let onKey: ((e: KeyboardEvent) => void) | undefined;
     let disposed = false;
+    let confirming = false; // guard against stacking dialogs
+
     (async () => {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const { listen } = await import("@tauri-apps/api/event");
         const { confirm } = await import("@tauri-apps/plugin-dialog");
         const win = getCurrentWindow();
-        const un = await win.onCloseRequested(async (event) => {
+
+        const confirmQuit = async (): Promise<boolean> => {
+          if (confirming) return false;
+          confirming = true;
+          try {
+            return await confirm("Bezier を終了しますか？", {
+              title: "終了の確認",
+              kind: "warning",
+              okLabel: "終了",
+              cancelLabel: "やめる",
+            });
+          } finally {
+            confirming = false;
+          }
+        };
+
+        const unClose = await win.onCloseRequested(async (event) => {
           event.preventDefault();
-          const ok = await confirm("Bezier を終了しますか？", {
-            title: "終了の確認",
-            kind: "warning",
-            okLabel: "終了",
-            cancelLabel: "やめる",
-          });
-          if (ok) await win.destroy();
+          if (await confirmQuit()) await win.destroy();
         });
+        // ⌘Q (custom menu item) → confirm, then destroy (quits the app).
+        const unQuit = await listen("bezier://quit-requested", async () => {
+          if (await confirmQuit()) await win.destroy();
+        });
+
         if (disposed) {
-          un();
+          unClose();
+          unQuit();
           return;
         }
-        unlisten = un;
+        unlistenClose = unClose;
+        unlistenQuit = unQuit;
 
         // ⌘W fallback: close the window (→ onCloseRequested → confirm) when the
         // Code browser didn't already claim it (it stops propagation when it does).
@@ -59,9 +83,11 @@ export function AppCloseGuard() {
         /* not running inside Tauri — nothing to guard */
       }
     })();
+
     return () => {
       disposed = true;
-      unlisten?.();
+      unlistenClose?.();
+      unlistenQuit?.();
       if (onKey) window.removeEventListener("keydown", onKey);
     };
   }, []);
