@@ -17,6 +17,12 @@ import {
   TriangleAlert,
   MonitorPlay,
   AppWindow,
+  Monitor,
+  Tablet,
+  Smartphone,
+  Maximize2,
+  RotateCcw,
+  Route,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -80,6 +86,56 @@ function StatusBadge({ status }: { status: PreviewStatus }) {
   );
 }
 
+// The status badge doubles as the Stop control (DEC-064, CEO): when the server
+// is running, hovering the "稼働中" badge swaps it to a red "停止" — click to stop.
+// Keeps Stop off the toolbar surface while still one click away.
+function RunningBadge({
+  status,
+  onStop,
+}: {
+  status: PreviewStatus;
+  onStop: () => void;
+}) {
+  if (status !== "ready" && status !== "starting") {
+    return <StatusBadge status={status} />;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onStop}
+      title="クリックで停止"
+      className="group/stop inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-normal text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+    >
+      <span
+        className={cn(
+          "size-2 rounded-full group-hover/stop:hidden",
+          status === "ready" ? "bg-emerald-500" : "bg-amber-500",
+        )}
+      />
+      <Square className="hidden size-3 fill-current group-hover/stop:inline" />
+      <span className="group-hover/stop:hidden">{STATUS_LABEL[status]}</span>
+      <span className="hidden group-hover/stop:inline">停止</span>
+    </button>
+  );
+}
+
+// Responsive viewport presets for the preview (DEC-064). `fluid` fills the pane;
+// the device presets constrain the iframe to a real width/height (centered) so
+// media queries / reflow can be checked. Rotate swaps w/h.
+type DeviceId = "fluid" | "desktop" | "tablet" | "mobile";
+const DEVICES: {
+  id: DeviceId;
+  label: string;
+  icon: typeof Monitor;
+  w?: number;
+  h?: number;
+}[] = [
+  { id: "fluid", label: "フィット（全幅）", icon: Maximize2 },
+  { id: "desktop", label: "デスクトップ", icon: Monitor, w: 1280, h: 800 },
+  { id: "tablet", label: "タブレット", icon: Tablet, w: 768, h: 1024 },
+  { id: "mobile", label: "モバイル", icon: Smartphone, w: 390, h: 844 },
+];
+
 export function PreviewPane({
   server,
   hasRef,
@@ -94,11 +150,33 @@ export function PreviewPane({
 
   const [showSettings, setShowSettings] = React.useState(false);
   const [reloadNonce, setReloadNonce] = React.useState(0);
+  // Responsive viewport (DEC-064) + navigated path.
+  const [deviceId, setDeviceId] = React.useState<DeviceId>("fluid");
+  const [portrait, setPortrait] = React.useState(true);
+  const [path, setPath] = React.useState("/");
+  const [pathDraft, setPathDraft] = React.useState("/");
   // Ref to the live iframe — handed to the annotation overlay so the element
   // picker can postMessage the cooperating preview (DEC-046 #3).
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
 
   const running = status === "starting" || status === "ready";
+
+  const device = DEVICES.find((d) => d.id === deviceId) ?? DEVICES[0];
+  const isFluid = !device.w;
+  const vw = isFluid ? null : portrait ? device.w! : device.h!;
+  const vh = isFluid ? null : portrait ? device.h! : device.w!;
+
+  const src = url
+    ? url.replace(/\/+$/, "") + (path.startsWith("/") ? path : `/${path}`)
+    : undefined;
+
+  const applyPath = React.useCallback(() => {
+    let p = pathDraft.trim();
+    if (!p.startsWith("/")) p = `/${p}`;
+    setPath(p);
+    setPathDraft(p);
+    setReloadNonce((n) => n + 1); // navigate (force even if unchanged)
+  }, [pathDraft]);
 
   const handleSubmit = React.useCallback(
     async (cfg: PreviewConfig, alsoStart: boolean) => {
@@ -127,27 +205,80 @@ export function PreviewPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Controls */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
-        <StatusBadge status={status} />
-        {config && (
-          <code className="truncate font-mono text-[11px] text-muted-foreground">
-            {config.devCommand || "(dev コマンド未設定)"}
-            {config.packageDir && ` @${config.packageDir}/`} · :{config.port}
-          </code>
-        )}
-        <div className="ml-auto flex items-center gap-1.5">
-          {running ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5"
-              onClick={() => void server.stop()}
+      {/* Controls: [status/stop] · [responsive + path] · [start/reload/設定] */}
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <RunningBadge status={status} onStop={() => void server.stop()} />
+          {config && (
+            <code className="hidden truncate font-mono text-[11px] text-muted-foreground lg:inline">
+              {config.devCommand || "(dev コマンド未設定)"}
+              {config.packageDir && ` @${config.packageDir}/`} · :{config.port}
+            </code>
+          )}
+        </div>
+
+        {/* Center: responsive viewport + navigated path (only once running). */}
+        {status === "ready" && (
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+              {DEVICES.map((d) => {
+                const Icon = d.icon;
+                const active = d.id === deviceId;
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    title={d.label + (d.w ? ` · ${d.w}×${d.h}` : "")}
+                    onClick={() => setDeviceId(d.id)}
+                    className={cn(
+                      "flex size-6 items-center justify-center rounded transition-colors",
+                      active
+                        ? "bg-secondary text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5" />
+                  </button>
+                );
+              })}
+            </div>
+            {!isFluid && (
+              <>
+                <button
+                  type="button"
+                  title="向きを回転"
+                  onClick={() => setPortrait((p) => !p)}
+                  className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <RotateCcw className="size-3.5" />
+                </button>
+                <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
+                  {vw} × {vh}
+                </span>
+              </>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                applyPath();
+              }}
+              className="flex items-center gap-1 rounded-md border px-2 focus-within:ring-1 focus-within:ring-ring"
             >
-              <Square className="size-3.5" />
-              Stop
-            </Button>
-          ) : (
+              <Route className="size-3 shrink-0 text-muted-foreground" />
+              <input
+                value={pathDraft}
+                onChange={(e) => setPathDraft(e.target.value)}
+                spellCheck={false}
+                placeholder="/"
+                title="表示するパス（Enter で移動）"
+                className="h-6 w-28 bg-transparent font-mono text-[11px] outline-none placeholder:text-muted-foreground"
+              />
+            </form>
+          </div>
+        )}
+
+        <div className="flex flex-1 items-center justify-end gap-1.5">
+          {!running && (
             <Button
               size="sm"
               className="h-7 gap-1.5"
@@ -158,17 +289,18 @@ export function PreviewPane({
               Start
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1.5"
-            disabled={status !== "ready"}
-            onClick={() => setReloadNonce((n) => n + 1)}
-            title="iframe を再読み込み"
-          >
-            <RotateCw className="size-3.5" />
-            Reload
-          </Button>
+          {status === "ready" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1.5"
+              onClick={() => setReloadNonce((n) => n + 1)}
+              title="iframe を再読み込み"
+            >
+              <RotateCw className="size-3.5" />
+              Reload
+            </Button>
+          )}
           <Button
             size="sm"
             variant={showSettings ? "secondary" : "ghost"}
@@ -195,26 +327,52 @@ export function PreviewPane({
       {/* Body */}
       <div className="relative min-h-0 flex-1">
         {status === "ready" && url ? (
-          <>
-            <iframe
-              key={reloadNonce}
-              ref={iframeRef}
-              src={url}
-              title="worktree preview"
-              className="h-full w-full border-0 bg-white"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-            />
-            {/* Figma-style comment/pen feedback over the live preview (DEC-045/046).
-                The shared AnnotationLayer with a "build" surface → edits the
-                worktree CODE (DEC-056). */}
-            {session && (
-              <AnnotationLayer
-                session={session}
-                iframeRef={iframeRef}
-                surface={buildAnnotationSurface(session)}
-              />
+          // For device presets the iframe is constrained + centered on a muted,
+          // scrollable backdrop; "fluid" fills the pane. The iframe AND the
+          // annotation overlay share the same device-sized frame so the %-based
+          // pins stay aligned at any width (DEC-064).
+          <div
+            className={cn(
+              "h-full w-full",
+              !isFluid && "overflow-auto bg-muted/40",
             )}
-          </>
+          >
+            <div
+              className={cn(
+                "h-full w-full",
+                !isFluid && "flex min-h-full justify-center p-4",
+              )}
+            >
+              <div
+                style={isFluid ? undefined : { width: vw!, height: vh! }}
+                className={cn(
+                  "relative bg-white",
+                  isFluid
+                    ? "h-full w-full"
+                    : "shrink-0 overflow-hidden rounded-xl border shadow-sm",
+                )}
+              >
+                <iframe
+                  key={reloadNonce}
+                  ref={iframeRef}
+                  src={src}
+                  title="worktree preview"
+                  className="h-full w-full border-0 bg-white"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                />
+                {/* Figma-style comment/pen feedback over the live preview
+                    (DEC-045/046). The shared AnnotationLayer with a "build"
+                    surface → edits the worktree CODE (DEC-056). */}
+                {session && (
+                  <AnnotationLayer
+                    session={session}
+                    iframeRef={iframeRef}
+                    surface={buildAnnotationSurface(session)}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
         ) : status === "starting" ? (
           <StartingOrError
             spinner

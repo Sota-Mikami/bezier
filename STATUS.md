@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-13 / DEC-063 ⌘Q も終了確認 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-063 ⌘Q確認・DEC-062 ⌘W 文脈分岐・DEC-060 Code Editor・DEC-059 Code サブタブ・DEC-058 Lovable IA）
+<!-- 最終更新: 2026-06-13 / DEC-064 Preview レスポンシブ＋Stop を稼働中バッジに -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-064 Preview レスポンシブ・DEC-063 ⌘Q確認・DEC-062 ⌘W 文脈分岐・DEC-060 Code Editor・DEC-059 Code サブタブ）
+
+## ▶ 2026-06-13 セッション（DEC-064 — Preview レスポンシブ＋Stop 内包）
+- Implement Preview ツールバー中央に **デバイス切替（フィット/デスクトップ/タブレット/モバイル）＋回転＋寸法**と **パス入力**。プリセット時は iframe を実寸デバイス枠（中央寄せ・スクロール）に。iframe と注釈レイヤーを同枠に入れピン整合維持。
+- **Stop を表から撤去** → **「稼働中」バッジ hover で「停止」**に変化（`RunningBadge`）。ツールバーは Start/Reload/設定 のみ。
+- **tsc+eslint green・実機 200・Rust 変更なし**。DEC-064 で commit 済。
 
 ## ▶ 2026-06-13 セッション（DEC-063 — ⌘Q も終了確認）
 - ⌘Q を即終了でなく**確認**へ：Rust で custom Quit（`quit-confirm`・⌘Q）→ `bezier://quit-requested` emit、`AppCloseGuard` が listen → 確認 → destroy。close/⌘W/⌘Q すべて確認経由（Code 表示中の ⌘W のみタブ閉じ）。**tsc+eslint green・Rust 再ビルド**。DEC-063 で commit 予定。
