@@ -167,7 +167,7 @@ function SpecToc({
   const minLevel = Math.min(...headings.map((h) => h.level));
   return (
     <nav className="hidden w-56 shrink-0 overflow-y-auto border-r bg-muted/30 px-2 py-3 lg:block">
-      <div className="px-2 pb-2 text-[11px] font-semibold tracking-wide text-muted-foreground">
+      <div className="px-2 pb-2 text-xs font-semibold tracking-wide text-muted-foreground">
         目次
       </div>
       <ul className="space-y-px">
@@ -181,7 +181,7 @@ function SpecToc({
                 onClick={() => onJump(h.line)}
                 title={h.text}
                 className={cn(
-                  "relative block w-full truncate rounded-md py-1.5 pr-2 text-left text-[13px] leading-snug transition-colors",
+                  "relative block w-full truncate rounded-md py-2 pr-2 text-left text-sm leading-snug transition-colors",
                   active
                     ? "bg-foreground/[0.06] font-medium text-foreground"
                     : cn(

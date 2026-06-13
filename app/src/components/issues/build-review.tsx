@@ -70,14 +70,14 @@ export function BuildReview({
           active={reviewTab === "preview"}
           onClick={() => setReviewTab("preview")}
         >
-          <MonitorPlay className="size-3.5" />
+          <MonitorPlay className="size-4" />
           Preview
         </UnderlineTab>
         <UnderlineTab
           active={reviewTab === "diff"}
           onClick={() => setReviewTab("diff")}
         >
-          <FileDiff className="size-3.5" />
+          <FileDiff className="size-4" />
           Diff
         </UnderlineTab>
         <UnderlineTab
@@ -85,7 +85,7 @@ export function BuildReview({
           onClick={() => setReviewTab("code")}
           title="worktree の実コードを見て編集する"
         >
-          <Code2 className="size-3.5" />
+          <Code2 className="size-4" />
           Code
         </UnderlineTab>
         {reviewTab === "diff" && (

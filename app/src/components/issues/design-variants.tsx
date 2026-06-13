@@ -200,7 +200,7 @@ export function DesignVariants({
                 title={v.title || v.slug || `案 ${v.id}`}
                 className="max-w-[180px]"
               >
-                <span className="font-mono text-[11px] text-muted-foreground/80">
+                <span className="font-mono text-xs text-muted-foreground/80">
                   {v.id}
                 </span>
                 <span className="min-w-0 flex-1 truncate">
