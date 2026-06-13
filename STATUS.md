@@ -1,5 +1,11 @@
-<!-- 最終更新: 2026-06-13 / DEC-060 Code Editor 使い勝手（検索/編集作法/folding/AI行/タブ） -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-060 Code Editor・DEC-059 Code サブタブ・DEC-058 Lovable IA・DEC-051 中央3タブ・DEC-050 ループ）
+<!-- 最終更新: 2026-06-13 / DEC-061 ⌘W で Code タブ閉じ・停止に確認 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-061 ⌘W/停止確認・DEC-060 Code Editor・DEC-059 Code サブタブ・DEC-058 Lovable IA・DEC-050 ループ）
+
+## ▶ 2026-06-13 セッション（DEC-061 — ⌘W で Code タブ閉じ／停止に確認）
+- **⌘W がアプリごと終了していた**（デフォルトメニューの Close Window が ⌘W 占有・最後の窓を閉じると終了）→ Rust の `.setup` で **close_window を持たないカスタムメニュー**に差し替え（Edit メニューは残しコピペ維持）。⌘W が webview に届くように。
+- **⌘W → アクティブ Code タブを閉じる**（`CodeBrowser` ルート div の keydown・Code にフォーカス時のみ）。
+- **停止に確認**: `AppCloseGuard`（layout 常駐）が `onCloseRequested` を捕捉し「終了しますか？」→ OK で destroy。※⌘Q は即終了。
+- **tsc+eslint green・実機 200・Rust 再ビルド済**。**DEC-061 で commit 済**。
 
 ## ▶ 2026-06-13 セッション（DEC-060 — Code Editor の使い勝手）
 - **ターゲットユーザーから逆算**（Mai 即時直し/Leo 流暢/Kenji・Priya 読む/Tom 軽修正）→ エディタ＝**読む＋素早く安全に直す＋探す**。**IDE は目指さない**（LSP/デバッガ/minimap 等は入れない・深掘りは「実 IDE で開く」へ逃がす）。承認＝**全項目**。

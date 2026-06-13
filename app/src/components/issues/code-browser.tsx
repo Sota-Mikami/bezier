@@ -402,6 +402,27 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
     [dirtyByPath, activePath],
   );
 
+  // ⌘W / Ctrl+W closes the ACTIVE tab — scoped to the Code browser (this fires
+  // only when focus is inside it, since the keydown bubbles from the focused
+  // tree/editor/search up to this root). The native "Close Window" ⌘W was
+  // removed in Rust so it no longer quits the app (DEC-061).
+  const onKeyDown = React.useCallback(
+    (e: React.KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === "w" &&
+        activePath
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        void closeTab(activePath);
+      }
+    },
+    [activePath, closeTab],
+  );
+
   if (!ref) {
     return (
       <p className="p-4 text-sm text-muted-foreground">
@@ -411,7 +432,7 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
   }
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0" onKeyDown={onKeyDown}>
       {/* Left: file tree + in-files search */}
       <div className="flex w-64 shrink-0 flex-col border-r">
         <div className="flex h-8 shrink-0 items-center gap-1.5 border-b px-2.5 text-[11px] font-medium text-muted-foreground">

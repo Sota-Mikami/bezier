@@ -2022,6 +2022,46 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(PtyState::default())
+        .setup(|app| {
+            // macOS only: replace the default menu with one that deliberately
+            // OMITS "Close Window" — that item owns ⌘W, and we want ⌘W to reach
+            // the webview so it closes the active Code tab (DEC-061), not the
+            // whole app. The App + Edit submenus are kept so Quit and clipboard
+            // (copy/cut/paste/select-all) keep working in the WKWebView.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{MenuBuilder, SubmenuBuilder};
+                let app_menu = SubmenuBuilder::new(app, "Bezier")
+                    .about(None)
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .quit()
+                    .build()?;
+                let edit_menu = SubmenuBuilder::new(app, "Edit")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .select_all()
+                    .build()?;
+                let window_menu = SubmenuBuilder::new(app, "Window")
+                    .minimize()
+                    // intentionally no .close_window() — frees ⌘W for the webview.
+                    .build()?;
+                let menu = MenuBuilder::new(app)
+                    .items(&[&app_menu, &edit_menu, &window_menu])
+                    .build()?;
+                app.set_menu(menu)?;
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_dir,
             list_dir_all,
