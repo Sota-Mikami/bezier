@@ -44,6 +44,8 @@ import {
   Lock,
   Save,
   ImageIcon,
+  Search,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -52,8 +54,10 @@ import {
   readFile,
   writeFile,
   readFileBytes,
+  grepFiles,
   confirmDialog,
   type TreeEntry,
+  type GrepFile,
 } from "@/lib/ipc";
 import type { ImplementSession } from "./use-implement-session";
 
@@ -109,9 +113,49 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
   // agent settling can guard against clobbering them.
   const [dirty, setDirty] = React.useState(false);
 
+  // The line to scroll the open file to (set when a search result is clicked).
+  const [gotoLine, setGotoLine] = React.useState<number | undefined>(undefined);
+
+  // "In files" search (DEC-059): a content grep over the rooted folder, grouped
+  // by file. Empty query → show the tree instead.
+  const [query, setQuery] = React.useState("");
+  const [results, setResults] = React.useState<GrepFile[] | null>(null);
+  const [searching, setSearching] = React.useState(false);
+  const searchActive = query.trim() !== "";
+
   const loadDir = React.useCallback(async (path: string) => {
     return listDirAll(path);
   }, []);
+
+  // Debounced grep. setState only ever runs inside the (async) timer callback,
+  // never synchronously in the effect body.
+  React.useEffect(() => {
+    if (!root) return;
+    const q = query.trim();
+    let cancelled = false;
+    const h = window.setTimeout(async () => {
+      if (q === "") {
+        if (!cancelled) {
+          setResults(null);
+          setSearching(false);
+        }
+        return;
+      }
+      if (!cancelled) setSearching(true);
+      try {
+        const r = await grepFiles(root, q, 0);
+        if (!cancelled) setResults(r);
+      } catch {
+        if (!cancelled) setResults([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(h);
+    };
+  }, [query, root]);
 
   // Load the root listing. CodeBrowser is keyed by the worktree path at the call
   // site, so `root` is stable for this instance — no synchronous reset needed
@@ -198,8 +242,12 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
   );
 
   const selectFile = React.useCallback(
-    async (entry: TreeEntry) => {
-      if (entry.path === selected?.path) return;
+    async (entry: TreeEntry, line?: number) => {
+      // Same file already open → just (re)scroll to the line (no remount).
+      if (entry.path === selected?.path) {
+        if (line) setGotoLine(line);
+        return;
+      }
       if (dirty) {
         const ok = await confirmDialog(
           "未保存の変更があります。破棄して別のファイルを開きますか？",
@@ -208,9 +256,21 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
         if (!ok) return;
       }
       setDirty(false);
+      setGotoLine(line);
       setSelected(entry);
     },
     [selected?.path, dirty],
+  );
+
+  // Open a grep hit (build a TreeEntry from the GrepFile + jump to the line).
+  const openMatch = React.useCallback(
+    (file: GrepFile, line: number) => {
+      void selectFile(
+        { path: file.path, name: file.name, isDir: false, ext: file.ext },
+        line,
+      );
+    },
+    [selectFile],
   );
 
   if (!ref) {
@@ -223,8 +283,8 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
 
   return (
     <div className="flex h-full min-h-0">
-      {/* Left: file tree */}
-      <div className="flex w-60 shrink-0 flex-col border-r">
+      {/* Left: file tree + in-files search */}
+      <div className="flex w-64 shrink-0 flex-col border-r">
         <div className="flex h-8 shrink-0 items-center gap-1.5 border-b px-2.5 text-[11px] font-medium text-muted-foreground">
           <Folder className="size-3.5" />
           <span className="truncate" title={root ?? undefined}>
@@ -239,8 +299,41 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
             </span>
           )}
         </div>
+        {/* Search box */}
+        <div className="shrink-0 border-b p-1.5">
+          <div className="flex items-center gap-1.5 rounded-md border bg-muted/50 px-2 focus-within:ring-1 focus-within:ring-ring">
+            <Search className="size-3.5 shrink-0 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="ファイル内を検索…"
+              className="h-7 min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            {searchActive &&
+              (searching ? (
+                <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  title="クリア"
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-3.5" />
+                </button>
+              ))}
+          </div>
+        </div>
         <div className="min-h-0 flex-1 overflow-auto py-1">
-          {rootChildren === null ? (
+          {searchActive ? (
+            <SearchResults
+              results={results}
+              query={query.trim()}
+              root={root}
+              selectedPath={selected?.path ?? null}
+              onPick={openMatch}
+            />
+          ) : rootChildren === null ? (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
               読み込み中…
@@ -270,6 +363,7 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
             entry={selected}
             locked={locked}
             agentState={agentState}
+            gotoLine={gotoLine}
             onDirtyChange={setDirty}
           />
         ) : (
@@ -376,20 +470,178 @@ function Tree({
 }
 
 // ---------------------------------------------------------------------------
+// SearchResults ("in files" grep — grouped by file, expandable, click→jump)
+// ---------------------------------------------------------------------------
+
+function relativeTo(path: string, root: string | null): string {
+  if (root && path.startsWith(root + "/")) return path.slice(root.length + 1);
+  return path;
+}
+
+// Split a line into <mark>-wrapped match segments (case-insensitive).
+function Highlight({ text, q }: { text: string; q: string }) {
+  if (!q) return <>{text}</>;
+  const lower = text.toLowerCase();
+  const ql = q.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  let k = 0;
+  for (;;) {
+    const idx = lower.indexOf(ql, i);
+    if (idx === -1) {
+      out.push(<span key={k++}>{text.slice(i)}</span>);
+      break;
+    }
+    if (idx > i) out.push(<span key={k++}>{text.slice(i, idx)}</span>);
+    out.push(
+      <mark
+        key={k++}
+        className="rounded-[2px] bg-amber-300/60 text-foreground dark:bg-amber-500/40"
+      >
+        {text.slice(idx, idx + q.length)}
+      </mark>,
+    );
+    i = idx + q.length;
+  }
+  return <>{out}</>;
+}
+
+function SearchResults({
+  results,
+  query,
+  root,
+  selectedPath,
+  onPick,
+}: {
+  results: GrepFile[] | null;
+  query: string;
+  root: string | null;
+  selectedPath: string | null;
+  onPick: (file: GrepFile, line: number) => void;
+}) {
+  // Which result files are collapsed (default: all expanded). Keyed by path.
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
+  const toggle = (path: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+
+  if (results === null) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        検索中…
+      </div>
+    );
+  }
+  if (results.length === 0) {
+    return (
+      <p className="px-3 py-2 text-xs text-muted-foreground">一致なし</p>
+    );
+  }
+
+  const total = results.reduce((n, f) => n + f.matches.length, 0);
+
+  return (
+    <div>
+      <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground">
+        一致 <span className="font-medium text-foreground">{total}</span> 件 ・{" "}
+        {results.length} ファイル
+      </div>
+      <ul>
+        {results.map((file) => {
+          const isOpen = !collapsed.has(file.path);
+          const rel = relativeTo(file.path, root);
+          const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "";
+          return (
+            <li key={file.path}>
+              <button
+                type="button"
+                onClick={() => toggle(file.path)}
+                title={rel}
+                className="flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground/80 hover:bg-muted"
+              >
+                <ChevronRight
+                  className={cn(
+                    "size-3 shrink-0 text-muted-foreground transition-transform",
+                    isOpen && "rotate-90",
+                  )}
+                />
+                {IMAGE_EXTS.has(file.ext) ? (
+                  <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                )}
+                <span className="min-w-0 truncate">
+                  {dir && <span className="text-muted-foreground">{dir}</span>}
+                  <span className="font-medium">{file.name}</span>
+                </span>
+                <span className="ml-auto shrink-0 rounded bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
+                  {file.matches.length}
+                </span>
+              </button>
+              {isOpen && (
+                <ul>
+                  {file.matches.map((m) => (
+                    <li key={m.line}>
+                      <button
+                        type="button"
+                        onClick={() => onPick(file, m.line)}
+                        className={cn(
+                          "flex w-full items-start gap-2 py-[2px] pr-2 pl-6 text-left font-mono text-[11px] leading-[1.5] hover:bg-muted",
+                          file.path === selectedPath && "bg-muted/50",
+                        )}
+                      >
+                        <span className="w-8 shrink-0 select-none text-right text-muted-foreground tabular-nums">
+                          {m.line}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-foreground/80">
+                          <Highlight text={m.text.trimStart()} q={query} />
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // FileViewer (one open file — mounted fresh per path via key)
 // ---------------------------------------------------------------------------
 
 type FileKind = "text" | "image" | "binary" | "toobig";
 
+// Center the editor on a 1-based line + put the caret there.
+function scrollToEditorLine(view: EditorView, line: number) {
+  const max = view.state.doc.lines;
+  const ln = Math.min(Math.max(1, Math.floor(line)), max);
+  const pos = view.state.doc.line(ln).from;
+  view.dispatch({
+    selection: { anchor: pos },
+    effects: EditorView.scrollIntoView(pos, { y: "center" }),
+  });
+}
+
 function FileViewer({
   entry,
   locked,
   agentState,
+  gotoLine,
   onDirtyChange,
 }: {
   entry: TreeEntry;
   locked: boolean;
   agentState: ImplementSession["agentState"];
+  gotoLine?: number;
   onDirtyChange: (d: boolean) => void;
 }) {
   const isImage = IMAGE_EXTS.has(entry.ext);
@@ -544,9 +796,14 @@ function FileViewer({
           if (cancelled) return;
         }
         setKind("text");
-        // Mount after paint so hostRef is in the DOM.
+        // Mount after paint so hostRef is in the DOM. Then jump to the initial
+        // target line (set when opened from a search hit).
         requestAnimationFrame(() => {
-          if (!cancelled) mountEditor(text, langExt);
+          if (cancelled) return;
+          mountEditor(text, langExt);
+          if (gotoLine && viewRef.current) {
+            scrollToEditorLine(viewRef.current, gotoLine);
+          }
         });
       } catch {
         if (!cancelled) setKind("binary");
@@ -578,6 +835,14 @@ function FileViewer({
       ]),
     });
   }, [locked, kind]);
+
+  // Re-jump when gotoLine changes on an already-open file (a different search
+  // hit in the same file — no remount, so the mount-time jump doesn't fire).
+  React.useEffect(() => {
+    if (!gotoLine || kind !== "text") return;
+    const view = viewRef.current;
+    if (view) scrollToEditorLine(view, gotoLine);
+  }, [gotoLine, kind]);
 
   // When the agent settles and our buffer is clean, reload from disk so we show
   // what the agent wrote. A dirty buffer is left untouched.

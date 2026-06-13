@@ -80,6 +80,34 @@ export function listDirAll(path: string): Promise<TreeEntry[]> {
   return invoke<TreeEntry[]>("list_dir_all", { path });
 }
 
+/** One matching line within a file (grep_files). */
+export interface GrepLine {
+  line: number;
+  text: string;
+}
+
+/** A file with ≥1 content match (grep_files), grouped with its matching lines. */
+export interface GrepFile {
+  path: string;
+  name: string;
+  ext: string;
+  matches: GrepLine[];
+}
+
+/**
+ * Grep file CONTENTS under `root` for `query` (case-insensitive), grouped by
+ * file — the Code browser's "in files" search (DEC-059). Skips dotfiles,
+ * node_modules/target/.next/out, >1MB and binary files. Bounded by `limit`
+ * TOTAL matches (0 → 400 default). -> invoke("grep_files", { root, query, limit })
+ */
+export function grepFiles(
+  root: string,
+  query: string,
+  limit = 0,
+): Promise<GrepFile[]> {
+  return invoke<GrepFile[]>("grep_files", { root, query, limit });
+}
+
 /** Read a file's contents as UTF-8 text. -> invoke("read_file", { path }) */
 export function readFile(path: string): Promise<string> {
   return invoke<string>("read_file", { path });

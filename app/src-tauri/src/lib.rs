@@ -177,6 +177,124 @@ fn list_dir_all(path: String) -> Result<Vec<FileEntry>, String> {
     Ok(entries)
 }
 
+/// One matching line within a file (grep_files). 1-based line number + text.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrepLine {
+    pub line: u32,
+    pub text: String,
+}
+
+/// A file with ≥1 content match (grep_files). Mirrors the TS `GrepFile`.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrepFile {
+    pub path: String,
+    pub name: String,
+    pub ext: String,
+    pub matches: Vec<GrepLine>,
+}
+
+/// Recursively grep file CONTENTS under `root` for `query` (case-insensitive
+/// substring), grouped by file with the matching lines — the Code browser's
+/// "in files" search (Lovable-style). Skips dotfiles/dotdirs + SKIP_DIRS, files
+/// over 1 MB, and non-UTF-8 (binary) files. Bounded by `limit` TOTAL matches
+/// (0 → 400 default), ≤50 matches/file, line text truncated at 240 chars, so a
+/// big tree can't hang the UI. Iterative walk; files sorted by path.
+#[tauri::command]
+fn grep_files(root: String, query: String, limit: usize) -> Result<Vec<GrepFile>, String> {
+    let base = Path::new(&root);
+    reject_traversal(base)?;
+    let needle = query.to_ascii_lowercase();
+    if needle.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let cap = if limit == 0 { 400 } else { limit };
+    const MAX_FILE_BYTES: u64 = 1_000_000;
+    const MAX_PER_FILE: usize = 50;
+    const MAX_LINE_LEN: usize = 240;
+
+    let mut files: Vec<GrepFile> = Vec::new();
+    let mut total = 0usize;
+    let mut stack: Vec<std::path::PathBuf> = vec![base.to_path_buf()];
+    'walk: while let Some(dir) = stack.pop() {
+        let read = match fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for item in read.flatten() {
+            let name = item.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let ft = match item.file_type() {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            if ft.is_dir() {
+                if !SKIP_DIRS.contains(&name.as_str()) {
+                    stack.push(item.path());
+                }
+                continue;
+            }
+            if !ft.is_file() {
+                continue;
+            }
+            if let Ok(md) = item.metadata() {
+                if md.len() > MAX_FILE_BYTES {
+                    continue;
+                }
+            }
+            let path = item.path();
+            let content = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue, // binary / non-UTF-8 — skip
+            };
+            let mut matches: Vec<GrepLine> = Vec::new();
+            for (i, line) in content.lines().enumerate() {
+                if line.to_ascii_lowercase().contains(&needle) {
+                    let mut text = line.trim_end().to_string();
+                    if text.len() > MAX_LINE_LEN {
+                        let mut end = MAX_LINE_LEN;
+                        while !text.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        text.truncate(end);
+                        text.push('…');
+                    }
+                    matches.push(GrepLine {
+                        line: (i as u32) + 1,
+                        text,
+                    });
+                    total += 1;
+                    if matches.len() >= MAX_PER_FILE || total >= cap {
+                        break;
+                    }
+                }
+            }
+            if !matches.is_empty() {
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.to_ascii_lowercase())
+                    .unwrap_or_default();
+                files.push(GrepFile {
+                    path: path.to_string_lossy().into_owned(),
+                    name,
+                    ext,
+                    matches,
+                });
+            }
+            if total >= cap {
+                break 'walk;
+            }
+        }
+    }
+
+    files.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
+    Ok(files)
+}
+
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
     reject_traversal(Path::new(&path))?;
@@ -1907,6 +2025,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_dir,
             list_dir_all,
+            grep_files,
             read_file,
             write_file,
             write_file_bytes,
