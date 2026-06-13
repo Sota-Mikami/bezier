@@ -1,5 +1,8 @@
-<!-- 最終更新: 2026-06-13 / DEC-061 ⌘W で Code タブ閉じ・停止に確認 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-061 ⌘W/停止確認・DEC-060 Code Editor・DEC-059 Code サブタブ・DEC-058 Lovable IA・DEC-050 ループ）
+<!-- 最終更新: 2026-06-13 / DEC-062 ⌘W は Code 表示中のみタブ閉じ・他は終了確認 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-062 ⌘W 文脈分岐・DEC-060 Code Editor・DEC-059 Code サブタブ・DEC-058 Lovable IA・DEC-050 ループ）
+
+## ▶ 2026-06-13 セッション（DEC-062 — ⌘W を文脈で分岐）
+- **Code を見ている時だけ** ⌘W＝アクティブ Code タブ閉じ／**それ以外**＝アプリ終了（確認つき）。可視判定＝`CodeBrowser` ルートの `getClientRects()`。Code 可視時は capture で claim＋stopImmediatePropagation、非可視は `AppCloseGuard` の bubble が `win.close()`→確認。**tsc+eslint green・実機 200・Rust 変更なし**。DEC-062 で commit 済。
 
 ## ▶ 2026-06-13 セッション（DEC-061 — ⌘W で Code タブ閉じ／停止に確認）
 - **⌘W がアプリごと終了していた**（デフォルトメニューの Close Window が ⌘W 占有・最後の窓を閉じると終了）→ Rust の `.setup` で **close_window を持たないカスタムメニュー**に差し替え（Edit メニューは残しコピペ維持）。⌘W が webview に届くように。

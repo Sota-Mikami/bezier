@@ -402,26 +402,34 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
     [dirtyByPath, activePath],
   );
 
-  // ⌘W / Ctrl+W closes the ACTIVE tab — scoped to the Code browser (this fires
-  // only when focus is inside it, since the keydown bubbles from the focused
-  // tree/editor/search up to this root). The native "Close Window" ⌘W was
-  // removed in Rust so it no longer quits the app (DEC-061).
-  const onKeyDown = React.useCallback(
-    (e: React.KeyboardEvent) => {
+  // ⌘W / Ctrl+W closes the active Code tab — but ONLY when the Code view is
+  // actually on screen (DEC-061/062). The native "Close Window" ⌘W was removed
+  // in Rust, so when Code is NOT visible the keystroke falls through to the
+  // app-close handler (AppCloseGuard) which closes the window with a confirm.
+  // We listen in the CAPTURE phase and stopImmediatePropagation when we claim
+  // it, so the two handlers never both fire. Visibility = the root has client
+  // rects (its `hidden`/display:none ancestors collapse them when off-screen).
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
       if (
-        (e.metaKey || e.ctrlKey) &&
-        !e.shiftKey &&
-        !e.altKey &&
-        e.key.toLowerCase() === "w" &&
-        activePath
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        void closeTab(activePath);
-      }
-    },
-    [activePath, closeTab],
-  );
+        !(
+          (e.metaKey || e.ctrlKey) &&
+          !e.shiftKey &&
+          !e.altKey &&
+          e.key.toLowerCase() === "w"
+        )
+      )
+        return;
+      const el = rootRef.current;
+      if (!el || el.getClientRects().length === 0) return; // Code not visible
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (activePath) void closeTab(activePath);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [activePath, closeTab]);
 
   if (!ref) {
     return (
@@ -432,7 +440,7 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
   }
 
   return (
-    <div className="flex h-full min-h-0" onKeyDown={onKeyDown}>
+    <div ref={rootRef} className="flex h-full min-h-0">
       {/* Left: file tree + in-files search */}
       <div className="flex w-64 shrink-0 flex-col border-r">
         <div className="flex h-8 shrink-0 items-center gap-1.5 border-b px-2.5 text-[11px] font-medium text-muted-foreground">
