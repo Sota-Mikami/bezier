@@ -1,5 +1,9 @@
-<!-- 最終更新: 2026-06-13 / DEC-068 Annotation 磨き込み（Comment統合/Pen まとめ送信/畳み） -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-068 Annotation・DEC-066 タブ shortcut/サイズ・DEC-065 下線タブ・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-13 / DEC-069 Annotation を Design/Preview 完全パリティに -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-069 Annotation パリティ・DEC-068 Annotation 磨き込み・DEC-066 タブ・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+
+## ▶ 2026-06-13 セッション（DEC-069 — Annotation 完全パリティ）
+- CEO「Design と Preview で同じツールに・片方だけは避ける」→ **テキスト編集 中止**＋**element-pick 削除**（同じ非対称）。ツールは **cursor / comment / pen の3つ**に統一（Design も Preview も同一）。cooperating preview 依存（iframeRef/inspect script）を AnnotationLayer から除去。
+- **tsc+eslint green・実機 200・Rust 変更なし**。DEC-069 で commit 済。
 
 ## ▶ 2026-06-13 セッション（DEC-068 — Annotation 体験の磨き込み）
 - **Comment 統合**（Figma 方式・クリック=点/ドラッグ=範囲、`rect` ツール廃止）。**Pen 連続描画→まとめ送信**（ペンはツール解除せず溜める）。**アクションバー**（未送信数＋まとめ指示＋undo/redo/clear＋送信）を top 下に統合。**ツールバー畳み**（上の小ピル）。

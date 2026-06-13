@@ -49,7 +49,6 @@ const STATUS_LABEL: Record<PreviewStatus, string> = {
 function buildAnnotationSurface(session: ImplementSession): AnnotationSurface {
   return {
     key: "build",
-    elementPick: true,
     canSend: !!session.ref,
     cannotSendMessage:
       "先に右パネルの「Implement」で worktree を作成してください。",
@@ -363,7 +362,6 @@ export function PreviewPane({
                 {session && (
                   <AnnotationLayer
                     session={session}
-                    iframeRef={iframeRef}
                     surface={buildAnnotationSurface(session)}
                   />
                 )}

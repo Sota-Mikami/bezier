@@ -306,7 +306,6 @@ export function DesignVariants({
             <AnnotationLayer
               key={`anno-${shown.id}`}
               session={session}
-              iframeRef={iframeRef}
               surface={designSurface(session, shown, canGenerateVariant, reviseDesignPattern)}
             />
           </>
@@ -362,7 +361,6 @@ function designSurface(
 ): AnnotationSurface {
   return {
     key: `design:${pattern.id}`,
-    elementPick: false,
     canSend: agentAvailable,
     cannotSendMessage: "利用可能なエージェント (claude / codex) が見つかりません。",
     buildPrompt: (lines, shot) =>

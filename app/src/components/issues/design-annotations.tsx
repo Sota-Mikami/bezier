@@ -20,7 +20,6 @@ import {
   MousePointer2,
   MessageSquarePlus,
   Pencil,
-  MousePointerClick,
   Send,
   Loader2,
   Check,
@@ -72,8 +71,6 @@ const raf2 = () =>
 export interface AnnotationSurface {
   /** Pin-store key ("build" | "design:NN"). */
   key: string;
-  /** Whether element-pick (cooperating preview) applies (live preview only). */
-  elementPick: boolean;
   /** Can a batch be sent now? (e.g. Build needs a worktree.) */
   canSend: boolean;
   /** Shown when canSend is false. */
@@ -86,11 +83,9 @@ export interface AnnotationSurface {
 
 export function AnnotationLayer({
   session,
-  iframeRef,
   surface,
 }: {
   session: ImplementSession;
-  iframeRef: React.RefObject<HTMLIFrameElement | null>;
   surface: AnnotationSurface;
 }) {
   const { root, issue, agentState } = session;
@@ -105,7 +100,6 @@ export function AnnotationLayer({
   const [draftRect, setDraftRect] = React.useState<Rect | null>(null);
   const [captureMode, setCaptureMode] = React.useState<CaptureMode>("none");
   const [busy, setBusy] = React.useState(false);
-  const [hint, setHint] = React.useState<string | null>(null);
   // Collapse the toolbar out of the way (DEC-068) + a redo stack + a single
   // "send the whole batch with this instruction" note.
   const [minimized, setMinimized] = React.useState(false);
@@ -164,13 +158,6 @@ export function AnnotationLayer({
     },
     [save],
   );
-
-  // Transient hint toast (e.g. element-pick unsupported).
-  React.useEffect(() => {
-    if (!hint) return;
-    const t = window.setTimeout(() => setHint(null), 4000);
-    return () => window.clearTimeout(t);
-  }, [hint]);
 
   const toFrac = React.useCallback((e: React.PointerEvent) => {
     const r = layerRef.current?.getBoundingClientRect();
@@ -258,54 +245,6 @@ export function AnnotationLayer({
     setRedoStack([]);
     setActiveId(null);
   }, [save]);
-
-  // --- element pick (cooperating preview via postMessage) -----------------
-  React.useEffect(() => {
-    if (tool !== "element") return;
-    const win = iframeRef.current?.contentWindow;
-    if (!win) {
-      setTool("cursor");
-      return;
-    }
-    let ponged = false;
-    const onMsg = (e: MessageEvent) => {
-      const d = e.data;
-      if (!d || d.source !== "bezier-inspect") return;
-      if (d.type === "pong") {
-        ponged = true;
-        win.postMessage({ source: "bezier", type: "pick-start" }, "*");
-      } else if (d.type === "picked" && d.payload) {
-        const pl = d.payload;
-        const a = newAnnotation("element", clamp01(pl.x ?? 0.5), clamp01(pl.y ?? 0.5), {
-          element: {
-            selector: typeof pl.selector === "string" ? pl.selector : undefined,
-            tag: typeof pl.tag === "string" ? pl.tag : undefined,
-            classes: typeof pl.classes === "string" ? pl.classes : undefined,
-            text: typeof pl.text === "string" ? pl.text.slice(0, 120) : undefined,
-          },
-        });
-        addAnnotation(a);
-        setActiveId(a.id);
-        setRedoStack([]);
-        setTool("cursor");
-      }
-    };
-    window.addEventListener("message", onMsg);
-    win.postMessage({ source: "bezier", type: "ping" }, "*");
-    const t = window.setTimeout(() => {
-      if (!ponged) {
-        setHint(
-          "このプレビューは要素ピックに未対応です（public/bezier-inspect.js を読み込むと有効化）。コメント/矩形で指定してください。",
-        );
-        setTool("comment");
-      }
-    }, 900);
-    return () => {
-      window.removeEventListener("message", onMsg);
-      window.clearTimeout(t);
-      win.postMessage({ source: "bezier", type: "pick-cancel" }, "*");
-    };
-  }, [tool, iframeRef, addAnnotation]);
 
   // --- screenshot capture -------------------------------------------------
   // marks=true keeps pins in the shot (the agent's annotated screenshot);
@@ -555,20 +494,15 @@ export function AnnotationLayer({
         />
       )}
 
-      {/* Toolbar (top, collapsible) + action bar + hint */}
+      {/* Toolbar (top, collapsible) + action bar */}
       {showChrome && (
         <>
           <Toolbar
             tool={tool}
             setTool={setTool}
-            elementPick={surface.elementPick}
             minimized={minimized}
             onToggleMinimized={() => setMinimized((m) => !m)}
           />
-          {!minimized && tool === "element" && (
-            <Banner>要素をクリックして選択してください（Esc でツールバーから解除）</Banner>
-          )}
-          {!minimized && hint && <Banner tone="warn">{hint}</Banner>}
 
           {/* Action bar — one batch send for everything drawn (DEC-068): a single
               optional instruction + undo / redo / clear + send. Pinned at the
@@ -670,28 +604,6 @@ function describe(a: Annotation): string {
   }
 }
 
-function Banner({
-  children,
-  tone = "info",
-}: {
-  children: React.ReactNode;
-  tone?: "info" | "warn";
-}) {
-  return (
-    <div
-      className={cn(
-        "absolute left-1/2 top-14 max-w-[80%] -translate-x-1/2 rounded-md border px-3 py-1.5 text-center text-xs shadow-md backdrop-blur",
-        tone === "warn"
-          ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-          : "bg-background/95 text-muted-foreground",
-      )}
-      style={{ pointerEvents: "none" }}
-    >
-      {children}
-    </div>
-  );
-}
-
 function ToolButton({
   t,
   current,
@@ -726,13 +638,11 @@ function ToolButton({
 function Toolbar({
   tool,
   setTool,
-  elementPick,
   minimized,
   onToggleMinimized,
 }: {
   tool: Tool;
   setTool: (t: Tool) => void;
-  elementPick: boolean;
   minimized: boolean;
   onToggleMinimized: () => void;
 }) {
@@ -759,9 +669,6 @@ function Toolbar({
       <ToolButton t="cursor" current={tool} setTool={setTool} icon={<MousePointer2 className="size-4" />} label="操作（カーソル）" />
       <ToolButton t="comment" current={tool} setTool={setTool} icon={<MessageSquarePlus className="size-4" />} label="コメント（クリック＝点 / ドラッグ＝範囲）" />
       <ToolButton t="pen" current={tool} setTool={setTool} icon={<Pencil className="size-4" />} label="ペン（何度でも描いてまとめて送信）" />
-      {elementPick && (
-        <ToolButton t="element" current={tool} setTool={setTool} icon={<MousePointerClick className="size-4" />} label="要素を選択" />
-      )}
       <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
       <button
         type="button"
