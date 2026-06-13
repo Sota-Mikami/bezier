@@ -32,5 +32,23 @@
 
 ---
 
+## E. Skills / Agents マーケットプレイス・配布（idea・GTM 候補 / 2026-06-13）
+
+> CEO:「このツールを使うにあたって、**skills のマケプレというか配布する仕組み**って結構便利かつ喜ばれると思ってる。マーケにもいきそう。skills とか agent とかもかな。**より良いデザインや実装を作ったり拡張したりするための skills/agent を配布する**施策」。
+
+- **核**: Bezier 上で動く **skills / subagents / agent 設定** を、ユーザー間で **配布・インストール・共有できる仕組み**（マーケットプレイス／パック／レジストリ）。「より良いデザイン・実装を作る」「Bezier を拡張する」ためのノウハウをパッケージとして流通させる。
+- **なぜ刺さるか**:
+  - **便利＆喜ばれる**: 良い skill / agent を自作する手間を、入れるだけに変える。即戦力化。
+  - **マーケ/GTM になる**: 配布物そのものが入口（「この design-review skill いいよ」→ Bezier を触る動機）。コンテンツ＝獲得チャネル。バイラル性。
+- **既存資産と直結（重要）**: Bezier は **ユーザー自身の repo の中でユーザー自身のエージェントに委譲**するため、`CLAUDE.md`/`AGENTS.md`/`design.md`/custom skills/subagents/MCP/memory が **そのまま土台として継承される**（→ [[bezier-inherits-repo-conventions-moat]] / DEC-050）。マーケプレ＝**この"継承される土台"を共有可能にする**こと。Clarify/Design(別案)/Build/Verify の各段で効く skill を配れる（例: 「DS 監査 skill」「Verify 採点を厳しくする skill」「特定フレームワークの Build agent」）。
+- **戦略フレームとの整合**:
+  - Sierra ロックイン① **ドメイン知識の深さ** / ③ **ワークフローによるロックイン** を、**コミュニティ供給**で増幅（自前で全部作らない）。
+  - open-core（DEC-002・fair-code）と相性: 無料配布のOSS skill ＋ 有料 curated パック/private レジストリ/チーム配布、という課金面も置ける。
+- **想定フォーム（要検討）**: ① DS 接地の "design pack"（skill＋テンプレ）② agent テンプレ（特定スタックの Build/Verify 用）③ インストール導線（repo の `.claude/` に入れる or Bezier 内カタログ）④ キュレーション/署名/安全性（任意コード実行のレビュー）⑤ 無料 vs 有料・公式 vs コミュニティ。
+- **未決**: いつやるか（dogfood の core が固まってから）。まずは「自分用に作った skill を別 repo へ持ち回る」最小の配布から芽が出せるか。
+
+---
+
 ## 更新履歴
 - 2026-06-12: 初版。IDE/Agent オーケストレータのキャッチアップを受けた CEO 議論から B（着手予定）/ C / D を記録。A（Agent Inbox＋通知）は実装へ（DEC-028 予定）。
+- 2026-06-13: **E. Skills/Agents マーケットプレイス・配布** を追加（CEO idea・GTM 候補）。repo 継承 moat（DEC-050）の延長＝"継承される土台を共有可能にする"施策として位置づけ。

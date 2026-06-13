@@ -1,7 +1,38 @@
-<!-- 最終更新: 2026-06-13 / DEC-049 LP=創刊号で全面再構築（公開品質） -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-049 LP 公開品質）
+<!-- 最終更新: 2026-06-13 / DEC-055 Design をメインチャットのステップに（会話駆動） -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-055 会話駆動 Design・DEC-054 スタック非依存・DEC-053 ハイブリッド・DEC-052 左=純チャット・DEC-051 中央3タブ・DEC-050 Build ループ）
+
+## ▶ 2026-06-13 セッション（DEC-055 — 会話駆動 Design）
+- CEO「メインチャットの流れの中でステップとして Design を作りたい。今は Design ごとに別プロンプトで二度手間」。→ **Design 規約（`designConventionBlock`）をチャットの seed に常駐注入**。会話で「デザイン案を3つ」と言えば規約どおり `design/NN-slug.html` を書いてボードに自動表示（別プロンプト不要）。チャット手順を **Clarify→Spec→Design→Build** に。Design タブ（ボタン）も併存。
+- 実装 = `issues.ts`（`designConventionBlock`・`buildImplementHandoff`）。**tsc+eslint green・実機 200・未 commit**。詳細 = DEC-055。
+- ⚠ **未 commit が DEC-050〜055（6件）たまっている** — どこかでまとめて commit 推奨。
+
+## ▶ 2026-06-13 セッション（DEC-054 — Design スタック非依存＋フォルダリング規約）
+- CEO「Design は repo の技術スタックに影響せず作れるように・どんどん蓄積・フォルダリング規約を」。**規約確定**: `<issue>/design/NN-<kebab-slug>.html`（NN=連番・蓄積）／**スタック非依存の自己完結 HTML**（repo を読まない/依存しない・Spec から自由）／`@01` 参照。
+- **参照ソース（Mobbin 等）はユーザーに委ねる**（CEO 合意）: エージェント=ユーザーの Claude Code → 参照 MCP / CLAUDE.md 指針が継承される。Bezier は特定ツールを hardcode しない・MCP 設定 UI は作らない。将来は design-references skill 配布＝マケプレ案。
+- 実装 = `variants.ts`/`issues.ts`(`buildVariantHandoff`)/`design-variants.tsx`。**tsc+eslint green・未 commit**。詳細 = DEC-054 / 分析 doc §7.5。**未決**: ① worktree 不要化 ② 発散の fidelity（ワイヤー or リッチ）。
+
+## ▶ 2026-06-13 セッション（DEC-053 — Design タブ作り直し）
+- dogfood で「Design 全然使えない」（**別案 0 生成**）。原因＝実 Tailwind repo に「自己完結 inline CSS＋sandbox」を強制し**崩れた HTML**＋生成が会話を殺す。分析 doc = `playbook/research/2026-06-13_design-tab-analysis-and-proposal.md`。
+- **ハイブリッドに再設計**（3タブが自然に収まる）: **Design=グレースケールのワイヤー（発散・安く速く N 方向一括・`--continue` で会話継続・@参照で相談）→「この案で進める」→ Build=実 DS プレビュー（収束）**。参照パターン（Mobbin MCP）は生成プロンプトに内蔵。
+- 実装 = `variants.ts`/`issues.ts`(`buildVariantHandoff` 改訂)/`use-implement-session.ts`/`design-variants.tsx`。**tsc+eslint green・実機 /issues 200・未 commit**。詳細 = DEC-053。
+
+## ▶ 2026-06-13 セッション（DEC-052 — 左パネル純チャット化）
+- **左パネル＝純チャット**に（CEO「ボタン多くて難しそう」）。**動詞は"効く場所"へ**: Verify → Build タブ「検証する」／Commit・Ship(Sync/Open PR/Merge) → Issue ヘッダ `[Commit][Ship▾]`／再 Build・Discard・agent 選択 → 左ヘッダの **⋯** メニュー。着手＝チャットに書いて送る、直し＝チャットで言う。
+- 実装 = `issue-agent-panel.tsx`（スリム化＋⋯）/`build-review.tsx`（検証ボタン）/`page.tsx`（`IssueFinalize`）。**tsc+eslint green・実機 /issues 200・未 commit**。詳細 = DEC-052。後続=生ターミナル→composer 化（ideas-backlog §B）。
 
 > ⭐ **再開時はまず `playbook/strategy/2026-06-11_coevolution-positioning-and-repo-sor-model.md` を読む**（共進化コア価値・repo-as-SoR データモデル・B監査・v0.5作業リスト）。次に `playbook/operations/2026-06-08_session-handoff.md`（v0.1〜v0.4 実装の全状況）。
+
+## ▶ 2026-06-13 セッション（DEC-051 — 中央 3 タブ化）
+- **中央 = Spec / Design / Build の 3 タブ**に再構成（CEO の理想形）。**Design（新設）= 使い捨て HTML 別案＝考える層**（`<issue.dir>/design/*.html` を sandboxed iframe で見比べ／「別案を作る」で repo DS 接地の HTML をエージェント生成／「この案で進める」で実 Build へ）。旧 Design（実 repo プレビュー⇆Diff）は **Build** へ移設＋**Verify サブタブ**（PASS/FAIL チェックリスト）追加。
+- 実装 = `lib/variants.ts`（新）/`issues.ts`（`buildVariantHandoff`）/`use-implement-session.ts`（generate/pick variant）/`design-variants.tsx`（新）/`build-review.tsx`（旧 design-review 改名＋Verify）/`page.tsx`（3タブ・pulse）。**tsc+eslint green・実機 tauri /issues 200**。**未 commit（CEO レビュー待ち）**。
+- 詳細 = DEC-051。**DEC-050（Clarify→Spec(DoD)→Build→Verify ＋ evals 層）も同日・未 commit**。
+
+## ▶ 2026-06-13 セッション（DEC-050 — Build ループ＋evals 層）
+- **Zenn 記事の4核を Issue ループに実装**（提案 doc = `playbook/research/2026-06-13_agent-loop-from-zenn-article.md`）。新ループ＝**起票 → Clarify → Spec(DoD) → Build → Verify → 承認**。「実装」→ **Build** に概念統一。
+- **Clarify**：Build 前に repo 接地で3〜5問（既定値併記・誘導尋問なし）を handoff に内蔵。**evals 層A**：受入基準を「完成の定義（DoD）」として Build 前に確定（Spec テンプレ改訂）。**Verify**：受入基準を PASS/FAIL/BLOCKED/SKIP で採点→`verify.md`＋チャット要約（新エージェントターン・新ボタン）。
+- 実装 = `settings.tsx`/`issues.ts`（`buildVerifyHandoff`・clarify/verify イベント）/`use-implement-session.ts`（`handleVerify`）/`issue-agent-panel.tsx`（Build/再 Build/Verify）/`app/issues/page.tsx`。**app tsc+eslint green / 未 commit（CEO 指示待ち）**。
+- **CEO 別件の問いへの回答 = Yes・moat**：Bezier は repo 内でユーザー自身の coding agent に委譲 → 各社の `CLAUDE.md`/`design.md`/custom skills/MCP/memory が **そのまま Build/Verify の土台として継承**（Sierra「既存 SoR の上に立つ」/Priya DS 懸念への構造的回答）。
+- **後続**：Verify 結果ビューア（center 表示）/ Variants（A/B/C/D を1 worktree）/ 内製 eval ハーネス（層B）/ `data-verify` 決定論検証。詳細 = DEC-050。
 
 ## ▶ 2026-06-13 セッション（DEC-049 — LP「創刊号」全面再構築・公開品質）
 - **ヒーロー11案を FAB 切替で比較**（v1: Atelier/Grip/Swarm/Blueprint/Tiles/Orb、v2: Gallery/Editorial/Obsidian/Proof/Signature）→ CEO が **Editorial** 採用。

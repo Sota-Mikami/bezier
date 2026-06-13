@@ -693,6 +693,29 @@ export async function clearWorktreeRef(
  * not be able to read a file in the main repo, and arg-passing is more reliable
  * than typing into the TUI after a delay).
  */
+/**
+ * The Design "考える層" convention (DEC-054/055) as a markdown block, shared by
+ * the chat handoff (so design can be produced conversationally) and the Design-tab
+ * generator. Carries the foldering/naming rule + the stack-independent grayscale
+ * wireframe constraints so a chat request like "デザイン案を3つ" yields correct,
+ * board-renderable files with no separate prompt.
+ */
+export function designConventionBlock(issue: Pick<Issue, "dir">): string[] {
+  const dir = `${issue.dir}/design`;
+  return [
+    "## デザイン別案（Design）— チャットからいつでも作れる",
+    "",
+    "UI の方向を決めたい時や、ユーザーが「デザイン案を出して」「他の方向は？」と言った時は、**実装コードを書く前に** 下記の規約で **ワイヤー（構造スケッチ）** を作ってください。Bezier の Design ボードに自動で並び、ユーザーが見比べられます（別途プロンプトは不要）。",
+    `- **保存先**: \`${dir}/NN-<短いkebab-slug>.html\`（NN=2桁ゼロ埋め連番。既存の最大+1から・**使い回さない＝蓄積**）。例 \`${dir}/01-toolbar-filter.html\`。`,
+    "- **スタックに依存しない・自己完結**: **プレーンなインライン CSS のみ**。Tailwind の class・外部 CSS/JS/CDN・外部画像に依存しない（sandboxed iframe で静的描画されるため）。repo の実装は読まず、Spec から自由に発想する。",
+    "- **グレースケールの構造スケッチ**（色は使わない／方向差は構造で）。複数頼まれたら **各案を別方向** にして一度に複数ファイル書く。",
+    "- 各ファイル先頭に `<title>短い名前</title>` と `<!-- bezier:prompt: 〈方向の一言〉 -->`。",
+    "- 書いたらチャットで「案 NN: 〈方向〉」を1行ずつ報告（コード・commit は不要）。",
+    "- ユーザーが「案 NN で進めて / 実装して」と言ったら、その方向で **実コード（実物の DS）** に実装する。",
+    "",
+  ];
+}
+
 export async function buildImplementHandoff(
   root: string,
   issue: Issue,
@@ -716,26 +739,33 @@ export async function buildImplementHandoff(
   // On a re-run the worktree already holds the previous iteration's changes; ask
   // the agent to adjust them to the updated spec rather than start over (DEC-012
   // review↔refine cycle).
+  // DEC-050 Build loop: every fresh build starts with a short, repo-grounded
+  // Clarify (ambiguity removal) and treats the spec's 受入基準 as the Definition
+  // of Done — so the agent doesn't race ahead on a vague request, and what it
+  // builds is exactly what Verify will later score.
   const intro = opts?.userMessage
     ? [
         `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
         "これは **新規 Issue のチャット開始** です。ユーザーの最初のリクエスト（下記）をもとに、次の順で進めてください:",
-        `1) まず \`${specPath}\` に Spec を書き起こす（既にテンプレートがあれば埋める）。なぜ/何を/受入基準を具体化する。`,
+        "0) **まず Clarify（確認）**: いきなり実装せず、**リポジトリを読んだ上で** 要望の曖昧さを潰す確認を **3〜5 問** してください。各問いには **おすすめの既定値（best-guess）を併記** し、ユーザーが「それで OK」と言うだけで前に進めるように。既存の実装・部品・規約に接地した具体的な問いにし、誘導尋問は避けます。",
+        `1) 合意できたら \`${specPath}\` に Spec を書き起こす（テンプレートがあれば埋める）。特に **「受入基準」は観察可能・チェック可能な文で先に確定**（= 完成の定義。後で Verify が採点します）。「やらないこと」で境界も引く。`,
         "2) issue.md の frontmatter の `title` が空または「Untitled」なら、簡潔なタイトルを設定する。",
-        "3) その後にこの worktree 内のコードへ実装する。",
-        "不明点があれば、いきなり実装せず **まず質問** してください（チャットで対話できます）。",
+        "3) **Design ステップ（UI の変更なら）**: 実装の前に、**デザイン別案（ワイヤー）を 2〜3 案**作って方向を見比べてもらう（下記「デザイン別案」の規約に従う）。Design ボードに自動で並びます。ユーザーが方向を選んだら次へ。ロジック中心でビジュアル判断が不要なら、その旨を伝えてスキップして良い。",
+        "4) 選ばれた方向で **この worktree 内のコードに実装**する。受入基準を満たすことをゴールにする。",
         "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
       ]
     : opts?.followUp
       ? [
           `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-          "これは **追記の再実装依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
-          "**ゼロからやり直さず**、更新後の Issue / Spec に合わせて既存の変更を調整・拡張してください。",
+          "これは **追記の再 Build 依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
+          "**ゼロからやり直さず**、更新後の Issue / Spec（特に **受入基準**）に合わせて既存の変更を調整・拡張してください。",
           "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
         ]
       : [
           `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
           "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
+          "**実装の前に Spec の「受入基準」を確認**してください。空・曖昧なら、いきなり作らず **まず 3〜5 問の確認**（各問いに既定値を併記・リポジトリに接地）をして spec.md を更新してから実装します。",
+          "受入基準は「完成の定義」です。これを満たすことをゴールにしてください（後で Verify が採点します）。",
           "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
         ];
   // The Spec is the LIVING spec for this issue. It lives OUTSIDE the worktree
@@ -750,6 +780,7 @@ export async function buildImplementHandoff(
     `この issue の仕様書は \`${specPath}\` です。worktree の外にありますが、\`--add-dir\` で **読み書きできます**。`,
     "- **実装の前に必ず spec.md を読み直して**、最新の仕様に従ってください（毎回・自動で）。",
     "- 会話で意図や要件が変わったら、**まず spec.md を更新**してから実装し、Spec と実装を常に同期させてください。",
+    "- **「受入基準」は完成の定義（Definition of Done）** です。Build 後に Verify がこの一行ずつを PASS/FAIL で採点するので、満たせる粒度のチェック可能な文に保ってください。",
     "",
   ];
   // Monorepo scope (DEC-039): when the issue is scoped to a subfolder of a
@@ -760,6 +791,11 @@ export async function buildImplementHandoff(
         "",
       ]
     : [];
+  // Chat-driven Design (DEC-055): the convention is carried INTO the main chat's
+  // context, so the agent can produce design wireframes whenever the user asks
+  // ("デザイン案を3つ") — they land in design/ and the Design board picks them up
+  // automatically, with NO separate Design-tab prompt to re-author.
+  const designConvention = designConventionBlock(issue);
   const content = [
     `# 実装ハンドオフ — ${issue.title || "(無題)"}`,
     "",
@@ -774,9 +810,156 @@ export async function buildImplementHandoff(
     ...livingSpec,
     "---",
     "",
+    ...designConvention,
+    "---",
+    "",
     "## Issue",
     "",
     issueMd,
+    "",
+    "## Spec",
+    "",
+    specMd,
+    "",
+  ].join("\n");
+  await writeFile(outPath, content);
+  return { path: outPath, content };
+}
+
+/**
+ * Build the Verify handoff (DEC-050, evals 層A). After a Build, the agent
+ * re-reads the spec's 受入基準 and checks the worktree against EACH one,
+ * reporting PASS / FAIL / BLOCKED / SKIP with evidence — so a maker who can't
+ * read the diff approves a *verified result*, not unread code. The verdict is
+ * written to <issue.dir>/verify.md (durable, readable via `--add-dir`) and
+ * summarized in chat. Returned `content` is passed as the agent's positional
+ * prompt (same reliable arg-passing as the implement handoff). A copy is kept at
+ * <root>/.bezier/handoff/<id>-verify.md for the record.
+ */
+export async function buildVerifyHandoff(
+  root: string,
+  issue: Issue,
+  worktreePath: string,
+  opts?: { subPath?: string },
+): Promise<{ path: string; content: string }> {
+  let specMd: string;
+  try {
+    specMd = await readFile(slotPath(issue, "spec"));
+  } catch {
+    specMd = "(spec.md がありません)";
+  }
+  const specPath = slotPath(issue, "spec");
+  const verifyPath = `${issue.dir}/verify.md`;
+  const outPath = `${stripTrailingSlash(root)}/.bezier/handoff/${issue.id}-verify.md`;
+  const monorepoNote = opts?.subPath
+    ? [
+        `**この作業は monorepo の \`${opts.subPath}/\` パッケージに限定されています。** 検証もその範囲で行ってください。`,
+        "",
+      ]
+    : [];
+  const content = [
+    `# 検証 (Verify) — ${issue.title || "(無題)"}`,
+    "",
+    `あなたは git worktree \`${worktreePath}\` の中にいます。これは **検証ターン** です。`,
+    "**実装は基本いじらず**（明らかな取りこぼしの微修正は可）、Spec の「受入基準」を 1 つずつ確認してください。",
+    "",
+    ...monorepoNote,
+    "## やること",
+    "",
+    `1. \`${specPath}\` の **「受入基準」** を読み直す（\`--add-dir\` で読み書きできます）。`,
+    "2. 各基準について、コード／（可能なら）実際の挙動で満たされているかを確認する。「たぶん動く」ではなく、**確認した事実だけ** を PASS にする。",
+    "3. 各基準を **PASS / FAIL / BLOCKED / SKIP** で判定し、根拠（どのファイル・どの挙動で確認したか）を 1 行添える。",
+    "   - PASS = 満たす / FAIL = 満たさない / BLOCKED = 外部要因で確認不能（要因を明記）/ SKIP = 今回対象外（理由）。",
+    "4. 視覚で before/after を示せるものは、プレビューの該当箇所やスクショを参照する。",
+    `5. 結果を \`${verifyPath}\` に **チェックリスト** で書き出す（各行: \`- [x] 〈基準〉 — PASS（根拠）\` の形）。FAIL があれば末尾に「次の修正案」を短く。`,
+    "6. 最後にチャットで **PASS/FAIL の総数** と、FAIL の要点だけを要約する。",
+    "",
+    "---",
+    "",
+    "## Spec",
+    "",
+    specMd,
+    "",
+  ].join("\n");
+  await writeFile(outPath, content);
+  return { path: outPath, content };
+}
+
+/**
+ * Build the variant-generation handoff (DEC-053/054, the Design "考える層"). Asks
+ * the live agent to write N disposable, **STACK-INDEPENDENT** grayscale wireframes
+ * — the divergence half of the hybrid: free visual ideation NOT tied to the repo's
+ * framework/components, with the real DS render happening later in Build (R).
+ *
+ * DEC-054 — foldering + naming rule: each idea is one self-contained HTML file at
+ *   <issue.dir>/design/NN-<kebab-slug>.html
+ * where NN are the provided zero-padded indices (they accumulate, never reused).
+ * Stack-independence is the point: the agent must NOT read or depend on the repo's
+ * tech stack here (no Tailwind classes, no framework, no external assets), so
+ * design exploration is never entangled with how the repo is built.
+ *
+ * Reference patterns are LEFT TO THE USER (DEC-054): because the agent IS the
+ * user's own Claude Code in their repo, their reference MCP / CLAUDE.md design
+ * guidance is already inherited — so the prompt just says "consult whatever
+ * reference tools / design guidance you have", never hardcoding a specific source.
+ */
+export async function buildVariantHandoff(
+  root: string,
+  issue: Issue,
+  worktreePath: string,
+  opts: { ids: string[]; context?: string },
+): Promise<{ path: string; content: string }> {
+  let specMd: string;
+  try {
+    specMd = await readFile(slotPath(issue, "spec"));
+  } catch {
+    specMd = "(spec.md がありません)";
+  }
+  const ids = opts.ids.length ? opts.ids : ["01"];
+  const ctx = (opts.context ?? "").trim();
+  const designGlob = `${issue.dir}/design/`;
+  const outPath = `${stripTrailingSlash(root)}/.bezier/handoff/${issue.id}-variant-${ids.join("")}.md`;
+  const content = [
+    `# デザイン別案（ワイヤー）— ${issue.title || "(無題)"}`,
+    "",
+    `あなたの作業ディレクトリは \`${worktreePath}\` です。これは **Design（考える層）** の依頼で、**Build（実装）の前段**でも構いません。`,
+    `**実装コードは書かないでください。** 代わりに、**${ids.length} 案**を **それぞれ別の方向**で書き出します。`,
+    "",
+    "## 出力先と命名（厳守）",
+    "",
+    `- 保存先フォルダ: \`${designGlob}\``,
+    `- ファイル名: **\`NN-<短いkebab-slug>.html\`**。今回使う番号: **${ids.join(" / ")}**（この番号をそのまま使う）。slug は各案の方向の短い名前（英小文字ハイフン）。例: \`${ids[0]}-toolbar-filter.html\` / \`${ids[1] ?? "02"}-column-menu.html\`。`,
+    `- 既存ファイルがあれば読み、番号・方向が**重複しない**ようにする（番号は使い回さない＝増えていく）。`,
+    "",
+    "## スタックに依存しない自由なアイデア（重要）",
+    "",
+    "- ここは **repo の技術スタックから独立**しています。**repo のフレームワーク・コンポーネント・既存コードを読みに行かない／真似ない**。Spec が示す「何を解くか」から、**自由に**ビジュアルの方向を出す（実装の制約は後段 Build の仕事）。",
+    "- **完全に自己完結した HTML**：**プレーンなインライン CSS のみ**。**Tailwind の class・外部 CSS/JS/CDN・外部画像は使わない**（fully sandboxed iframe で静的描画されるため）。アイコンは文字（▾ × ＋ ⌕ 等）や CSS シェイプで。",
+    "",
+    "## これは『ワイヤー（構造スケッチ）』— 作り込まない",
+    "",
+    "- 目的は **レイアウト / 構造 / 情報設計の方向を見比べる**こと。ピクセル忠実は不要（採用案だけ後で Build が実物を描画）。",
+    "- **グレースケール**（白〜グレー: #fff / #f3f4f6 / #e5e7eb / #d1d5db / #9ca3af / #374151 程度）。**色は使わない**（方向差は構造で出す）。本文/ラベルはグレーのバー・箱・短文で represent。",
+    "- 各案は別方向に振る：ツールバー型 / 列ヘッダメニュー型 / サイドパネル型、密 vs 余白、タブ vs アコーディオン、一覧 vs カード… 似た案を量産しない。",
+    "",
+    "## 参照（あなたの環境に委ねる）",
+    "",
+    "- もし参照ツール（デザイン事例の MCP 等）や、このプロジェクトのデザイン指針（CLAUDE.md / design.md 等）が**あれば**それを踏まえて方向の引き出しを増やす。無ければ無しで良い（Bezier 側は特定ツールを前提にしない）。",
+    ctx
+      ? `- **方向性の指定: ${ctx}** — これを最優先で反映する。`
+      : "- 方向性の指定はなし。Spec から妥当な複数方向を選ぶ。",
+    "",
+    "## メタ（各ファイル必須）",
+    "",
+    "- ファイル先頭付近に `<title>この案の短い名前</title>` と `<!-- bezier:prompt: 〈方向の一言〉 -->` を入れる（Bezier がラベルとして読みます）。",
+    "",
+    "## @参照",
+    "",
+    `- ユーザー指定に「@01」のような参照があれば、それは番号 01 のアイデア（\`${designGlob}01-*.html\`）を指します。読んで踏まえてください（例:「@02 を密に」「@01 の余白＋@03 の構成」）。`,
+    "",
+    `書き出したら、チャットで各案を1行ずつ「案 NN: 〈方向〉」と述べてください（コード・commit は不要）。`,
+    "",
+    "---",
     "",
     "## Spec",
     "",
@@ -807,7 +990,14 @@ export type ThreadEventType =
   | "merge"
   | "pr_opened"
   | "discard"
-  | "design_feedback";
+  | "design_feedback"
+  // DEC-050/051: the Build loop's new agent turns — Verify re-checks the spec's
+  // 受入基準 against the worktree and reports PASS/FAIL (evals 層A); variant =
+  // a Design "考える層" turn (generate / adopt an HTML 別案). (Clarify is folded
+  // into the implement handoff today, reserved for when it becomes its own turn.)
+  | "clarify"
+  | "verify"
+  | "variant";
 
 export interface ThreadEvent {
   type: ThreadEventType;
@@ -877,8 +1067,8 @@ export async function appendThreadEvent(
 
 /** Human-readable label per thread event type (for the PR activity summary). */
 const THREAD_LABELS: Record<ThreadEventType, string> = {
-  implement: "実装開始",
-  rerun: "再実装",
+  implement: "Build 開始",
+  rerun: "再 Build",
   resume: "セッション再開",
   sync: "main を同期",
   accept: "Commit（branch に確定）",
@@ -886,6 +1076,9 @@ const THREAD_LABELS: Record<ThreadEventType, string> = {
   pr_opened: "PR を作成",
   discard: "破棄",
   design_feedback: "デザインFB",
+  clarify: "Clarify（確認）",
+  verify: "Verify（受入基準を採点）",
+  variant: "Design 別案 / 採用",
 };
 
 /** Render the durable thread as a compact bulleted activity log. */

@@ -8,7 +8,8 @@
 //   - the persistent RIGHT agent panel (issue-agent-panel.tsx): agent picker +
 //     Implement/Re-run/Accept/Discard controls + the embedded TerminalPane
 //     (cwd = worktree), and
-//   - the CENTER "Design" tab (design-review.tsx): the Preview (iframe) ⇆ Diff.
+//   - the CENTER "Build" tab (build-review.tsx): Preview (iframe) ⇆ Diff ⇆ Verify,
+//     and the "Design" tab (design-variants.tsx): throwaway HTML 別案 (DEC-051).
 //
 // Both read the SAME WorktreeRef + PreviewServer, so the preview iframe and the
 // terminal point at one worktree. The hook is instantiated ONCE per issue in the
@@ -26,6 +27,8 @@ import {
   writeWorktreeRef,
   clearWorktreeRef,
   buildImplementHandoff,
+  buildVerifyHandoff,
+  buildVariantHandoff,
   buildPrBody,
   updateIssueMeta,
   readThread,
@@ -76,6 +79,8 @@ function errMsg(e: unknown): string {
 export type SessionAction =
   | "implement"
   | "rerun"
+  | "verify"
+  | "variant"
   | "accept"
   | "discard"
   | "sync"
@@ -169,6 +174,22 @@ export interface ImplementSession {
   /** Chat-first start: begin a session from a free-text message (DEC-023). */
   handleStart: (message: string) => Promise<void>;
   handleRerun: () => Promise<void>;
+  /**
+   * Verify the worktree against the spec's 受入基準 (DEC-050, evals 層A): a
+   * dedicated agent turn that scores each criterion PASS/FAIL/BLOCKED/SKIP,
+   * writes verify.md, and summarizes in chat. Available once a worktree exists.
+   */
+  canVerify: boolean;
+  handleVerify: () => Promise<void>;
+  /**
+   * Design "考える層" (DEC-051): generate / adopt throwaway HTML variants via the
+   * live agent. `handleGenerateVariant(nextId, context)` writes the next
+   * design/<id>.html; `handlePickVariant(id)` adopts a direction and asks the
+   * agent to implement it in the real Build. Available once a worktree exists.
+   */
+  canGenerateVariant: boolean;
+  handleGenerateVariant: (ids: string[], context: string) => Promise<void>;
+  handlePickVariant: (id: string) => Promise<void>;
   handleAccept: () => Promise<void>;
   handleDiscard: () => Promise<void>;
 }
@@ -726,6 +747,146 @@ export function useImplementSession(
     }
   }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir, subPath]);
 
+  // Verify (DEC-050, evals 層A): re-check the worktree against the spec's
+  // 受入基準 in a dedicated agent turn (PASS/FAIL/BLOCKED/SKIP + verify.md).
+  // Same launch path as Re-run (kill any live agent for the issue, fresh launch
+  // with the verify handoff as a self-contained positional prompt — robust even
+  // when there's no prior session to continue). The verdict file lives under
+  // issue.dir, already readable+writable via `--add-dir`.
+  const handleVerify = React.useCallback(async () => {
+    if (!ref || action) return;
+    if (!selectedAgent?.available) {
+      setError("利用可能なエージェント (claude / codex) が見つかりません。");
+      return;
+    }
+    setAction("verify");
+    setError(null);
+    setInfo(null);
+    try {
+      await ptyKillKey(issue.id).catch(() => {});
+      const { content } = await buildVerifyHandoff(root, issue, workDir(ref.path), {
+        subPath,
+      });
+      launchAgent(selectedAgent, workDir(ref.path), { prompt: content });
+      void logEvent("verify");
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setAction(null);
+    }
+  }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir, subPath]);
+
+  // Design 別案を作る (DEC-053/054): one agent turn that writes N throwaway
+  // grayscale WIREFRAMES (design/NN-slug.html), each a different direction — the
+  // divergence half of the hybrid. Works BEFORE Build (no worktree needed, like
+  // Spec): with no worktree the agent runs in the ISSUE FOLDER (issue.dir) — it's
+  // stack-independent so it never touches the repo, and issue.dir is gitignored
+  // (safe) while CLAUDE.md is still inherited upward. With a worktree it runs
+  // there and continues the chat. The wireframes land in issue.dir/design; the
+  // Design tab polls for them.
+  const handleGenerateVariant = React.useCallback(
+    async (ids: string[], context: string) => {
+      if (action || ids.length === 0) return;
+      if (!selectedAgent?.available) {
+        setError("利用可能なエージェント (claude / codex) が見つかりません。");
+        return;
+      }
+      // Pre-Build: run in the issue folder. Post-Build: run in the worktree and
+      // continue the existing conversation.
+      const cwd = ref ? workDir(ref.path) : issue.dir;
+      setAction("variant");
+      setError(null);
+      setInfo(null);
+      try {
+        await ptyKillKey(issue.id).catch(() => {});
+        const { content } = await buildVariantHandoff(root, issue, cwd, {
+          ids,
+          context,
+        });
+        launchAgent(selectedAgent, cwd, { prompt: content, resume: !!ref });
+        void logEvent(
+          "variant",
+          `案 ${ids.join("/")} を生成${context ? `（${context}）` : ""}`,
+        );
+      } catch (e) {
+        setError(errMsg(e));
+      } finally {
+        setAction(null);
+      }
+    },
+    [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir],
+  );
+
+  // Adopt a Design direction (DEC-051/054): implement the chosen wireframe in the
+  // REAL Build (worktree code = the convergence half of the hybrid). This is the
+  // design→build PROMOTION: if no worktree exists yet (designs were explored
+  // pre-Build), create the branch + worktree first, then build the picked
+  // direction; if one already exists, continue the conversation. The agent reads
+  // the picked wireframe via `--add-dir issue.dir`.
+  const handlePickVariant = React.useCallback(
+    async (id: string) => {
+      if (action) return;
+      if (!selectedAgent?.available) {
+        setError("利用可能なエージェント (claude / codex) が見つかりません。");
+        return;
+      }
+      const pickPrompt = [
+        `デザインの方向として **案 ${id}（design/${id}-*.html）を採用** します。`,
+        `\`${issue.dir}/design/\` の案 ${id} を読み、その方向に沿って **この worktree 内の実コード（実物の DS）で実装/調整** してください（受入基準を満たすことをゴールに）。`,
+        "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+      ].join("\n");
+      setAction("variant");
+      setError(null);
+      setInfo(null);
+      try {
+        await ptyKillKey(issue.id).catch(() => {});
+        if (ref) {
+          // Already building — continue in the worktree.
+          launchAgent(selectedAgent, workDir(ref.path), {
+            prompt: pickPrompt,
+            resume: true,
+          });
+          void logEvent("variant", `案 ${id} を採用 → Build`);
+        } else {
+          // Promote: pre-Build design → create the worktree, then build.
+          if (!gitRepo) {
+            setError("Build には git リポジトリが必要です。");
+            setAction(null);
+            return;
+          }
+          const branch = branchName(issue);
+          const wt = await worktreeDir(root, issue);
+          await gitWorktreeAdd(root, branch, wt);
+          const newRef: WorktreeRef = { branch, path: wt, baseSHA: "" };
+          await writeWorktreeRef(issue, newRef);
+          await updateIssueMeta(root, issue, { status: "in-progress" });
+          onStatusChange("in-progress");
+          setRef(newRef);
+          launchAgent(selectedAgent, workDir(wt), { prompt: pickPrompt });
+          void logEvent("variant", `案 ${id} を採用 → Build 開始`);
+          void loadBehind(wt);
+        }
+      } catch (e) {
+        setError(errMsg(e));
+      } finally {
+        setAction(null);
+      }
+    },
+    [
+      ref,
+      action,
+      gitRepo,
+      selectedAgent,
+      root,
+      issue,
+      launchAgent,
+      logEvent,
+      workDir,
+      onStatusChange,
+      loadBehind,
+    ],
+  );
+
   // Resume the prior agent conversation in the existing worktree. For claude this
   // is `claude --continue --add-dir <issue.dir>`; if there's no session to
   // continue the exit handler falls back to a fresh seed. Other agents have no
@@ -990,6 +1151,14 @@ export function useImplementSession(
   // app restarted / the issue was re-opened) and an agent is available.
   const canResume = !!ref && !termMounted && !!selectedAgent?.available && !action;
 
+  // Verify is offered once a worktree exists (there's something to check) and an
+  // agent is available (DEC-050).
+  const canVerify = !!ref && !!selectedAgent?.available && !action;
+
+  // Variant generation works BEFORE Build too (DEC-054): it's stack-independent
+  // and writes only into issue.dir, so it needs an agent but NOT a worktree.
+  const canGenerateVariant = !!selectedAgent?.available && !action;
+
   return {
     root,
     issue,
@@ -1035,6 +1204,11 @@ export function useImplementSession(
     handleImplement,
     handleStart,
     handleRerun,
+    canVerify,
+    handleVerify,
+    canGenerateVariant,
+    handleGenerateVariant,
+    handlePickVariant,
     handleAccept,
     handleDiscard,
   };

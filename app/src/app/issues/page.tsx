@@ -16,17 +16,32 @@ import {
   Loader2,
   Check,
   FileText,
+  LayoutGrid,
   MonitorPlay,
   Trash2,
   RotateCcw,
   GitBranch,
   GitPullRequest,
+  GitMerge,
+  ArrowDownToLine,
+  ChevronDown,
+  Sparkles,
   ExternalLink,
+  TriangleAlert,
   History,
   X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuGroup,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
@@ -52,8 +67,12 @@ import {
 import { purgeTrashed } from "@/lib/issue-actions";
 import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
-import { DesignReview } from "@/components/issues/design-review";
-import { useImplementSession } from "@/components/issues/use-implement-session";
+import { DesignVariants } from "@/components/issues/design-variants";
+import { BuildReview } from "@/components/issues/build-review";
+import {
+  useImplementSession,
+  type ImplementSession,
+} from "@/components/issues/use-implement-session";
 import { gitStatus } from "@/lib/git";
 
 // Live change visualization (DEC-012 §7).
@@ -91,8 +110,8 @@ function fmtDateTime(iso: string): string {
 
 // JA labels for the structured thread events (DEC-012 chat-first loop).
 const THREAD_EVENT_LABEL: Record<ThreadEventType, string> = {
-  implement: "実装を開始",
-  rerun: "AI を再実行",
+  implement: "Build を開始",
+  rerun: "再 Build",
   resume: "セッションを再開",
   sync: "main を同期",
   accept: "Commit（branch に確定）",
@@ -100,6 +119,9 @@ const THREAD_EVENT_LABEL: Record<ThreadEventType, string> = {
   pr_opened: "PR を作成",
   discard: "破棄",
   design_feedback: "デザインFB を送信",
+  clarify: "Clarify（確認）",
+  verify: "Verify（受入基準を採点）",
+  variant: "Design 別案 / 採用",
 };
 
 // ---------------------------------------------------------------------------
@@ -395,7 +417,9 @@ function Header({
 // detail
 // ---------------------------------------------------------------------------
 
-type DetailTab = "spec" | "design";
+// DEC-051: the center is now a 3-stage workbench — Spec (md) → Design (throwaway
+// HTML 別案 / 考える層) → Build (the real repo: preview ⇆ diff ⇆ verify).
+type DetailTab = "spec" | "design" | "build";
 
 function IssueDetail({ root, id }: { root: string; id: string }) {
   const [issue, setIssue] = React.useState<Issue | null>(null);
@@ -475,12 +499,12 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
 
 // The loaded Issue detail: a 3-region workbench.
 //   - LEFT: minimal thread (narrow).
-//   - CENTER: Spec (CM editor) | Design (Preview/Diff review only).
+//   - CENTER: Spec (CM editor) | Design (HTML 別案) | Build (preview/diff/verify).
 //   - RIGHT: the persistent AI agent panel (picker + controls + terminal).
-// The center Spec/Design panes stay mounted (hidden toggling) so the CM caret +
-// preview iframe survive tab switches; the right terminal — being outside the
-// tabs entirely — never unmounts on a center-tab switch, so the agent session
-// persists.
+// The center Spec/Design/Build panes stay mounted (hidden toggling) so the CM
+// caret + variant/preview iframes survive tab switches; the right terminal —
+// being outside the tabs entirely — never unmounts on a center-tab switch, so
+// the agent session persists.
 function IssueWorkbench({
   root,
   issue,
@@ -544,48 +568,68 @@ function IssueWorkbench({
   // focus while the user is typing there.
   const [specPulse, setSpecPulse] = React.useState(false);
   const [designPulse, setDesignPulse] = React.useState(false);
+  const [buildPulse, setBuildPulse] = React.useState(false);
   const lastManualSwitchAt = React.useRef(0);
-  const pulseTimers = React.useRef<{ spec?: number; design?: number }>({});
+  const pulseTimers = React.useRef<{
+    spec?: number;
+    design?: number;
+    build?: number;
+  }>({});
+  // useState setters are stable across renders, so resolving them per-tab inside
+  // the callbacks needs no ref.
+  const pulseSetter = React.useCallback(
+    (t: DetailTab) =>
+      t === "spec" ? setSpecPulse : t === "design" ? setDesignPulse : setBuildPulse,
+    [],
+  );
 
-  const signalChange = React.useCallback((changed: DetailTab) => {
-    // Pulse the changed tab (re-arm the clear timer on repeated changes).
-    if (changed === "spec") {
-      setSpecPulse(true);
-      window.clearTimeout(pulseTimers.current.spec);
-      pulseTimers.current.spec = window.setTimeout(
-        () => setSpecPulse(false),
-        PULSE_MS,
-      );
-    } else {
-      setDesignPulse(true);
-      window.clearTimeout(pulseTimers.current.design);
-      pulseTimers.current.design = window.setTimeout(
-        () => setDesignPulse(false),
-        PULSE_MS,
-      );
-    }
-    // Respect a recent manual choice: pulse only, don't auto-switch.
-    if (Date.now() - lastManualSwitchAt.current > MANUAL_SWITCH_GRACE_MS) {
-      setTab(changed);
-    }
-  }, []);
+  const signalChange = React.useCallback(
+    (changed: DetailTab) => {
+      // Pulse the changed tab (re-arm the clear timer on repeated changes).
+      const setter = pulseSetter(changed);
+      setter(true);
+      window.clearTimeout(pulseTimers.current[changed]);
+      pulseTimers.current[changed] = window.setTimeout(() => setter(false), PULSE_MS);
+      // Respect a recent manual choice: pulse only, don't auto-switch.
+      if (Date.now() - lastManualSwitchAt.current > MANUAL_SWITCH_GRACE_MS) {
+        setTab(changed);
+      }
+    },
+    [pulseSetter],
+  );
 
   // User clicked a center tab: record it (suppress auto-switch briefly) and clear
   // that tab's pulse since they're now looking at it.
-  const handleManualTab = React.useCallback((next: DetailTab) => {
-    lastManualSwitchAt.current = Date.now();
-    setTab(next);
-    if (next === "spec") setSpecPulse(false);
-    else setDesignPulse(false);
-  }, []);
+  const handleManualTab = React.useCallback(
+    (next: DetailTab) => {
+      lastManualSwitchAt.current = Date.now();
+      setTab(next);
+      pulseSetter(next)(false);
+    },
+    [pulseSetter],
+  );
 
   React.useEffect(() => {
     const timers = pulseTimers.current;
     return () => {
       window.clearTimeout(timers.spec);
       window.clearTimeout(timers.design);
+      window.clearTimeout(timers.build);
     };
   }, []);
+
+  // Pulse the Design tab when a NEW variant file appears (the agent wrote one).
+  // The first callback only establishes the baseline (no false-fire on load).
+  const lastVariantCount = React.useRef<number | null>(null);
+  const handleVariants = React.useCallback(
+    (list: { id: string }[]) => {
+      const n = list.length;
+      const prev = lastVariantCount.current;
+      lastVariantCount.current = n;
+      if (prev !== null && n > prev) signalChange("design");
+    },
+    [signalChange],
+  );
 
   const patchMeta = React.useCallback(
     async (patch: { title?: string }) => {
@@ -654,7 +698,7 @@ function IssueWorkbench({
 
   // Code-change detection (DEC-012 §7): poll the worktree's porcelain status
   // while a worktree exists. When it differs from the last seen snapshot (the
-  // agent wrote/added/removed files) → signal a Design change (auto-switch +
+  // agent wrote/added/removed files) → signal a Build change (auto-switch +
   // pulse). The first tick only establishes the baseline (no fire) so reopening
   // an in-progress issue with existing changes doesn't false-trigger. Comparing
   // the full porcelain string both debounces (re-editing the same already-dirty
@@ -678,7 +722,7 @@ function IssueWorkbench({
       }
       if (status !== last) {
         last = status;
-        signalChange("design");
+        signalChange("build");
       }
     };
     const h = window.setInterval(() => void tick(), CODE_WATCH_MS);
@@ -697,6 +741,7 @@ function IssueWorkbench({
           onCommit={(t) => void patchMeta({ title: t })}
         />
         <div className="ml-auto flex items-center gap-2">
+          <IssueFinalize session={session} />
           <StateBadge
             state={deriveState({
               status: issue.status,
@@ -743,7 +788,7 @@ function IssueWorkbench({
       >
         {/* LEFT: Agent chat — primary. Stacked: top 1/2. Row: resizable width. */}
         <section className="flex min-h-0 flex-1 flex-col border-b md:w-[var(--chat-w)] md:flex-none md:border-b-0 md:border-r">
-          <IssueAgentPanel issue={issue} session={session} />
+          <IssueAgentPanel session={session} />
         </section>
 
         {/* Drag handle (md+ only) */}
@@ -776,15 +821,28 @@ function IssueWorkbench({
               size="sm"
               className="h-8 gap-1.5"
               onClick={() => handleManualTab("design")}
+              title="HTML の別案を作って見比べる（使い捨ての考える層）"
             >
-              <MonitorPlay className="size-3.5" />
+              <LayoutGrid className="size-3.5" />
               Design
               {designPulse && <UpdatingPulse />}
             </Button>
+            <Button
+              variant={tab === "build" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-8 gap-1.5"
+              onClick={() => handleManualTab("build")}
+              title="実 repo のプレビュー ⇆ Diff ⇆ Verify"
+            >
+              <MonitorPlay className="size-3.5" />
+              Build
+              {buildPulse && <UpdatingPulse />}
+            </Button>
           </div>
 
-          {/* Both panes stay mounted (hidden toggling) so the Spec caret + the
-              Design preview iframe survive switching tabs. */}
+          {/* All panes stay mounted (hidden toggling) so the Spec caret, the
+              Design variant iframes, and the Build preview iframe survive
+              switching tabs. */}
           <div className="relative min-h-0 flex-1">
             <div className={cn("absolute inset-0", tab !== "spec" && "hidden")}>
               {issue.slots.spec ? (
@@ -801,7 +859,10 @@ function IssueWorkbench({
               )}
             </div>
             <div className={cn("absolute inset-0", tab !== "design" && "hidden")}>
-              <DesignReview session={session} />
+              <DesignVariants session={session} onVariants={handleVariants} />
+            </div>
+            <div className={cn("absolute inset-0", tab !== "build" && "hidden")}>
+              <BuildReview session={session} />
             </div>
           </div>
         </section>
@@ -995,5 +1056,158 @@ function StateBadge({ state }: { state: DerivedState }) {
       )}
       {meta.label}
     </span>
+  );
+}
+
+// The persistent "ship" cluster in the issue header (DEC-052): Commit checkpoints
+// the branch; Ship ▾ holds the finalize paths (Sync with main / Open PR / Merge),
+// the behind-main status, the PR link, and conflict resolution. Only shown once a
+// worktree exists. All actions come from the shared session.
+function IssueFinalize({ session }: { session: ImplementSession }) {
+  const {
+    ref,
+    action,
+    behind,
+    ahead,
+    mergeClean,
+    canOpenPR,
+    prUrl,
+    syncConflicts,
+    selectedAgent,
+    handleAccept,
+    openPR,
+    mergeToMain,
+    syncMain,
+    resolveConflictsWithAI,
+  } = session;
+
+  if (!ref) return null;
+  const canMerge = behind === 0 && mergeClean === true && !action;
+  const shipping = action === "pr" || action === "merge" || action === "sync";
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8 gap-1.5"
+        disabled={!!action}
+        onClick={() => void handleAccept()}
+        title="変更を branch に commit（チェックポイント）"
+      >
+        {action === "accept" ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Check className="size-3.5" />
+        )}
+        Commit
+      </Button>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Ship（finalize）"
+          title="main へ反映 / PR を作成"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground outline-none transition hover:bg-primary/90"
+        >
+          {shipping ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <GitPullRequest className="size-3.5" />
+          )}
+          Ship
+          <ChevronDown className="size-3.5 opacity-80" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-60">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-muted-foreground">
+              {behind === null ? (
+                <>
+                  <Loader2 className="size-3 animate-spin" />
+                  main との差分を確認中…
+                </>
+              ) : behind === 0 ? (
+                <>
+                  <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
+                  main と同期済
+                  {ahead != null && ahead > 0 ? ` · ${ahead} ahead` : ""}
+                </>
+              ) : (
+                <>
+                  <TriangleAlert className="size-3 text-amber-600 dark:text-amber-400" />
+                  main より {behind} commits 遅れ
+                  {ahead != null && ahead > 0 ? ` · ${ahead} ahead` : ""}
+                </>
+              )}
+            </DropdownMenuLabel>
+
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-xs"
+              disabled={!!action}
+              onClick={() => void syncMain()}
+            >
+              <ArrowDownToLine className="size-3.5" />
+              Sync with main
+            </DropdownMenuItem>
+
+            {canOpenPR && (
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-xs"
+                disabled={!!action}
+                onClick={() => void openPR()}
+              >
+                <GitPullRequest className="size-3.5" />
+                Open PR（push して PR 作成）
+              </DropdownMenuItem>
+            )}
+
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-xs"
+              disabled={!canMerge}
+              onClick={() => void mergeToMain()}
+            >
+              <GitMerge className="size-3.5" />
+              Merge to main{canOpenPR ? "（solo）" : ""}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+
+          {prUrl && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-xs"
+                render={
+                  <a href={prUrl} target="_blank" rel="noreferrer noopener" />
+                }
+              >
+                <ExternalLink className="size-3.5" />
+                PR を開く
+              </DropdownMenuItem>
+            </>
+          )}
+
+          {syncConflicts.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-destructive">
+                  <TriangleAlert className="size-3" />
+                  衝突 {syncConflicts.length} ファイル
+                </DropdownMenuLabel>
+                {selectedAgent?.available && (
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    disabled={!!action}
+                    onClick={() => resolveConflictsWithAI()}
+                  >
+                    <Sparkles className="size-3.5" />
+                    AI に解決を依頼
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
