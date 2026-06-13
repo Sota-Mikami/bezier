@@ -1,16 +1,20 @@
 "use client";
 
-// CodeBrowser — the Implement "Code" sub-tab (DEC-059). The REAL worktree
-// source tree, EDITABLE. Left = lazy file tree (list_dir_all). Right = a
-// CodeMirror editor (language by filename, ⌘S to save) or an image preview.
+// CodeBrowser — the Implement "Code" sub-tab (DEC-059 / DEC-060). The REAL
+// worktree source tree, EDITABLE. Left = lazy file tree + in-files search.
+// Right = browser-style file TABS over CodeMirror editors (or image previews).
 //
 // Edits write straight into the worktree as uncommitted changes, so they flow
 // into the existing machinery for free: the page's git-status watcher pulses
 // Implement and the change lands in Commit / Ship. Concurrency is handled by a
 // LOCK: while an agent action runs the editor is read-only; once the agent
 // settles, a clean (un-edited) buffer reloads from disk so it reflects whatever
-// the agent just wrote. A dirty buffer is never clobbered — switching files or
-// reloading asks first.
+// the agent just wrote. A dirty buffer is never clobbered.
+//
+// DEC-060 — editor usability (deliberately NOT an IDE; depth → "open in IDE"):
+//   ⌘F find/replace, ⌘G/Alt-g go-to-line, ⌘/ comment, bracket close + auto
+//   indent, code folding, word-wrap toggle, AI-changed-line marking, multi-file
+//   tabs, revert, and an escape hatch to the user's real editor / Finder.
 
 import * as React from "react";
 import {
@@ -19,22 +23,40 @@ import {
   lineNumbers,
   highlightActiveLine,
   drawSelection,
+  Decoration,
+  type DecorationSet,
 } from "@codemirror/view";
-import { EditorState, Compartment } from "@codemirror/state";
+import {
+  EditorState,
+  Compartment,
+  StateField,
+  StateEffect,
+} from "@codemirror/state";
 import {
   defaultKeymap,
   history,
   historyKeymap,
   indentWithTab,
+  toggleComment,
 } from "@codemirror/commands";
 import {
   syntaxHighlighting,
   defaultHighlightStyle,
   bracketMatching,
   indentUnit,
+  indentOnInput,
+  foldGutter,
+  codeFolding,
+  foldKeymap,
   LanguageDescription,
 } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import {
+  search,
+  searchKeymap,
+  highlightSelectionMatches,
+} from "@codemirror/search";
 import {
   ChevronRight,
   File as FileIcon,
@@ -46,6 +68,9 @@ import {
   ImageIcon,
   Search,
   X,
+  ExternalLink,
+  RotateCcw,
+  WrapText,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -55,6 +80,8 @@ import {
   writeFile,
   readFileBytes,
   grepFiles,
+  openInEditor,
+  revealInFinder,
   confirmDialog,
   type TreeEntry,
   type GrepFile,
@@ -72,6 +99,7 @@ const IMAGE_EXTS = new Set([
   "bmp",
 ]);
 const MAX_TEXT_BYTES = 2_000_000; // refuse to render huge files in the editor
+const WRAP_KEY = "bezier:code:wrap";
 
 function imageMime(ext: string): string {
   switch (ext) {
@@ -85,50 +113,132 @@ function imageMime(ext: string): string {
   }
 }
 
+function relativeTo(path: string, root: string | null): string {
+  if (root && path.startsWith(root + "/")) return path.slice(root.length + 1);
+  return path;
+}
+
+// Parse a unified `git diff` for the NEW-side line numbers that the agent
+// added/changed in `rel` (a worktree-relative path). Used to mark "AI changed"
+// lines in the editor. Conservative: any '+' line counts.
+function addedLinesForFile(diff: string, rel: string): Set<number> {
+  const out = new Set<number>();
+  if (!diff) return out;
+  const lines = diff.split("\n");
+  let inFile = false;
+  let newLine = 0;
+  for (const line of lines) {
+    if (line.startsWith("diff --git ")) {
+      inFile = false;
+      continue;
+    }
+    if (line.startsWith("+++ ")) {
+      // "+++ b/<path>" — strip the b/ prefix; tolerate quotes.
+      const p = line.slice(4).replace(/^b\//, "").replace(/^"|"$/g, "");
+      inFile = p === rel;
+      continue;
+    }
+    if (!inFile) continue;
+    if (line.startsWith("@@")) {
+      const m = /\+(\d+)/.exec(line);
+      newLine = m ? parseInt(m[1], 10) : newLine;
+      continue;
+    }
+    if (line.startsWith("+++")) continue;
+    if (line.startsWith("+")) {
+      out.add(newLine);
+      newLine += 1;
+    } else if (line.startsWith("-")) {
+      // deletion — no new-side line consumed
+    } else {
+      newLine += 1; // context
+    }
+  }
+  return out;
+}
+
+// CodeMirror line-decoration field for AI-changed lines.
+const setAiLines = StateEffect.define<Set<number>>();
+const aiLineField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(setAiLines)) {
+        const ranges = [...e.value]
+          .filter((n) => n >= 1 && n <= tr.state.doc.lines)
+          .sort((a, b) => a - b)
+          .map((n) =>
+            Decoration.line({ class: "cm-ai-line" }).range(
+              tr.state.doc.line(n).from,
+            ),
+          );
+        deco = Decoration.set(ranges, true);
+      }
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+// Center the editor on a 1-based line + put the caret there.
+function scrollToEditorLine(view: EditorView, line: number) {
+  const max = view.state.doc.lines;
+  const ln = Math.min(Math.max(1, Math.floor(line)), max);
+  const pos = view.state.doc.line(ln).from;
+  view.dispatch({
+    selection: { anchor: pos },
+    effects: EditorView.scrollIntoView(pos, { y: "center" }),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // CodeBrowser (the sub-tab)
 // ---------------------------------------------------------------------------
 
 export function CodeBrowser({ session }: { session: ImplementSession }) {
-  const { ref, subPath, action, agentState } = session;
+  const { ref, subPath, action, agentState, diff } = session;
   // Root the tree at the folder you actually OPENED — <worktree>/<subPath> — not
   // the whole repo. In a monorepo (opened a sub-package) this shows just that
   // package, matching the agent's cwd (DEC-059). git ops still span the worktree.
   const root = ref ? (subPath ? `${ref.path}/${subPath}` : ref.path) : null;
+  const worktreeRoot = ref?.path ?? null;
 
   // The editor is locked (read-only) whenever the agent might be writing the
   // worktree, so two writers never race on the same file.
   const locked = action !== null || agentState === "running";
 
-  // Tree state: the root listing + a per-directory children cache + the set of
-  // expanded directory paths. Lazy — children load on first expand.
+  // Tree state.
   const [rootChildren, setRootChildren] = React.useState<TreeEntry[] | null>(null);
   const [cache, setCache] = React.useState<Record<string, TreeEntry[]>>({});
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
   const [loadingDirs, setLoadingDirs] = React.useState<Set<string>>(new Set());
-  const [selected, setSelected] = React.useState<TreeEntry | null>(null);
   const [treeError, setTreeError] = React.useState<string | null>(null);
 
-  // Whether the open file has unsaved edits — lifted so switching files / the
-  // agent settling can guard against clobbering them.
-  const [dirty, setDirty] = React.useState(false);
+  // Open file TABS (DEC-060) + which is active + per-tab dirty.
+  const [tabs, setTabs] = React.useState<TreeEntry[]>([]);
+  const [activePath, setActivePath] = React.useState<string | null>(null);
+  const [dirtyByPath, setDirtyByPath] = React.useState<Record<string, boolean>>({});
+  // The pending jump target (set when a search hit is clicked). nonce re-fires
+  // the scroll even for the same line.
+  const [goto, setGoto] = React.useState<{
+    path: string;
+    line: number;
+    nonce: number;
+  } | null>(null);
+  const gotoSeq = React.useRef(0);
 
-  // The line to scroll the open file to (set when a search result is clicked).
-  const [gotoLine, setGotoLine] = React.useState<number | undefined>(undefined);
-
-  // "In files" search (DEC-059): a content grep over the rooted folder, grouped
-  // by file. Empty query → show the tree instead.
+  // In-files search (DEC-059).
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<GrepFile[] | null>(null);
   const [searching, setSearching] = React.useState(false);
   const searchActive = query.trim() !== "";
 
-  const loadDir = React.useCallback(async (path: string) => {
-    return listDirAll(path);
-  }, []);
+  const loadDir = React.useCallback(async (path: string) => listDirAll(path), []);
 
-  // Debounced grep. setState only ever runs inside the (async) timer callback,
-  // never synchronously in the effect body.
+  // Debounced grep. setState only ever runs inside the (async) timer callback.
   React.useEffect(() => {
     if (!root) return;
     const q = query.trim();
@@ -158,8 +268,7 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
   }, [query, root]);
 
   // Load the root listing. CodeBrowser is keyed by the worktree path at the call
-  // site, so `root` is stable for this instance — no synchronous reset needed
-  // (setState only ever runs after the await).
+  // site, so `root` is stable for this instance (no synchronous reset needed).
   React.useEffect(() => {
     if (!root) return;
     let cancelled = false;
@@ -179,8 +288,7 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
     };
   }, [root, loadDir]);
 
-  // When the agent settles (running → idle), refresh the tree (it may have
-  // created/removed files) without losing the user's expansion state.
+  // When the agent settles, refresh the tree (it may have created/removed files).
   const prevState = React.useRef(agentState);
   React.useEffect(() => {
     const was = prevState.current;
@@ -189,7 +297,6 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
     if (was === "running" && agentState !== "running") {
       let cancelled = false;
       (async () => {
-        // Re-fetch the root + every currently-expanded directory.
         const dirs = [root, ...Array.from(expanded)];
         const next: Record<string, TreeEntry[]> = {};
         let newRoot: TreeEntry[] | null = null;
@@ -199,7 +306,7 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
             if (d === root) newRoot = kids;
             else next[d] = kids;
           } catch {
-            /* dir vanished — drop it */
+            /* dir vanished */
           }
         }
         if (cancelled) return;
@@ -241,36 +348,58 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
     [expanded, cache, loadDir],
   );
 
-  const selectFile = React.useCallback(
-    async (entry: TreeEntry, line?: number) => {
-      // Same file already open → just (re)scroll to the line (no remount).
-      if (entry.path === selected?.path) {
-        if (line) setGotoLine(line);
-        return;
-      }
-      if (dirty) {
-        const ok = await confirmDialog(
-          "未保存の変更があります。破棄して別のファイルを開きますか？",
-          { title: "未保存の変更", okLabel: "破棄して開く", cancelLabel: "やめる" },
-        );
-        if (!ok) return;
-      }
-      setDirty(false);
-      setGotoLine(line);
-      setSelected(entry);
-    },
-    [selected?.path, dirty],
-  );
+  // Open a file in a tab (adding it if new) + activate it + optional line jump.
+  const selectFile = React.useCallback((entry: TreeEntry, line?: number) => {
+    setTabs((prev) =>
+      prev.some((t) => t.path === entry.path) ? prev : [...prev, entry],
+    );
+    setActivePath(entry.path);
+    if (line) {
+      gotoSeq.current += 1;
+      setGoto({ path: entry.path, line, nonce: gotoSeq.current });
+    }
+  }, []);
 
-  // Open a grep hit (build a TreeEntry from the GrepFile + jump to the line).
   const openMatch = React.useCallback(
     (file: GrepFile, line: number) => {
-      void selectFile(
+      selectFile(
         { path: file.path, name: file.name, isDir: false, ext: file.ext },
         line,
       );
     },
     [selectFile],
+  );
+
+  const handleDirty = React.useCallback((path: string, d: boolean) => {
+    setDirtyByPath((prev) => (prev[path] === d ? prev : { ...prev, [path]: d }));
+  }, []);
+
+  const closeTab = React.useCallback(
+    async (path: string) => {
+      if (dirtyByPath[path]) {
+        const ok = await confirmDialog(
+          "未保存の変更があります。破棄してタブを閉じますか？",
+          { title: "未保存の変更", okLabel: "破棄して閉じる", cancelLabel: "やめる" },
+        );
+        if (!ok) return;
+      }
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.path === path);
+        const next = prev.filter((t) => t.path !== path);
+        if (path === activePath) {
+          const neighbor = next[idx] ?? next[idx - 1] ?? null;
+          setActivePath(neighbor?.path ?? null);
+        }
+        return next;
+      });
+      setDirtyByPath((prev) => {
+        if (!(path in prev)) return prev;
+        const n = { ...prev };
+        delete n[path];
+        return n;
+      });
+    },
+    [dirtyByPath, activePath],
   );
 
   if (!ref) {
@@ -330,7 +459,7 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
               results={results}
               query={query.trim()}
               root={root}
-              selectedPath={selected?.path ?? null}
+              selectedPath={activePath}
               onPick={openMatch}
             />
           ) : rootChildren === null ? (
@@ -347,34 +476,129 @@ export function CodeBrowser({ session }: { session: ImplementSession }) {
               expanded={expanded}
               cache={cache}
               loadingDirs={loadingDirs}
-              selectedPath={selected?.path ?? null}
+              selectedPath={activePath}
               onToggleDir={toggleDir}
-              onSelectFile={selectFile}
+              onSelectFile={(e) => selectFile(e)}
             />
           )}
         </div>
       </div>
 
-      {/* Right: the open file (editor or image) */}
-      <div className="min-w-0 flex-1">
-        {selected ? (
-          <FileViewer
-            key={selected.path}
-            entry={selected}
-            locked={locked}
-            agentState={agentState}
-            gotoLine={gotoLine}
-            onDirtyChange={setDirty}
-          />
-        ) : (
+      {/* Right: file tabs + the open editors */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {tabs.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <FileIcon className="size-5 text-muted-foreground" />
             <p className="max-w-xs text-xs text-muted-foreground">
-              左のツリーからファイルを選ぶと、ここで中身を見て編集できます。保存すると worktree の変更として Commit / Ship に乗ります。
+              左のツリーや検索からファイルを開くと、ここで中身を見て編集できます。保存すると worktree の変更として Commit / Ship に乗ります。
             </p>
           </div>
+        ) : (
+          <>
+            <TabStrip
+              tabs={tabs}
+              activePath={activePath}
+              dirtyByPath={dirtyByPath}
+              root={root}
+              onActivate={setActivePath}
+              onClose={(p) => void closeTab(p)}
+            />
+            <div className="relative min-h-0 flex-1">
+              {tabs.map((t) => (
+                <div
+                  key={t.path}
+                  className={cn(
+                    "absolute inset-0",
+                    t.path !== activePath && "hidden",
+                  )}
+                >
+                  <FileViewer
+                    entry={t}
+                    locked={locked}
+                    agentState={agentState}
+                    diff={diff}
+                    worktreeRoot={worktreeRoot}
+                    gotoLine={goto?.path === t.path ? goto.line : undefined}
+                    gotoNonce={goto?.path === t.path ? goto.nonce : undefined}
+                    onDirtyChange={(d) => handleDirty(t.path, d)}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TabStrip
+// ---------------------------------------------------------------------------
+
+function TabStrip({
+  tabs,
+  activePath,
+  dirtyByPath,
+  root,
+  onActivate,
+  onClose,
+}: {
+  tabs: TreeEntry[];
+  activePath: string | null;
+  dirtyByPath: Record<string, boolean>;
+  root: string | null;
+  onActivate: (p: string) => void;
+  onClose: (p: string) => void;
+}) {
+  return (
+    <div className="flex h-9 shrink-0 items-stretch overflow-x-auto border-b bg-muted/30">
+      {tabs.map((t) => {
+        const active = t.path === activePath;
+        const dirty = dirtyByPath[t.path];
+        return (
+          <div
+            key={t.path}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onActivate(t.path)}
+            title={relativeTo(t.path, root)}
+            className={cn(
+              "group flex max-w-[12rem] min-w-0 cursor-pointer items-center gap-1.5 border-r px-3 text-xs",
+              active
+                ? "bg-background text-foreground"
+                : "text-muted-foreground hover:bg-background/50",
+            )}
+          >
+            {IMAGE_EXTS.has(t.ext) ? (
+              <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            )}
+            <span className="min-w-0 truncate">{t.name}</span>
+            {dirty ? (
+              <span
+                className="ml-0.5 size-1.5 shrink-0 rounded-full bg-amber-500 group-hover:hidden"
+                aria-label="未保存"
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose(t.path);
+              }}
+              title="閉じる"
+              className={cn(
+                "ml-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground",
+                dirty ? "hidden group-hover:inline-flex" : "opacity-60 hover:opacity-100",
+              )}
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -473,12 +697,6 @@ function Tree({
 // SearchResults ("in files" grep — grouped by file, expandable, click→jump)
 // ---------------------------------------------------------------------------
 
-function relativeTo(path: string, root: string | null): string {
-  if (root && path.startsWith(root + "/")) return path.slice(root.length + 1);
-  return path;
-}
-
-// Split a line into <mark>-wrapped match segments (case-insensitive).
 function Highlight({ text, q }: { text: string; q: string }) {
   if (!q) return <>{text}</>;
   const lower = text.toLowerCase();
@@ -519,7 +737,6 @@ function SearchResults({
   selectedPath: string | null;
   onPick: (file: GrepFile, line: number) => void;
 }) {
-  // Which result files are collapsed (default: all expanded). Keyed by path.
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   const toggle = (path: string) =>
     setCollapsed((prev) => {
@@ -538,9 +755,7 @@ function SearchResults({
     );
   }
   if (results.length === 0) {
-    return (
-      <p className="px-3 py-2 text-xs text-muted-foreground">一致なし</p>
-    );
+    return <p className="px-3 py-2 text-xs text-muted-foreground">一致なし</p>;
   }
 
   const total = results.reduce((n, f) => n + f.matches.length, 0);
@@ -615,33 +830,28 @@ function SearchResults({
 }
 
 // ---------------------------------------------------------------------------
-// FileViewer (one open file — mounted fresh per path via key)
+// FileViewer (one open file)
 // ---------------------------------------------------------------------------
 
 type FileKind = "text" | "image" | "binary" | "toobig";
-
-// Center the editor on a 1-based line + put the caret there.
-function scrollToEditorLine(view: EditorView, line: number) {
-  const max = view.state.doc.lines;
-  const ln = Math.min(Math.max(1, Math.floor(line)), max);
-  const pos = view.state.doc.line(ln).from;
-  view.dispatch({
-    selection: { anchor: pos },
-    effects: EditorView.scrollIntoView(pos, { y: "center" }),
-  });
-}
 
 function FileViewer({
   entry,
   locked,
   agentState,
+  diff,
+  worktreeRoot,
   gotoLine,
+  gotoNonce,
   onDirtyChange,
 }: {
   entry: TreeEntry;
   locked: boolean;
   agentState: ImplementSession["agentState"];
+  diff: string;
+  worktreeRoot: string | null;
   gotoLine?: number;
+  gotoNonce?: number;
   onDirtyChange: (d: boolean) => void;
 }) {
   const isImage = IMAGE_EXTS.has(entry.ext);
@@ -650,11 +860,18 @@ function FileViewer({
   const [loadErr, setLoadErr] = React.useState<string | null>(null);
   const [dirty, setDirtyState] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [wrap, setWrap] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(WRAP_KEY) === "1";
+  });
 
   const hostRef = React.useRef<HTMLDivElement>(null);
   const viewRef = React.useRef<EditorView | null>(null);
-  const savedTextRef = React.useRef<string>(""); // last on-disk text
+  const savedTextRef = React.useRef<string>("");
   const editableComp = React.useRef(new Compartment());
+  const wrapComp = React.useRef(new Compartment());
+
+  const rel = worktreeRoot ? relativeTo(entry.path, worktreeRoot) : entry.path;
 
   const setDirty = React.useCallback(
     (d: boolean) => {
@@ -664,7 +881,6 @@ function FileViewer({
     [onDirtyChange],
   );
 
-  // Save the current buffer back to disk (zero work if unchanged).
   const save = React.useCallback(async () => {
     const view = viewRef.current;
     if (!view) return;
@@ -685,14 +901,51 @@ function FileViewer({
     }
   }, [entry.path, setDirty]);
 
-  // Keep a stable ref to the latest save() so the ⌘S keymap closure (bound once
-  // at editor mount) always calls the current implementation.
   const saveRef = React.useRef(save);
   React.useEffect(() => {
     saveRef.current = save;
   }, [save]);
 
-  // Build the editor once we know the file is text. Mounts into hostRef.
+  // Revert local edits → reload the on-disk content into the editor.
+  const revert = React.useCallback(async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const ok = await confirmDialog("このファイルの未保存の変更を破棄しますか？", {
+      title: "変更を破棄",
+      okLabel: "破棄",
+      cancelLabel: "やめる",
+    });
+    if (!ok) return;
+    try {
+      const text = await readFile(entry.path);
+      savedTextRef.current = text;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+      });
+      setDirty(false);
+    } catch (e) {
+      setLoadErr(String(e));
+    }
+  }, [entry.path, setDirty]);
+
+  const toggleWrap = React.useCallback(() => {
+    setWrap((w) => {
+      const next = !w;
+      try {
+        window.localStorage.setItem(WRAP_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      viewRef.current?.dispatch({
+        effects: wrapComp.current.reconfigure(
+          next ? EditorView.lineWrapping : [],
+        ),
+      });
+      return next;
+    });
+  }, []);
+
+  // Build the editor once we know the file is text.
   const mountEditor = React.useCallback(
     (text: string, langExt: unknown) => {
       const host = hostRef.current;
@@ -700,11 +953,18 @@ function FileViewer({
       host.replaceChildren();
       const exts = [
         lineNumbers(),
+        foldGutter(),
         highlightActiveLine(),
         drawSelection(),
         history(),
+        codeFolding(),
         bracketMatching(),
+        closeBrackets(),
+        indentOnInput(),
         indentUnit.of("  "),
+        highlightSelectionMatches(),
+        search({ top: true }),
+        aiLineField,
         keymap.of([
           {
             key: "Mod-s",
@@ -713,6 +973,10 @@ function FileViewer({
               return true;
             },
           },
+          { key: "Mod-/", run: toggleComment },
+          ...closeBracketsKeymap,
+          ...searchKeymap,
+          ...foldKeymap,
           indentWithTab,
           ...defaultKeymap,
           ...historyKeymap,
@@ -728,6 +992,7 @@ function FileViewer({
           EditorView.editable.of(!locked),
           EditorState.readOnly.of(locked),
         ]),
+        wrapComp.current.of(wrap ? EditorView.lineWrapping : []),
         EditorView.theme({
           "&": { height: "100%", fontSize: "12.5px" },
           ".cm-scroller": {
@@ -741,6 +1006,10 @@ function FileViewer({
             color: "var(--color-muted-foreground)",
           },
           "&.cm-focused": { outline: "none" },
+          ".cm-ai-line": {
+            backgroundColor: "rgba(16,185,129,0.08)",
+            boxShadow: "inset 2px 0 0 rgba(16,185,129,0.55)",
+          },
         }),
         ...(langExt ? [langExt as never] : []),
       ];
@@ -750,15 +1019,13 @@ function FileViewer({
       });
       viewRef.current = view;
     },
-    [locked, setDirty],
+    [locked, wrap, setDirty],
   );
 
-  // Initial load of this file. FileViewer is keyed by path at the call site, so
-  // it mounts fresh per file — initial state is already null (no sync reset).
+  // Initial load of this file.
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Image → blob preview.
       if (isImage) {
         try {
           const bytes = await readFileBytes(entry.path);
@@ -776,7 +1043,6 @@ function FileViewer({
         }
         return;
       }
-      // Text → editor (or "binary" if it isn't valid UTF-8).
       try {
         const text = await readFile(entry.path);
         if (cancelled) return;
@@ -796,13 +1062,14 @@ function FileViewer({
           if (cancelled) return;
         }
         setKind("text");
-        // Mount after paint so hostRef is in the DOM. Then jump to the initial
-        // target line (set when opened from a search hit).
         requestAnimationFrame(() => {
           if (cancelled) return;
           mountEditor(text, langExt);
-          if (gotoLine && viewRef.current) {
-            scrollToEditorLine(viewRef.current, gotoLine);
+          const view = viewRef.current;
+          if (view) {
+            const changed = addedLinesForFile(diff, rel);
+            if (changed.size) view.dispatch({ effects: setAiLines.of(changed) });
+            if (gotoLine) scrollToEditorLine(view, gotoLine);
           }
         });
       } catch {
@@ -836,16 +1103,23 @@ function FileViewer({
     });
   }, [locked, kind]);
 
-  // Re-jump when gotoLine changes on an already-open file (a different search
-  // hit in the same file — no remount, so the mount-time jump doesn't fire).
+  // Re-jump when gotoNonce changes (a different search hit in this file).
   React.useEffect(() => {
     if (!gotoLine || kind !== "text") return;
     const view = viewRef.current;
     if (view) scrollToEditorLine(view, gotoLine);
-  }, [gotoLine, kind]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gotoNonce, kind]);
 
-  // When the agent settles and our buffer is clean, reload from disk so we show
-  // what the agent wrote. A dirty buffer is left untouched.
+  // Recompute AI-changed-line marks when the worktree diff changes.
+  React.useEffect(() => {
+    if (kind !== "text") return;
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setAiLines.of(addedLinesForFile(diff, rel)) });
+  }, [diff, rel, kind]);
+
+  // When the agent settles and our buffer is clean, reload from disk.
   const prevState = React.useRef(agentState);
   React.useEffect(() => {
     const was = prevState.current;
@@ -876,43 +1150,86 @@ function FileViewer({
     };
   }, [agentState, kind, dirty, entry.path, setDirty]);
 
-  const rel = entry.name;
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* File header: path + dirty/lock + Save */}
+      {/* File header: path + actions */}
       <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3">
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80">
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80"
+          title={rel}
+        >
           {rel}
           {dirty && <span className="ml-1 text-amber-600 dark:text-amber-400">●</span>}
         </span>
-        {locked ? (
+
+        {locked && (
           <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
             <Lock className="size-3" />
             実行中は読み取り専用
           </span>
-        ) : (
-          kind === "text" && (
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={!dirty || saving}
-              title="保存（⌘S）"
-              className={cn(
-                "inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors",
-                dirty
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "text-muted-foreground",
-              )}
-            >
-              {saving ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <Save className="size-3" />
-              )}
-              保存
-            </button>
-          )
+        )}
+
+        {kind === "text" && (
+          <button
+            type="button"
+            onClick={toggleWrap}
+            title="行の折り返し"
+            className={cn(
+              "rounded p-1 transition-colors hover:bg-muted",
+              wrap ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            <WrapText className="size-3.5" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void openInEditor(entry.path).catch(() => {})}
+          title="実 IDE で開く（Cursor / VS Code …）"
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ExternalLink className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => void revealInFinder(entry.path).catch(() => {})}
+          title="Finder で表示"
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Folder className="size-3.5" />
+        </button>
+
+        {kind === "text" && !locked && dirty && (
+          <button
+            type="button"
+            onClick={() => void revert()}
+            title="変更を破棄してディスクに戻す"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <RotateCcw className="size-3.5" />
+          </button>
+        )}
+
+        {kind === "text" && !locked && (
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={!dirty || saving}
+            title="保存（⌘S）"
+            className={cn(
+              "inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors",
+              dirty
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "text-muted-foreground",
+            )}
+          >
+            {saving ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <Save className="size-3" />
+            )}
+            保存
+          </button>
         )}
       </div>
 

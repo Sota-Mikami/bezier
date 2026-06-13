@@ -1,5 +1,12 @@
-<!-- 最終更新: 2026-06-13 / DEC-059 Implement に Code サブタブ（worktree 編集）・Verify 撤去 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-059 Code サブタブ・DEC-058 Lovable IA・DEC-057 dogfood バッチ・DEC-051 中央3タブ・DEC-050 ループ）
+<!-- 最終更新: 2026-06-13 / DEC-060 Code Editor 使い勝手（検索/編集作法/folding/AI行/タブ） -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-060 Code Editor・DEC-059 Code サブタブ・DEC-058 Lovable IA・DEC-051 中央3タブ・DEC-050 ループ）
+
+## ▶ 2026-06-13 セッション（DEC-060 — Code Editor の使い勝手）
+- **ターゲットユーザーから逆算**（Mai 即時直し/Leo 流暢/Kenji・Priya 読む/Tom 軽修正）→ エディタ＝**読む＋素早く安全に直す＋探す**。**IDE は目指さない**（LSP/デバッガ/minimap 等は入れない・深掘りは「実 IDE で開く」へ逃がす）。承認＝**全項目**。
+- **In-files 検索**（Lovable 風・grep・ファイル別グルーピング＋一致行ハイライト＋クリックでジャンプ）。
+- **Tier1**: ⌘F 検索/置換・Alt-g 行ジャンプ／⌘/ コメント／括弧補完＋オートインデント／実 IDE・Finder で開く／Revert。
+- **Tier2（全採用）**: 折りたたみ／行折り返し／**AI 変更行マーキング**（worktree diff 解析・緑アクセント）／**複数ファイルのタブ**（×で閉じる・タブ別 dirty・状態保持）。
+- `@codemirror/search` 追加。`session.diff` を FileViewer へ。**tsc+eslint green・実機 200・Rust 変更なし**。**DEC-060 で commit 済**。
 
 ## ▶ 2026-06-13 セッション（DEC-059 — Implement に Code サブタブ＋Verify 撤去）
 - **Implement のサブタブ＝Preview / Diff / Code**（Verify は撤去）。Code＝**worktree の実コードを閲覧＋編集**（`code-browser.tsx`）：左＝遅延ファイルツリー、右＝CodeMirror（言語ロード・⌘S 保存）。画像 blob プレビュー／バイナリ・2MB 超はプレースホルダ。
