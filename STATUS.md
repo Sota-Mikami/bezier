@@ -1,5 +1,11 @@
-<!-- 最終更新: 2026-06-13 / DEC-070 🐛 完了 Issue で gh pr view 無限ループ→激重 を修正 -->
-# Bezier — 現在地（2026-06-13 / ▶ DEC-070 重大バグ修正・DEC-069 Annotation パリティ・DEC-068 Annotation 磨き込み・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-13 / DEC-071 Verify→Spec 証拠ベース検証 -->
+# Bezier — 現在地（2026-06-13 / ▶ DEC-071 Verify→Spec・DEC-070 重大バグ修正・DEC-069 Annotation パリティ・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+
+## ▶ 2026-06-13 セッション（DEC-071 — Verify→Spec 証拠ベース検証）
+- 撤去した自己採点 Verify の置き換え。**AI は採点しない／Bezier が証拠を自動収集／maker が受入基準をチェック／verify.md 廃止・spec.md に集約**。配置＝**Spec タブ右レール**（`VerifyPanel`）。
+- 証拠（MVP）＝変更スコープ（files/±行）・機微領域フラグ（auth/DB/env/RLS）・変更ファイル一覧。ターン終了/worktree 生成/手動で自動収集 → spec.md の管理ブロック `## 検証ログ` に書込。受入基準はチェックボックスを maker がトグル。
+- 新 `lib/verify.ts`＋`verify-panel.tsx`＋`page.tsx` 配線＋手引き文更新。**tsc+eslint green**。DEC-071 で commit。**後続**: before/after・機械チェック・✅/👁分類・supervisor・監査ログ・デッドコード掃除。
+- **承認キュー（次）**: Tooltip+ショートカット一覧 / Preview 拡張 / 左チャット composer 化。統合 Files エクスプローラは**不要で確定**。
 
 ## ▶ 2026-06-13 セッション（DEC-070 — 🐛 完了 Issue で激重 を修正）
 - **症状**: 完了(merged) Issue があると激重・使い物にならない（普通使用は問題なし）。本番でも再現＝dev ビルド無関係。CPU サンプリングは全部 idle（＝ブロッキング I/O）。

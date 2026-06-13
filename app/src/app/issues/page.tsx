@@ -72,6 +72,7 @@ import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignVariants } from "@/components/issues/design-variants";
 import { BuildReview } from "@/components/issues/build-review";
+import { VerifyPanel } from "@/components/issues/verify-panel";
 import {
   useImplementSession,
   type ImplementSession,
@@ -899,13 +900,20 @@ function IssueWorkbench({
               Design variant iframes, and the Build preview iframe survive
               switching tabs. */}
           <div className="relative min-h-0 flex-1">
-            <div className={cn("absolute inset-0", tab !== "spec" && "hidden")}>
+            <div className={cn("absolute inset-0 flex", tab !== "spec" && "hidden")}>
               {issue.slots.spec ? (
-                <SlotEditor
-                  path={slotPath(issue, "spec")}
-                  label="Spec"
-                  onExternalChange={() => signalChange("spec")}
-                />
+                <>
+                  <div className="min-w-0 flex-1">
+                    <SlotEditor
+                      path={slotPath(issue, "spec")}
+                      label="Spec"
+                      onExternalChange={() => signalChange("spec")}
+                    />
+                  </div>
+                  {/* DEC-071: verification lives here — evidence auto-collected
+                      into spec.md, criteria self-scored by the maker. */}
+                  <VerifyPanel session={session} />
+                </>
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
                   <Loader2 className="size-4 animate-spin" />
