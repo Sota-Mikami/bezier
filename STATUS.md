@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-14 / DEC-072 Verify を Spec インライン根拠へピボット -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-072 Verify インライン化・DEC-070 重大バグ修正・DEC-069 Annotation パリティ・DEC-064 Preview レスポンシブ・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-14 / DEC-073 ショートカット可視化（Tooltip＋一覧 ?） -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-073 ショートカット可視化・DEC-072 Verify インライン化・DEC-070 重大バグ修正・DEC-069 Annotation パリティ・DEC-060 Code Editor）
+
+## ▶ 2026-06-14 セッション（DEC-073 — ショートカット可視化）
+- `title` だけだったヒントを**本物の Tooltip**へ（`SegmentedControl` を base-ui Tooltip 化）。**`Kbd` 部品**（明暗両対応）。
+- **ショートカット一覧チートシート**（`shortcuts-dialog.tsx`＋`lib/shortcuts.ts`）：**`?` で開閉**・layout 常駐・Title▾ メニューにも導線。⌘⇧[]・⌘1-9・⌘⌥←→・⌘F・⌘/・⌘W・⌘N・⌘B・⌘R・⌘Q 等を集約。
+- **tsc+eslint green**。DEC-073 で commit。**承認キュー残**: #36 Preview 拡張 / #37 左チャット composer。
 
 ## ▶ 2026-06-14 セッション（DEC-072 — Verify を Spec インライン根拠へ）
 - CEO「UI パネルは微妙、Spec に直接 受入基準の根拠を付与したい」→ **DEC-071 の右レールパネルを撤去**。検証は **Spec md そのもの**。

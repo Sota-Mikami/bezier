@@ -10,6 +10,11 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -83,16 +88,14 @@ export function SegmentedControl<T extends string>({
       />
       {options.map((opt, i) => {
         const active = opt.value === value;
-        return (
+        const btn = (
           <button
-            key={opt.value}
             ref={(el) => {
               btnRefs.current[i] = el;
             }}
             type="button"
             role="tab"
             aria-selected={active}
-            title={opt.title}
             onClick={() => onChange(opt.value)}
             className={cn(
               "relative z-10 inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors",
@@ -103,6 +106,15 @@ export function SegmentedControl<T extends string>({
             {opt.label}
             {opt.trailing}
           </button>
+        );
+        // A real tooltip (DEC-073) replaces the browser `title` when one is set.
+        return opt.title ? (
+          <Tooltip key={opt.value}>
+            <TooltipTrigger render={btn} />
+            <TooltipContent side="bottom">{opt.title}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <React.Fragment key={opt.value}>{btn}</React.Fragment>
         );
       })}
     </div>

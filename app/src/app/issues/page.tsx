@@ -25,6 +25,7 @@ import {
   GitMerge,
   ArrowDownToLine,
   ChevronDown,
+  Keyboard,
   Sparkles,
   ExternalLink,
   TriangleAlert,
@@ -72,6 +73,8 @@ import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignVariants } from "@/components/issues/design-variants";
 import { BuildReview } from "@/components/issues/build-review";
+import { Kbd } from "@/components/ui/kbd";
+import { openShortcuts } from "@/components/shortcuts-dialog";
 import {
   useImplementSession,
   type ImplementSession,
@@ -1170,6 +1173,14 @@ function IssueMenu({
         >
           <History className="size-3.5" />
           活動ログ{historyOpen ? "を閉じる" : ""}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="cursor-pointer gap-2 text-xs"
+          onClick={() => openShortcuts()}
+        >
+          <Keyboard className="size-3.5" />
+          キーボードショートカット
+          <Kbd className="ml-auto">?</Kbd>
         </DropdownMenuItem>
 
         {agents.length > 0 && (
