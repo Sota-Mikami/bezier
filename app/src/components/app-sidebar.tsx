@@ -49,6 +49,7 @@ import {
   restoreFromTrash,
   expiredTrash,
   createIssue,
+  trashIssue,
   trashTtlDays,
   type Issue,
   type TrashMeta,
@@ -248,6 +249,31 @@ export function AppSidebar() {
     }
     await createIssueIn(target);
   }, [creating, root, openRoot, createIssueIn]);
+
+  // Delete an Issue straight from the sidebar's per-issue "…" menu (DEC-089):
+  // confirm → move to trash → refresh that repo's issues + trash. If the deleted
+  // issue is the one open, return to the list.
+  const handleDeleteIssueRow = React.useCallback(
+    async (repoPath: string, id: string) => {
+      const issue = (issuesByRepo[repoPath] ?? []).find((i) => i.id === id);
+      if (!issue) return;
+      const ok = await confirmDialog(
+        `Issue「${issue.title || "(無題)"}」をゴミ箱に移動しますか？（${trashTtlDays()}日後に完全削除）`,
+        { title: "ゴミ箱へ移動", okLabel: "ゴミ箱へ移動", cancelLabel: "キャンセル" },
+      );
+      if (!ok) return;
+      try {
+        await trashIssue(repoPath, issue);
+        await Promise.all([loadIssues(repoPath), loadTrash(repoPath)]);
+        if (selectedId === id) router.push("/issues");
+      } catch (e) {
+        await messageDialog(e instanceof Error ? e.message : String(e), {
+          title: "削除エラー",
+        });
+      }
+    },
+    [issuesByRepo, loadIssues, loadTrash, selectedId, router],
+  );
 
   // Quick-new shortcut: ⌘N (mac) / Ctrl+N. The modifier means it never fires by
   // accident while typing in the Spec editor or chatting with the agent, so it
@@ -518,9 +544,9 @@ export function AppSidebar() {
                   showAll={showAll.has(r.path)}
                   selectedId={selectedId}
                   statusByKey={statusByKey}
-                  creating={creating}
                   onToggle={() => toggleRepo(r.path)}
                   onSelectIssue={(id) => selectIssue(r.path, id)}
+                  onDeleteIssue={(id) => void handleDeleteIssueRow(r.path, id)}
                   onShowAll={() => setShowAll((p) => new Set(p).add(r.path))}
                   onRemove={() => removeRepo(r.path)}
                   onNewIssue={() => void createIssueIn(r.path)}
@@ -584,9 +610,9 @@ function RepoGroup({
   showAll,
   selectedId,
   statusByKey,
-  creating,
   onToggle,
   onSelectIssue,
+  onDeleteIssue,
   onShowAll,
   onRemove,
   onNewIssue,
@@ -605,9 +631,9 @@ function RepoGroup({
   showAll: boolean;
   selectedId: string | null;
   statusByKey: Map<string, AgentStatus>;
-  creating: boolean;
   onToggle: () => void;
   onSelectIssue: (id: string) => void;
+  onDeleteIssue: (id: string) => void;
   onShowAll: () => void;
   onRemove: () => void;
   onNewIssue: () => void;
@@ -688,20 +714,11 @@ function RepoGroup({
         </button>
       )}
 
-      {/* Hover actions: New-issue-in-this-repo (DEC-043 #6) + the "…" menu
-          (DEC-041 #5). Hidden until hover; overlay the (faded) count. */}
+      {/* Hover action: the "…" menu (DEC-041 #5 / DEC-089). Aligned to the repo
+          HEADER row (top-1), not the group center; new-issue lives inside it now
+          (the standalone "+" was removed). Overlays the (faded) count. */}
       {!renaming && (
-        <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition group-hover/repo:opacity-100 group-focus-within/repo:opacity-100">
-          <button
-            type="button"
-            title="この repo に新規 Issue"
-            aria-label="この repo に新規 Issue"
-            disabled={creating}
-            onClick={onNewIssue}
-            className="flex size-5 items-center justify-center rounded text-muted-foreground outline-none transition hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 disabled:opacity-50"
-          >
-            <Plus className="size-3.5" />
-          </button>
+        <div className="absolute right-1 top-1 flex items-center gap-0.5 opacity-0 transition group-hover/repo:opacity-100 group-focus-within/repo:opacity-100">
           <DropdownMenu>
             <DropdownMenuTrigger
               title="その他"
@@ -766,38 +783,62 @@ function RepoGroup({
               {shown.map((issue) => {
                 const agent = statusByKey.get(issue.id)?.state;
                 return (
-                <button
-                  key={issue.id}
-                  type="button"
-                  onClick={() => onSelectIssue(issue.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent",
-                    issue.id === selectedId
-                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                      : "text-foreground/80",
-                  )}
-                  title={
-                    agent
-                      ? `${issue.title || "(無題)"}（${AGENT_STATE_LABEL[agent]}）`
-                      : issue.title || "(無題)"
-                  }
-                >
-                  {agent ? (
-                    <AgentDot state={agent} />
-                  ) : issue.status === "merged" ? (
-                    <Check className="size-3 shrink-0 text-foreground" />
-                  ) : (
-                    <CircleDot
-                      className={cn(
-                        "size-3 shrink-0",
-                        issue.status === "open"
-                          ? "text-muted-foreground"
-                          : "text-primary",
-                      )}
-                    />
-                  )}
-                  <span className="truncate">{issue.title || "(無題)"}</span>
-                </button>
+                <div key={issue.id} className="group/issue relative">
+                  <button
+                    type="button"
+                    onClick={() => onSelectIssue(issue.id)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-7 text-left text-xs transition-colors hover:bg-sidebar-accent",
+                      issue.id === selectedId
+                        ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                        : "text-foreground/80",
+                    )}
+                    title={
+                      agent
+                        ? `${issue.title || "(無題)"}（${AGENT_STATE_LABEL[agent]}）`
+                        : issue.title || "(無題)"
+                    }
+                  >
+                    {agent ? (
+                      <AgentDot state={agent} />
+                    ) : issue.status === "merged" ? (
+                      <Check className="size-3 shrink-0 text-foreground" />
+                    ) : (
+                      <CircleDot
+                        className={cn(
+                          "size-3 shrink-0",
+                          issue.status === "open"
+                            ? "text-muted-foreground"
+                            : "text-primary",
+                        )}
+                      />
+                    )}
+                    <span className="truncate">{issue.title || "(無題)"}</span>
+                  </button>
+                  {/* Per-issue hover "…" menu (DEC-089): single-issue actions
+                      (delete → trash) from the sidebar. */}
+                  <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center opacity-0 transition group-hover/issue:opacity-100 group-focus-within/issue:opacity-100">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        title="その他"
+                        aria-label="Issue の操作"
+                        className="flex size-5 items-center justify-center rounded text-muted-foreground outline-none transition hover:bg-sidebar-accent hover:text-foreground data-[popup-open]:opacity-100"
+                      >
+                        <MoreHorizontal className="size-3.5" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-44">
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => onDeleteIssue(issue.id)}
+                          className="cursor-pointer gap-2 text-xs"
+                        >
+                          <Trash2 className="size-3.5" />
+                          削除（ゴミ箱へ）
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
                 );
               })}
               {more > 0 && (

@@ -1,6 +1,10 @@
 <!-- 最終更新: 2026-06-14 / DEC-087 自動チェックポイント+squash・DEC-084 repoチップ・DEC-082 ⌘K・DEC-081 コマンドpack配布 -->
 # Bezier — 現在地（2026-06-14 / ▶ DEC-087 自動CP+squash・DEC-086 §B撤回・DEC-084 repoチップ・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布）
 
+## ▶ 2026-06-14 セッション（DEC-089 — サイドバー UX: +撤去・…を見出しへ・Issue 行に…メニュー）
+- CEO 指摘。repo の hover アクションが `top-1/2`＝group 全体の中央に浮いていた → **`+`撤去・`…`を見出し行（`top-1`）へ**。
+- **Issue 行に hover の `…` メニュー新設**（削除＝ゴミ箱へ）。行を div>button+絶対…に再構成。親 `handleDeleteIssueRow`（trashIssue→reload）。Rust 変更なし・tsc 0・eslint 0。
+
 ## ▶ 2026-06-14 セッション（DEC-088 — コミット/CP 管理の横断レビュー＋整理）
 - CEO「手動コミット/remove との兼ね合い・横断的に違和感ないか確認して」。DEC-087 後を点検。
 - **実害発見＆修正**: Merge が未コミット分を取りこぼす（Sync/PR は dirty 先コミットするのに Merge だけしない）→ DEC-087 で「全部保存済み」の錯覚が出て悪化。→ **`mergeToMain` も dirty を先にコミット**。
