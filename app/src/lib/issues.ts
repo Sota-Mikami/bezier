@@ -857,65 +857,6 @@ export async function buildImplementHandoff(
 }
 
 /**
- * Build the Verify handoff (DEC-050, evals 層A). After a Build, the agent
- * re-reads the spec's 受入基準 and checks the worktree against EACH one,
- * reporting PASS / FAIL / BLOCKED / SKIP with evidence — so a maker who can't
- * read the diff approves a *verified result*, not unread code. The verdict is
- * written to <issue.dir>/verify.md (durable, readable via `--add-dir`) and
- * summarized in chat. Returned `content` is passed as the agent's positional
- * prompt (same reliable arg-passing as the implement handoff). A copy is kept at
- * <root>/.bezier/handoff/<id>-verify.md for the record.
- */
-export async function buildVerifyHandoff(
-  root: string,
-  issue: Issue,
-  worktreePath: string,
-  opts?: { subPath?: string },
-): Promise<{ path: string; content: string }> {
-  let specMd: string;
-  try {
-    specMd = await readFile(slotPath(issue, "spec"));
-  } catch {
-    specMd = "(spec.md がありません)";
-  }
-  const specPath = slotPath(issue, "spec");
-  const verifyPath = `${issue.dir}/verify.md`;
-  const outPath = `${stripTrailingSlash(root)}/.bezier/handoff/${issue.id}-verify.md`;
-  const monorepoNote = opts?.subPath
-    ? [
-        `**この作業は monorepo の \`${opts.subPath}/\` パッケージに限定されています。** 検証もその範囲で行ってください。`,
-        "",
-      ]
-    : [];
-  const content = [
-    `# 検証 (Verify) — ${issue.title || "(無題)"}`,
-    "",
-    `あなたは git worktree \`${worktreePath}\` の中にいます。これは **検証ターン** です。`,
-    "**実装は基本いじらず**（明らかな取りこぼしの微修正は可）、Spec の「受入基準」を 1 つずつ確認してください。",
-    "",
-    ...monorepoNote,
-    "## やること",
-    "",
-    `1. \`${specPath}\` の **「受入基準」** を読み直す（\`--add-dir\` で読み書きできます）。`,
-    "2. 各基準について、コード／（可能なら）実際の挙動で満たされているかを確認する。「たぶん動く」ではなく、**確認した事実だけ** を PASS にする。",
-    "3. 各基準を **PASS / FAIL / BLOCKED / SKIP** で判定し、根拠（どのファイル・どの挙動で確認したか）を 1 行添える。",
-    "   - PASS = 満たす / FAIL = 満たさない / BLOCKED = 外部要因で確認不能（要因を明記）/ SKIP = 今回対象外（理由）。",
-    "4. 視覚で before/after を示せるものは、プレビューの該当箇所やスクショを参照する。",
-    `5. 結果を \`${verifyPath}\` に **チェックリスト** で書き出す（各行: \`- [x] 〈基準〉 — PASS（根拠）\` の形）。FAIL があれば末尾に「次の修正案」を短く。`,
-    "6. 最後にチャットで **PASS/FAIL の総数** と、FAIL の要点だけを要約する。",
-    "",
-    "---",
-    "",
-    "## Spec",
-    "",
-    specMd,
-    "",
-  ].join("\n");
-  await writeFile(outPath, content);
-  return { path: outPath, content };
-}
-
-/**
  * Build the variant-generation handoff (DEC-053/054, the Design "考える層"). Asks
  * the live agent to write N disposable, **STACK-INDEPENDENT** grayscale wireframes
  * — the divergence half of the hybrid: free visual ideation NOT tied to the repo's

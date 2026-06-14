@@ -27,7 +27,6 @@ import {
   writeWorktreeRef,
   clearWorktreeRef,
   buildImplementHandoff,
-  buildVerifyHandoff,
   buildVariantHandoff,
   buildPrBody,
   updateIssueMeta,
@@ -84,7 +83,6 @@ function errMsg(e: unknown): string {
 export type SessionAction =
   | "implement"
   | "rerun"
-  | "verify"
   | "variant"
   | "accept"
   | "discard"
@@ -184,13 +182,6 @@ export interface ImplementSession {
   /** Chat-first start: begin a session from a free-text message (DEC-023). */
   handleStart: (message: string) => Promise<void>;
   handleRerun: () => Promise<void>;
-  /**
-   * Verify the worktree against the spec's 受入基準 (DEC-050, evals 層A): a
-   * dedicated agent turn that scores each criterion PASS/FAIL/BLOCKED/SKIP,
-   * writes verify.md, and summarizes in chat. Available once a worktree exists.
-   */
-  canVerify: boolean;
-  handleVerify: () => Promise<void>;
   /**
    * Design "考える層" (DEC-051): generate / adopt throwaway HTML variants via the
    * live agent. `handleGenerateVariant(nextId, context)` writes the next
@@ -769,35 +760,6 @@ export function useImplementSession(
     }
   }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir, subPath]);
 
-  // Verify (DEC-050, evals 層A): re-check the worktree against the spec's
-  // 受入基準 in a dedicated agent turn (PASS/FAIL/BLOCKED/SKIP + verify.md).
-  // Same launch path as Re-run (kill any live agent for the issue, fresh launch
-  // with the verify handoff as a self-contained positional prompt — robust even
-  // when there's no prior session to continue). The verdict file lives under
-  // issue.dir, already readable+writable via `--add-dir`.
-  const handleVerify = React.useCallback(async () => {
-    if (!ref || action) return;
-    if (!selectedAgent?.available) {
-      setError("利用可能なエージェント (claude / codex) が見つかりません。");
-      return;
-    }
-    setAction("verify");
-    setError(null);
-    setInfo(null);
-    try {
-      await ptyKillKey(issue.id).catch(() => {});
-      const { content } = await buildVerifyHandoff(root, issue, workDir(ref.path), {
-        subPath,
-      });
-      launchAgent(selectedAgent, workDir(ref.path), { prompt: content });
-      void logEvent("verify");
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setAction(null);
-    }
-  }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir, subPath]);
-
   // Design 別案を作る (DEC-053/054): one agent turn that writes N throwaway
   // grayscale WIREFRAMES (design/NN-slug.html), each a different direction — the
   // divergence half of the hybrid. Works BEFORE Build (no worktree needed, like
@@ -1197,10 +1159,6 @@ export function useImplementSession(
   // app restarted / the issue was re-opened) and an agent is available.
   const canResume = !!ref && !termMounted && !!selectedAgent?.available && !action;
 
-  // Verify is offered once a worktree exists (there's something to check) and an
-  // agent is available (DEC-050).
-  const canVerify = !!ref && !!selectedAgent?.available && !action;
-
   // Variant generation works BEFORE Build too (DEC-054): it's stack-independent
   // and writes only into issue.dir, so it needs an agent but NOT a worktree.
   const canGenerateVariant = !!selectedAgent?.available && !action;
@@ -1251,8 +1209,6 @@ export function useImplementSession(
     handleImplement,
     handleStart,
     handleRerun,
-    canVerify,
-    handleVerify,
     canGenerateVariant,
     handleGenerateVariant,
     handlePickVariant,

@@ -11,6 +11,9 @@
 ### DEC-075（撤回済み・履歴）— 左チャット composer 化
 - 生ターミナル下に composer を dock し `@`/`/` を実装したが、入力二重で UX 不良 → DEC-076 で撤回。
 
+### 死にコード掃除（DEC-072 の名残）
+- 旧 self-scoring Verify（`buildVerifyHandoff` / `handleVerify` / `canVerify` / SessionAction `"verify"`）は DEC-072 で撤回済みなのにセッションに残存・UI 消費ゼロ → 削除。DEC-072 の生きた検証（`collectEvidence`→`syncVerifyBlock`＝spec.md の `検証ログ` ブロック）は無傷。tsc 0・eslint 0。挙動変化なし（rebuild 不要）。
+
 ## ▶ 2026-06-14 セッション（DEC-074 — Preview 拡張）
 - **任意幅**（「カスタム幅」＋ 幅×高さ px 入力）／**デバイス枠 chrome**（角丸をデバイス別＋mobile 縦にノッチ・装飾）／**外部ブラウザで開く**（Rust `open_external` http(s) 限定＋`ExternalLink` ボタン）。
 - **tsc+eslint green・実機 200・Rust 再ビルド**。DEC-074 で commit。**承認キュー残**: #37 左チャット composer 化。
