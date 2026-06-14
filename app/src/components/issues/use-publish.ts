@@ -52,6 +52,26 @@ function publishPtyKey(key: string): string {
   return `${PUBLISH_PTY_PREFIX}${key}`;
 }
 
+// The last published URL is remembered per issue (localStorage) so it survives
+// leaving + returning to the issue — the Vercel deployment is immutable and
+// persists, so the saved URL stays valid (re-share updates it).
+const PUBLISH_URL_KEY_PREFIX = "bezier.publishUrl.";
+function loadPublishedUrl(key: string): string | null {
+  try {
+    return window.localStorage.getItem(PUBLISH_URL_KEY_PREFIX + key);
+  } catch {
+    return null;
+  }
+}
+function savePublishedUrl(key: string, value: string | null): void {
+  try {
+    if (value) window.localStorage.setItem(PUBLISH_URL_KEY_PREFIX + key, value);
+    else window.localStorage.removeItem(PUBLISH_URL_KEY_PREFIX + key);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Parse a .env file into KEY=VALUE pairs (skip comments/blank, strip quotes). */
 function parseEnv(text: string): [string, string][] {
   const out: [string, string][] = [];
@@ -80,8 +100,14 @@ export function usePublish(
   worktreePath: string | null,
   previewKey: string,
 ): PublishController {
-  const [status, setStatus] = React.useState<PublishStatus>("idle");
-  const [url, setUrl] = React.useState<string | null>(null);
+  // Lazy-init from the per-issue saved URL so a previously-published issue shows
+  // its URL on mount (survives leaving + returning) — no effect-setState.
+  const [status, setStatus] = React.useState<PublishStatus>(() =>
+    loadPublishedUrl(previewKey) ? "ready" : "idle",
+  );
+  const [url, setUrl] = React.useState<string | null>(() =>
+    loadPublishedUrl(previewKey),
+  );
   const [log, setLog] = React.useState("");
 
   const idRef = React.useRef<string | null>(null);
@@ -108,10 +134,11 @@ export function usePublish(
     urlRef.current = null;
     logAccRef.current = "";
     await ptyKillKey(ptyKey).catch(() => {});
+    savePublishedUrl(previewKey, null);
     setStatus("idle");
     setUrl(null);
     setLog("");
-  }, [detach, ptyKey]);
+  }, [detach, ptyKey, previewKey]);
 
   const publish = React.useCallback(async () => {
     if (!worktreePath) return;
@@ -130,17 +157,46 @@ export function usePublish(
     const cfg = await readPreviewConfig(root).catch(() => null);
     const cwd = packageCwd(worktreePath, cfg?.packageDir ?? "");
 
-    // Inject the worktree's env (build + run time) so the deployed app reaches
-    // the same dev/staging backend. (Note: repos whose .env holds PRODUCTION
-    // secrets should use a `.bezier/publish-env.json` override — a later slice.)
-    const envFlags: string[] = [];
-    for (const name of [".env.local", ".env"]) {
-      const txt = await readFile(`${cwd}/${name}`).catch(() => "");
-      if (!txt) continue;
-      for (const [k, v] of parseEnv(txt)) {
-        envFlags.push("-b", `${k}=${v}`, "-e", `${k}=${v}`);
+    // Resolve the env baked into the deploy (build + run time) so the deployed
+    // app reaches the right backend. A repo-level `.bezier/publish-env.json`
+    // override WINS — for repos whose .env holds PRODUCTION secrets, point
+    // publish at a dedicated dev/staging env instead. Else fall back to the
+    // worktree's .env.local / .env.
+    let envPairs: [string, string][] = [];
+    const overrideTxt = await readFile(
+      `${root}/.bezier/publish-env.json`,
+    ).catch(() => "");
+    if (overrideTxt) {
+      try {
+        const obj: unknown = JSON.parse(overrideTxt);
+        if (obj && typeof obj === "object") {
+          for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+            if (
+              /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) &&
+              !ENV_SKIP.test(k) &&
+              (typeof v === "string" ||
+                typeof v === "number" ||
+                typeof v === "boolean")
+            ) {
+              envPairs.push([k, String(v)]);
+            }
+          }
+        }
+      } catch {
+        /* malformed JSON → fall back to .env */
       }
-      break; // first file found wins (.env.local preferred)
+    }
+    if (envPairs.length === 0) {
+      for (const name of [".env.local", ".env"]) {
+        const txt = await readFile(`${cwd}/${name}`).catch(() => "");
+        if (!txt) continue;
+        envPairs = parseEnv(txt);
+        break; // first file found wins (.env.local preferred)
+      }
+    }
+    const envFlags: string[] = [];
+    for (const [k, v] of envPairs) {
+      envFlags.push("-b", `${k}=${v}`, "-e", `${k}=${v}`);
     }
 
     detach();
@@ -197,12 +253,13 @@ export function usePublish(
         if (p.code === 0 && resolved) {
           setUrl(resolved);
           setStatus("ready");
+          savePublishedUrl(previewKey, resolved); // remember across navigation
         } else {
           setStatus("error");
         }
       }),
     );
-  }, [root, worktreePath, ptyKey, detach]);
+  }, [root, worktreePath, ptyKey, previewKey, detach]);
 
   // Unmount: detach listeners but DON'T kill — let the deploy finish in the
   // background (it's a keyed pty). On remount status resets to idle (a one-shot

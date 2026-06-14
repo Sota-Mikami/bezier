@@ -158,6 +158,18 @@ function PublishControl({ publish }: { publish: PublishController }) {
   const { status, url, log } = publish;
   const [copied, setCopied] = React.useState(false);
   const [showLog, setShowLog] = React.useState(false);
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+
+  // Dismiss the log popover on outside click (the effect only wires a listener;
+  // the setState happens in the event handler, not the effect body).
+  React.useEffect(() => {
+    if (!showLog) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setShowLog(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [showLog]);
 
   const copy = React.useCallback(async () => {
     if (!url) return;
@@ -214,7 +226,7 @@ function PublishControl({ publish }: { publish: PublishController }) {
 
   if (status === "building") {
     return (
-      <div className="relative">
+      <div ref={wrapRef} className="relative">
         <Button
           size="sm"
           variant="ghost"
@@ -232,7 +244,7 @@ function PublishControl({ publish }: { publish: PublishController }) {
 
   // idle / error
   return (
-    <div className="relative">
+    <div ref={wrapRef} className="relative">
       <Button
         size="sm"
         variant="ghost"
