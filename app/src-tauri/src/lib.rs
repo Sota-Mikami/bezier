@@ -2047,6 +2047,35 @@ fn uninstall_bezier_commands(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Remove ONE command file from the `/bezier:*` pack (DEC-076 marketplace UI).
+/// Like `uninstall_bezier_commands` the path is computed HERE; additionally the
+/// name must be a bare slug (`[a-z0-9-]`, no separators) so it can only ever
+/// target `~/.claude/commands/bezier/<name>.md`.
+#[tauri::command]
+fn remove_bezier_command(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return Err(format!("invalid command name: {name}"));
+    }
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let file = home
+        .join(".claude")
+        .join("commands")
+        .join("bezier")
+        .join(format!("{name}.md"));
+    if file.exists() {
+        fs::remove_file(&file)
+            .map_err(|e| format!("remove_bezier_command {}: {e}", file.display()))?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// macOS GUI apps launched from Finder/Dock inherit a minimal PATH
 /// (/usr/bin:/bin:/usr/sbin:/sbin), NOT the user's login-shell PATH — so tools
@@ -2187,6 +2216,7 @@ pub fn run() {
             app_data_dir,
             home_dir,
             uninstall_bezier_commands,
+            remove_bezier_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

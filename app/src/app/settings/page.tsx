@@ -8,16 +8,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  RotateCcw,
-  Check,
-  Download,
-  RefreshCw,
-  Trash2,
-  Loader2,
-  Terminal,
-} from "lucide-react";
+import { ArrowLeft, RotateCcw, Check } from "lucide-react";
 
 import {
   useSettings,
@@ -25,14 +16,8 @@ import {
   type ThemePref,
 } from "@/lib/settings";
 import { detectAgents, type AgentTool } from "@/lib/agents";
-import { homeDir, confirmDialog } from "@/lib/ipc";
-import {
-  BEZIER_COMMANDS,
-  bezierCommandsStatus,
-  installBezierCommands,
-  uninstallBezierCommands,
-  type BezierCommandsStatus,
-} from "@/lib/bezier-commands";
+import { confirmDialog } from "@/lib/ipc";
+import { BezierCommandsManager } from "@/components/settings/bezier-commands-manager";
 import { cn } from "@/lib/utils";
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
@@ -132,12 +117,12 @@ export default function SettingsPage() {
           </Field>
         </Section>
 
-        {/* Bezier slash-command pack (DEC-076) */}
+        {/* Bezier slash-command pack (DEC-076 + marketplace UI) */}
         <Section
           title="Bezier コマンド（claude スラッシュコマンド）"
-          desc="Bezier の定型プロンプトを claude の /bezier:* スラッシュコマンドとして ~/.claude に入れます。入れると Bezier の中でも、あなたの素のターミナルでも使えます。勝手には入れません — ここで入れたときだけ。既に編集したファイルは上書きしません。"
+          desc="Bezier の定型プロンプトを claude の /bezier:* スラッシュコマンドとして ~/.claude に入れます。入れると Bezier の中でも、あなたの素のターミナルでも使えます。ここで編集・追加・削除でき、勝手には入れません。"
         >
-          <BezierCommandsField />
+          <BezierCommandsManager />
         </Section>
 
         {/* Preview */}
@@ -208,170 +193,6 @@ export default function SettingsPage() {
           </div>
         </Section>
       </div>
-    </div>
-  );
-}
-
-// The explicit install/update/uninstall control for the `/bezier:*` pack
-// (DEC-076). Nothing here happens on its own — the maker drives it. Install is
-// non-clobbering (won't touch files they've edited); "更新" and "削除" are the
-// only destructive actions and both confirm first.
-function BezierCommandsField() {
-  const [home, setHome] = React.useState<string | null>(null);
-  const [status, setStatus] = React.useState<BezierCommandsStatus | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const [msg, setMsg] = React.useState<string | null>(null);
-
-  // Resolve home + initial status once.
-  React.useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const h = await homeDir();
-        const s = await bezierCommandsStatus(h);
-        if (!cancelled) {
-          setHome(h);
-          setStatus(s);
-        }
-      } catch {
-        /* leave unresolved → controls disabled */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const refresh = React.useCallback(async (h: string) => {
-    setStatus(await bezierCommandsStatus(h));
-  }, []);
-
-  const onInstall = async (overwrite: boolean) => {
-    if (!home || busy) return;
-    setBusy(true);
-    setMsg(null);
-    try {
-      const n = await installBezierCommands(home, { overwrite });
-      await refresh(home);
-      setMsg(
-        overwrite
-          ? `最新版に更新しました（${n} 件）。`
-          : n === 0
-            ? "すでに最新です。"
-            : `インストールしました（${n} 件）。`,
-      );
-    } catch (e) {
-      setMsg(`失敗しました: ${String(e)}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onUninstall = async () => {
-    if (!home || busy) return;
-    if (
-      !(await confirmDialog(
-        "~/.claude/commands/bezier/ を削除します（/bezier:* コマンドが消えます）。よろしいですか？",
-        { title: "削除の確認", okLabel: "削除", cancelLabel: "やめる" },
-      ))
-    )
-      return;
-    setBusy(true);
-    setMsg(null);
-    try {
-      await uninstallBezierCommands();
-      await refresh(home);
-      setMsg("削除しました。");
-    } catch (e) {
-      setMsg(`失敗しました: ${String(e)}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const state = status?.state ?? null;
-  const dir = "~/.claude/commands/bezier/";
-
-  return (
-    <div className="space-y-3">
-      {/* status line */}
-      <div className="flex items-center gap-2 text-xs">
-        <Terminal className="size-3.5 text-muted-foreground" />
-        {state === null ? (
-          <span className="text-muted-foreground">確認中…</span>
-        ) : state === "all" ? (
-          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-500">
-            <Check className="size-3.5" />
-            インストール済み（{status!.present}/{status!.total}）
-          </span>
-        ) : state === "partial" ? (
-          <span className="text-amber-600 dark:text-amber-500">
-            一部インストール（{status!.present}/{status!.total}）
-          </span>
-        ) : (
-          <span className="text-muted-foreground">未インストール</span>
-        )}
-        <code className="ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-          {dir}
-        </code>
-      </div>
-
-      {/* actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        {state !== "all" && (
-          <button
-            type="button"
-            onClick={() => void onInstall(false)}
-            disabled={!home || busy}
-            className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-            {state === "partial" ? "不足分をインストール" : "インストール"}
-          </button>
-        )}
-        {state !== "none" && state !== null && (
-          <>
-            <button
-              type="button"
-              onClick={async () => {
-                if (
-                  await confirmDialog(
-                    "あなたが編集した内容を破棄して、Bezier の最新版で上書きします。よろしいですか？",
-                    { title: "最新に更新", okLabel: "上書き", cancelLabel: "やめる" },
-                  )
-                )
-                  void onInstall(true);
-              }}
-              disabled={!home || busy}
-              className="flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-            >
-              <RefreshCw className="size-3.5" />
-              最新に更新
-            </button>
-            <button
-              type="button"
-              onClick={() => void onUninstall()}
-              disabled={!home || busy}
-              className="flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-            >
-              <Trash2 className="size-3.5" />
-              削除
-            </button>
-          </>
-        )}
-      </div>
-
-      {msg && <p className="text-[11px] text-muted-foreground">{msg}</p>}
-
-      {/* what's in the pack */}
-      <ul className="space-y-1 border-t pt-3">
-        {BEZIER_COMMANDS.map((c) => (
-          <li key={c.name} className="flex items-baseline gap-2 text-[11px]">
-            <code className="font-mono text-foreground/80">/bezier:{c.name}</code>
-            <span className="text-muted-foreground">{c.description}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-14 / DEC-077 OPEN-001 merge安全層 close（BASE修正）・DEC-076 composer撤回→skill配布 -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-077 OPEN-001 close・DEC-076 composer 撤回＋skill配布・DEC-074 Preview 拡張・DEC-073 ショートカット可視化・DEC-072 Verify インライン化）
+<!-- 最終更新: 2026-06-14 / DEC-078 /bezier:* UIマネージャ・DEC-077 OPEN-001 close・DEC-076 composer撤回→skill配布 -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-078 コマンドUIマネージャ・DEC-077 OPEN-001 close・DEC-076 composer 撤回＋skill配布・DEC-074 Preview 拡張・DEC-073 ショートカット可視化）
+
+## ▶ 2026-06-14 セッション（DEC-078 — /bezier:* コマンドの UI マネージャ＝marketplace 入口）
+- **codex は将来対応**（接地で確定: comingSoon・未インストール・~/.codex は別物。推測実装しない）。一旦 claude 最適化。
+- 設定の読み取り専用一覧を**編集できる管理 UI** に。**disk = 真実**（`~/.claude/commands/bezier/*.md` 直接読み書き）: 一覧（frontmatter パース・組み込み/カスタム判別）／編集＋「既定に戻す」／追加（slug 検証・衝突チェック）／per-file 削除（Rust `remove_bezier_command`・path 固定）／空状態 CTA。確認は async `confirmDialog`。
+- **配管**: Rust `remove_bezier_command`／ ipc `removeBezierCommand`／ `bezier-commands.ts`（list/write/remove/parse/builtin helpers）／ 新 `components/settings/bezier-commands-manager.tsx`／ settings 差し替え。tsc 0・eslint 0・cargo Finished。
 
 ## ▶ 2026-06-14 セッション（DEC-076 — composer 撤回 → agent-native スラッシュコマンド配布）
 - CEO「terminal へのチャット欄が2つあるみたいに見える。skill 配布で良い説」。調査→ DEC-075 は chat-native 入力を terminal-native 面に重ね**入力が二重**化していた（Bezier は他人の CLI を pty で動かす B 陣営、composer は claude の `@`/`/` の劣化再実装）。

@@ -205,6 +205,12 @@ export function uninstallBezierCommands(): Promise<void> {
   return invoke<void>("uninstall_bezier_commands");
 }
 
+/** Remove ONE command (`~/.claude/commands/bezier/<name>.md`). `name` is validated
+ * as a bare slug on the Rust side. -> invoke("remove_bezier_command", { name }) */
+export function removeBezierCommand(name: string): Promise<void> {
+  return invoke<void>("remove_bezier_command", { name });
+}
+
 /** Open a native folder picker. Returns the chosen path, or null if cancelled. */
 export async function pickFolder(): Promise<string | null> {
   const selected = await open({ directory: true, multiple: false });

@@ -24,7 +24,13 @@
 // stays the prose conventions in BEZIER.md (bezierGuide); these are a claude
 // ergonomics layer on top, degrading gracefully when absent.
 
-import { writeFile, listDir, uninstallBezierCommands as ipcUninstall } from "@/lib/ipc";
+import {
+  writeFile,
+  readFile,
+  listDir,
+  uninstallBezierCommands as ipcUninstall,
+  removeBezierCommand as ipcRemoveCommand,
+} from "@/lib/ipc";
 
 interface BezierCommand {
   /** file stem → invoked as `/bezier:<name>` */
@@ -91,8 +97,85 @@ export function bezierCommandsDir(home: string): string {
   return `${home.replace(/\/+$/, "")}/.claude/commands/bezier`;
 }
 
-function renderCommandFile(c: BezierCommand): string {
+function renderCommandFile(c: { description: string; body: string }): string {
   return [`---`, `description: ${c.description}`, `---`, ``, c.body, ``].join("\n");
+}
+
+/** The built-in command names (vs. the maker's own custom ones). */
+export const BUILTIN_NAMES: Set<string> = new Set(BEZIER_COMMANDS.map((c) => c.name));
+
+/** The Bezier default for a built-in (for "reset to default"); undefined if custom. */
+export function builtinDefault(name: string): BezierCommand | undefined {
+  return BEZIER_COMMANDS.find((c) => c.name === name);
+}
+
+/** A valid command name: a bare slug. Invoked as `/bezier:<name>`. */
+export function isValidCommandName(name: string): boolean {
+  return /^[a-z0-9][a-z0-9-]*$/.test(name);
+}
+
+/** One command as it exists on disk (the marketplace manager's row). */
+export interface InstalledCommand {
+  name: string;
+  description: string;
+  body: string;
+  /** true = one of Bezier's built-ins (offers "reset to default"). */
+  isBuiltin: boolean;
+}
+
+/** Parse a `---\ndescription: …\n---\n\n<body>` command file. */
+function parseCommandFile(text: string): { description: string; body: string } {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+  if (!m) return { description: "", body: text.trimEnd() };
+  const dm = /^description:\s*(.*)$/m.exec(m[1]);
+  const body = text.slice(m[0].length).replace(/^\r?\n/, "");
+  return { description: dm ? dm[1].trim() : "", body: body.trimEnd() };
+}
+
+/**
+ * List the commands currently on disk (disk = the source of truth). Built-ins
+ * come first in their canonical order, then custom commands alphabetically.
+ */
+export async function listInstalledCommands(home: string): Promise<InstalledCommand[]> {
+  const dir = bezierCommandsDir(home);
+  let files: string[];
+  try {
+    const entries = await listDir(dir);
+    files = entries.filter((e) => !e.isDir && e.name.endsWith(".md")).map((e) => e.name);
+  } catch {
+    return [];
+  }
+  const out: InstalledCommand[] = [];
+  for (const f of files) {
+    const name = f.replace(/\.md$/, "");
+    try {
+      const { description, body } = parseCommandFile(await readFile(`${dir}/${f}`));
+      out.push({ name, description, body, isBuiltin: BUILTIN_NAMES.has(name) });
+    } catch {
+      /* skip unreadable */
+    }
+  }
+  const rank = (c: InstalledCommand) => {
+    const i = BEZIER_COMMANDS.findIndex((b) => b.name === c.name);
+    return i < 0 ? 1000 : i;
+  };
+  out.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  return out;
+}
+
+/** Write a single command file (create or overwrite). */
+export async function writeCommand(
+  home: string,
+  name: string,
+  description: string,
+  body: string,
+): Promise<void> {
+  await writeFile(`${bezierCommandsDir(home)}/${name}.md`, renderCommandFile({ description, body }));
+}
+
+/** Remove a single command (scoped, validated on the Rust side). */
+export async function removeCommand(name: string): Promise<void> {
+  await ipcRemoveCommand(name);
 }
 
 export type BezierCommandsState = "none" | "partial" | "all";
