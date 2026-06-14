@@ -25,18 +25,13 @@ import {
   Route,
   Ruler,
   ExternalLink,
-  Columns2,
-  ChevronsLeftRight,
-  X,
 } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { openExternal, captureRegion } from "@/lib/ipc";
-import { loadImageDataUrl } from "@/lib/annotations";
+import { openExternal } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
@@ -168,68 +163,6 @@ export function PreviewPane({
   // Ref to the live iframe — handed to the annotation overlay so the element
   // picker can postMessage the cooperating preview (DEC-046 #3).
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
-  const frameRef = React.useRef<HTMLDivElement | null>(null);
-
-  // Before/After (§B / DEC-085): snapshot the preview, then a draggable slider
-  // compares the frozen "before" against the live "after". Capture reuses the
-  // proven coord math from the annotation layer (client rect → window pos/scale →
-  // screen region).
-  const [beforeShot, setBeforeShot] = React.useState<string | null>(null);
-  const [beforeUrl, setBeforeUrl] = React.useState<string | null>(null);
-  const [compare, setCompare] = React.useState(false);
-  const [divider, setDivider] = React.useState(50);
-  const [capturing, setCapturing] = React.useState(false);
-
-  const captureBefore = React.useCallback(async () => {
-    const frame = frameRef.current;
-    if (!frame || !session || capturing) return;
-    setCapturing(true);
-    try {
-      const r = frame.getBoundingClientRect();
-      const win = getCurrentWindow();
-      const pos = await win.innerPosition();
-      const scale = await win.scaleFactor();
-      const x = pos.x / scale + r.left;
-      const y = pos.y / scale + r.top;
-      const out = `${session.issue.dir}/before-after/${Date.now()}-before.png`;
-      const captured = await captureRegion(x, y, r.width, r.height, out);
-      setBeforeShot(captured);
-      setDivider(50);
-      setCompare(true);
-    } catch {
-      /* capture failed (window moved / permission) — leave compare off */
-    } finally {
-      setCapturing(false);
-    }
-  }, [session, capturing]);
-
-  React.useEffect(() => {
-    if (!beforeShot) return;
-    let cancelled = false;
-    void loadImageDataUrl(beforeShot).then((u) => {
-      if (!cancelled) setBeforeUrl(u);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [beforeShot]);
-
-  const startDividerDrag = React.useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    const frame = frameRef.current;
-    if (!frame) return;
-    const onMove = (ev: PointerEvent) => {
-      const r = frame.getBoundingClientRect();
-      const pct = ((ev.clientX - r.left) / r.width) * 100;
-      setDivider(Math.max(0, Math.min(100, pct)));
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, []);
 
   const running = status === "starting" || status === "ready";
 
@@ -398,49 +331,6 @@ export function PreviewPane({
             >
               <ExternalLink className="size-3.5" />
             </button>
-            {/* Before/After (§B / DEC-085): snapshot "before", then a draggable
-                slider compares it against the live "after". */}
-            {session && !compare && (
-              <button
-                type="button"
-                onClick={() => void captureBefore()}
-                disabled={capturing}
-                title="いまを before に固定 → 変更後にスライダーで比較"
-                className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-              >
-                {capturing ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Columns2 className="size-3.5" />
-                )}
-                Before/After
-              </button>
-            )}
-            {session && compare && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void captureBefore()}
-                  disabled={capturing}
-                  title="before を取り直す"
-                  className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-                >
-                  {capturing ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Columns2 className="size-3.5 text-foreground" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCompare(false)}
-                  title="比較を解除"
-                  className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </>
-            )}
           </div>
         )}
 
@@ -499,7 +389,6 @@ export function PreviewPane({
               )}
             >
               <div
-                ref={frameRef}
                 style={isFluid ? undefined : { width: vw!, height: vh! }}
                 className={cn(
                   "relative bg-white",
@@ -521,59 +410,17 @@ export function PreviewPane({
                   ref={iframeRef}
                   src={src}
                   title="worktree preview"
-                  className={cn(
-                    "h-full w-full border-0 bg-white",
-                    // During compare the iframe must not swallow the drag's
-                    // pointermove events (cross-origin) — let them reach the frame.
-                    compare && "pointer-events-none",
-                  )}
+                  className="h-full w-full border-0 bg-white"
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                 />
                 {/* Figma-style comment/pen feedback over the live preview
-                    (DEC-045/046). Hidden while comparing (§B). */}
-                {session && !compare && (
+                    (DEC-045/046). The shared AnnotationLayer with a "build"
+                    surface → edits the worktree CODE (DEC-056). */}
+                {session && (
                   <AnnotationLayer
                     session={session}
                     surface={buildAnnotationSurface(session)}
                   />
-                )}
-                {/* Before/After slider (§B / DEC-085): the frozen "before" clipped
-                    to the left of a draggable divider, over the live "after". */}
-                {compare && beforeUrl && (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={beforeUrl}
-                      alt="before"
-                      draggable={false}
-                      className="pointer-events-none absolute inset-0 z-10 h-full w-full object-fill select-none"
-                      style={{ clipPath: `inset(0 ${100 - divider}% 0 0)` }}
-                    />
-                    <span className="pointer-events-none absolute top-2 left-2 z-20 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                      Before
-                    </span>
-                    <span className="pointer-events-none absolute top-2 right-2 z-20 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                      After
-                    </span>
-                    <div
-                      role="slider"
-                      aria-label="Before/After 比較"
-                      aria-valuenow={Math.round(divider)}
-                      tabIndex={0}
-                      onPointerDown={startDividerDrag}
-                      onKeyDown={(e) => {
-                        if (e.key === "ArrowLeft") setDivider((d) => Math.max(0, d - 2));
-                        else if (e.key === "ArrowRight") setDivider((d) => Math.min(100, d + 2));
-                      }}
-                      className="absolute inset-y-0 z-20 -ml-2 w-4 cursor-ew-resize outline-none"
-                      style={{ left: `${divider}%` }}
-                    >
-                      <div className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-primary shadow-[0_0_0_1px_rgba(0,0,0,0.15)]" />
-                      <div className="absolute top-1/2 left-1/2 flex size-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background">
-                        <ChevronsLeftRight className="size-4" />
-                      </div>
-                    </div>
-                  </>
                 )}
                 {/* A phone notch in portrait — purely decorative (DEC-074). */}
                 {deviceId === "mobile" && portrait && (
