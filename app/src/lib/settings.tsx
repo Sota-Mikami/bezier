@@ -151,7 +151,7 @@ function coerce(raw: unknown): Settings {
 }
 
 function coerceConnections(raw: unknown): PublishConnection[] {
-  if (!Array.isArray(raw)) return DEFAULT_CONNECTIONS;
+  if (!Array.isArray(raw)) return DEFAULT_CONNECTIONS.map((c) => ({ ...c }));
   const out: PublishConnection[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
@@ -165,7 +165,7 @@ function coerceConnections(raw: unknown): PublishConnection[] {
       out.push({ id: c.id, label: c.label, scope: c.scope });
     }
   }
-  return out.length > 0 ? out : DEFAULT_CONNECTIONS;
+  return out.length > 0 ? out : DEFAULT_CONNECTIONS.map((c) => ({ ...c }));
 }
 
 function coerceRepoConnections(raw: unknown): Record<string, string> {

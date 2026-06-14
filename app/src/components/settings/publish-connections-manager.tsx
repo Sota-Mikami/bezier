@@ -43,8 +43,13 @@ export function PublishConnectionsManager() {
   const removeConn = (id: string) => {
     if (conns.length <= 1) return; // always keep at least one
     const next = conns.filter((c) => c.id !== id);
+    // Also drop any repo bindings to the deleted connection (no stale keys).
+    const cleanedRepo = Object.fromEntries(
+      Object.entries(settings.repoConnections).filter(([, v]) => v !== id),
+    );
     update({
       publishConnections: next,
+      repoConnections: cleanedRepo,
       ...(defaultId === id ? { defaultConnectionId: next[0].id } : {}),
     });
   };

@@ -176,6 +176,15 @@ export function removePath(path: string): Promise<void> {
 }
 
 /**
+ * Remove a worktree's `.vercel/` link dir so the next `vercel deploy` re-links
+ * under the current --scope (DEC-098). Guarded on the Rust side to only delete a
+ * `.vercel` directory. -> invoke("remove_vercel_dir", { dir })
+ */
+export function removeVercelDir(dir: string): Promise<void> {
+  return invoke<void>("remove_vercel_dir", { dir });
+}
+
+/**
  * Move/rename a file or directory. Guarded on the Rust side to paths under a
  * `.bezier` working store (used to shuffle issues into / out of the trash).
  * -> invoke("move_path", { from, to })

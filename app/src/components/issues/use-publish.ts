@@ -26,7 +26,7 @@ import {
   type UnlistenFn,
 } from "@/lib/pty";
 import { readPreviewConfig, packageCwd } from "@/lib/preview";
-import { readFile, writeFile } from "@/lib/ipc";
+import { readFile, writeFile, removeVercelDir } from "@/lib/ipc";
 import {
   getSettings,
   setSettings,
@@ -283,6 +283,11 @@ export function usePublish(
       const conn =
         s.publishConnections.find((c) => c.id === cid) ?? s.publishConnections[0];
       const scope = conn?.scope ?? "";
+
+      // A stale `.vercel/` linked under a DIFFERENT scope makes
+      // `vercel deploy --scope <new>` hard-error. Drop it so the deploy
+      // re-links (by dir name) under the current scope (CTO MF / DEC-098).
+      if (scope) await removeVercelDir(cwd).catch(() => {});
 
       // Make what's injected VISIBLE (the user can open the log).
       const header =

@@ -521,6 +521,30 @@ fn remove_path(path: String) -> Result<(), String> {
     }
 }
 
+/// Remove a worktree's `.vercel/` link dir (written by `vercel deploy`) so the
+/// next deploy re-links under the CURRENT `--scope` (avoids the cross-scope
+/// "project linked under a different org" error, DEC-098). Guarded: rejects
+/// `..` and only ever deletes a directory whose final component is `.vercel`.
+#[tauri::command]
+fn remove_vercel_dir(dir: String) -> Result<(), String> {
+    let base = Path::new(&dir);
+    reject_traversal(base)?;
+    let target = base.join(".vercel");
+    if !target.exists() {
+        return Ok(());
+    }
+    let canonical = fs::canonicalize(&target)
+        .map_err(|e| format!("remove_vercel_dir: cannot resolve: {e}"))?;
+    reject_traversal(&canonical)?;
+    if canonical.file_name().and_then(|n| n.to_str()) != Some(".vercel") {
+        return Err(format!(
+            "refusing to remove non-.vercel path: {}",
+            canonical.display()
+        ));
+    }
+    fs::remove_dir_all(&canonical).map_err(|e| format!("remove_vercel_dir: {e}"))
+}
+
 /// Move/rename a file or directory. Guarded like remove_path: rejects `..` and
 /// requires BOTH the source and the destination's parent to live under a
 /// `.bezier` working store (so it can only shuffle Bezier's own artifacts,
@@ -2246,6 +2270,7 @@ pub fn run() {
             open_in_editor,
             capture_region,
             remove_path,
+            remove_vercel_dir,
             move_path,
             pty_spawn,
             pty_write,
