@@ -10,6 +10,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BezierMark } from "@/components/bezier-mark";
+import { RepoPicker } from "@/components/repo-picker";
 import {
   Plus,
   Search,
@@ -101,6 +102,9 @@ export function AppSidebar() {
     new Map(),
   );
   const [creating, setCreating] = React.useState(false);
+  // New-issue repo picker (DEC-083): shown when >1 repo is open so the target is
+  // explicit instead of silently the active repo.
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const loadingIssues = React.useRef<Set<string>>(new Set());
   // Last seen "needs attention?" per key, to fire a notification only on the
   // transition INTO needs-attention (not every poll).
@@ -236,16 +240,23 @@ export function AppSidebar() {
     [creating, root, switchTo, loadIssues, router],
   );
 
-  // The big top "New" targets the ACTIVE repo (opening a folder first if none).
+  // New issue (⌘N / top "New" / ⌘K). With NO repo yet → open a folder. With ONE
+  // repo → create there directly (zero friction). With MULTIPLE → open the repo
+  // picker so the target is explicit (DEC-083); the active repo is preselected, so
+  // "⌘N → Enter" still lands in the current repo.
   const handleNew = React.useCallback(async () => {
     if (creating) return;
-    let target = root;
-    if (!target) {
-      target = await openRoot();
-      if (!target) return;
+    if (!root) {
+      const target = await openRoot();
+      if (target) await createIssueIn(target);
+      return;
     }
-    await createIssueIn(target);
-  }, [creating, root, openRoot, createIssueIn]);
+    if (recents.length > 1) {
+      setPickerOpen(true);
+      return;
+    }
+    await createIssueIn(root);
+  }, [creating, root, recents, openRoot, createIssueIn]);
 
   // Quick-new shortcut: ⌘N (mac) / Ctrl+N. The modifier means it never fires by
   // accident while typing in the Spec editor or chatting with the agent, so it
@@ -422,6 +433,7 @@ export function AppSidebar() {
   const trashCount = trashRows.length;
 
   return (
+    <>
     <Sidebar>
       <SidebarHeader className="gap-2 p-2">
         <div className="flex items-center gap-2 px-1 pt-1">
@@ -567,6 +579,18 @@ export function AppSidebar() {
         </button>
       </SidebarFooter>
     </Sidebar>
+    {pickerOpen && (
+      <RepoPicker
+        repos={recents}
+        activePath={root}
+        onPick={(path) => {
+          setPickerOpen(false);
+          void createIssueIn(path);
+        }}
+        onClose={() => setPickerOpen(false)}
+      />
+    )}
+    </>
   );
 }
 

@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-14 / DEC-082 コマンドパレット⌘K・DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別 -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別・DEC-078 コマンドUIマネージャ）
+<!-- 最終更新: 2026-06-14 / DEC-083 新規Issueのrepoピッカー・DEC-082 コマンドパレット⌘K・DEC-081 コマンドpack配布・DEC-080 チェックポイント -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-083 repoピッカー・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別）
+
+## ▶ 2026-06-14 セッション（DEC-083 — 新規 Issue の作成先 repo ピッカー）
+- CEO「複数 repo で shortcut 起票が望みの repo にならない」。現状＝⌘N/New/⌘K は全部アクティブ repo に黙って作成 → 意図しない repo に起票。
+- **作成時ピッカー**採択: `handleNew` を「repo 無→開く / 1 repo→直接 / 複数→ピッカー」に分岐。ピッカーはアクティブ既定選択（⌘N→Enter で現 repo 維持）・type 絞り込み。`createIssueIn` 再利用で全経路に効く。新 `repo-picker.tsx`。Rust 変更なし・tsc 0・eslint 0。
+- **本番未反映が積み上がり中**: prod=DEC-080。**DEC-081(export/import)・082(⌘K)・083(repoピッカー)** がまだ。次の区切りで本番再ビルド＋/Applications。
 
 ## ▶ 2026-06-14 セッション（DEC-082 — コマンドパレット ⌘K）
 - ideas-backlog §C。**⌘K** で任意の Issue（現在 repo）/ リポジトリ（recents 切替）/ アクション（新規 Issue・フォルダを開く・設定・ショートカット）へジャンプ。グローバル modal（layout 常駐・ShortcutsDialog 同型）。検索＋↑↓/Enter。
