@@ -130,10 +130,30 @@ local-first → SaaS 境界：
   | **「Made with Bezier」バッジ** | 共有 preview の隅にピル → CTA → bezier landing（UTM 計測）。viewer（多くは PM/デザイナー/eng）が興味 → install/signup |
   | **open-core 整合** | **無料＝バッジ付き（拡散税）／ 有料＝バッジ消せる（white-label）**。Figma/Typeform と同型の課金フック（[[2026-06-05_monetization-open-core]]） |
   | **moat 連結** | viewer が preview に**コメント/注釈** → maker の agent に **fix として還流**（§3.5 伏線）。エンゲージ → 自分も欲しくなる |
-- **フェーズ**:
-  - **Phase 1/2（自分 infra）**: served ページに**安価なバッジ注入**（コーナーピル＋CTA）で拡散ループ成立。viewer は URL だけ。
+- **フェーズ（Phase 0 CTO レビューで訂正）**:
+  - **Phase 1（ライブトンネル）＝バッジ無し**。外部 viewer は worktree の生 HTML を見る＝**クロスオリジンで Bezier から注入不可**（[[2026-06-14_preview-saas-phase0-results]] §3）。生トンネル URL を渡すだけ。
+  - **Phase 2（公開・自分 infra）＝バッジ可**。Bezier が build 成果物の HTML を所有＝バッジ script を append できる。**§5.6 のジャーニーページ**がこのバッジ＋CTA の器になる。
   - **Phase 3（SaaS）**: フル **Bezier viewer ページ**（`preview.bezier.app/{token}` chrome＋CTA＋コメント＋計測ファネル＋white-label）で productize。
-- **計測**: バッジ CTA の UTM → landing → install/signup のファネルを Phase 1 から仕込む（拡散ループが効いているかの唯一の signal）。
+- **計測**: バッジ CTA の UTM → landing → install/signup のファネルを **Phase 2 から**仕込む（拡散ループが効いているかの唯一の signal）。
+
+## 5.6 共有の単位 = ジャーニー全体（レイヤ式・DEC-094）
+
+> CEO「アウトプットだけでなく**そこに至る過程**（Spec / Design パターン / 実装の中身 / 履歴・実行ログ）も URL で共有できた方がいい。詳細を全部共有できてもいい」。決定＝**ジャーニー全体・レイヤ式（保守的デフォルト）／ code は自分の git にリンク**。
+
+- **拡張**: 共有の単位を **Preview のみ → ジャーニー全体**へ。Bezier はジャーニーを構造化ローカルデータで既に持つ（issue.md / spec.md / Design 別案 HTML / git diff・commit / checkpoint 履歴 / agent thread）。
+- **なぜ大きいか**: ジャーニー＝**moat の可視化**（Leo「精度を実証しろ／handoff を見せろ」への答え）＋**最強の拡散物**（"どう作ったか" ＞ "出来上がりだけ"）＋会社 thesis「判断が資産」/ Sierra「プロセスの SoR」の描画。**§5.5 のジャーニーページ＝この器**（badge＋CTA も載る）。
+- **レイヤと既定（保守的）**:
+  | レイヤ | 既定 | データ形 | 備考 |
+  |---|---|---|---|
+  | Preview | on | running/build | §3 |
+  | Spec | on | markdown | DEC-002 明示 OK |
+  | Design 別案 | on | HTML/scene-graph/PNG | DEC-002 明示 OK |
+  | 履歴（checkpoint/thread） | on | git/text | メタ OK |
+  | **実装（diff＝code）** | **git リンク** | — | **DEC-002 維持＝ホストせず GitHub PR/commit へリンク**。code は機械外に出さない |
+  | 実行ログ | **opt-in** | text | **redact/要約前提**（生ダンプ禁止・顧客データ/内部 reasoning 露出） |
+- **DEC-002 両立**: spec/design/preview 出力は元々クラウド可。**code/diff はホストせず自分の git にリンク**＝「Bezier はコードをクラウドに出さない」差別化を完全維持（[[DEC-002]]）。
+- **per-share トグル**＋**§3.5 のアクセス制御**で「誰に・どの層まで」を毎回選ぶ（クライアントには絞る／自分用は全部）。
+- **フェーズ**: ジャーニーの大半（spec/design/履歴）は**静的＝Preview より共有が安い**。Phase 2 publish で静的ジャーニーページに同梱、フル Bezier ジャーニーviewer は Phase 3。実行ログ redact は最後。
 
 ## 6. 作らないもの（non-goals・今回）
 - Bezier ホスト型の有料 SaaS バックエンド（③で「後」＝Phase 3）。
