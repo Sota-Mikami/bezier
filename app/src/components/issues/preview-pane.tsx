@@ -25,6 +25,10 @@ import {
   Route,
   Ruler,
   ExternalLink,
+  Share2,
+  Copy,
+  Check,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -69,6 +73,122 @@ function buildAnnotationSurface(session: ImplementSession): AnnotationSurface {
       ].join("\n"),
     send: (p, n) => session.sendDesignFeedback(p, n),
   };
+}
+
+// Copy to clipboard without a Tauri plugin: navigator.clipboard works in a
+// secure context (localhost dev + the tauri:// prod scheme); fall back to a
+// hidden-textarea execCommand for older webviews. Triggered by a click (user
+// gesture), so the write is allowed.
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to legacy path */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// Share control (DEC-092 Phase 1): expose the running web preview at a public
+// cloudflared URL so anyone can open it in a browser (no install). idle → 共有
+// button; connecting → spinner; ready → URL pill with copy / open / stop.
+function ShareControl({ server }: { server: PreviewServer }) {
+  const { tunnelStatus, tunnelUrl, startShare, stopShare } = server;
+  const [copied, setCopied] = React.useState(false);
+
+  const copy = React.useCallback(async () => {
+    if (!tunnelUrl) return;
+    if (await copyText(tunnelUrl)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
+  }, [tunnelUrl]);
+
+  if (tunnelStatus === "ready" && tunnelUrl) {
+    const host = tunnelUrl.replace(/^https?:\/\//, "");
+    return (
+      <div className="flex h-7 items-center gap-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/5 pl-2 pr-0.5">
+        <Share2 className="size-3 shrink-0 text-emerald-600" />
+        <button
+          type="button"
+          onClick={() => void copy()}
+          title={`${tunnelUrl}\nクリックでコピー`}
+          className="max-w-[11rem] truncate font-mono text-[11px] text-foreground/80 hover:text-foreground"
+        >
+          {host}
+        </button>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          title="リンクをコピー"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {copied ? (
+            <Check className="size-3.5 text-emerald-600" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => void openExternal(tunnelUrl).catch(() => {})}
+          title="共有リンクをブラウザで開く"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ExternalLink className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => void stopShare()}
+          title="共有を停止"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  if (tunnelStatus === "connecting") {
+    return (
+      <Button size="sm" variant="ghost" className="h-7 gap-1.5" disabled>
+        <Loader2 className="size-3.5 animate-spin" />
+        共有中…
+      </Button>
+    );
+  }
+
+  // idle / error
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={cn("h-7 gap-1.5", tunnelStatus === "error" && "text-destructive")}
+      onClick={() => void startShare()}
+      title={
+        tunnelStatus === "error"
+          ? "共有に失敗しました（cloudflared 未インストール、またはネットワーク）。クリックで再試行。"
+          : "公開リンクで共有（ブラウザで開けるURL）"
+      }
+    >
+      <Share2 className="size-3.5" />
+      共有
+    </Button>
+  );
 }
 
 function StatusBadge({ status }: { status: PreviewStatus }) {
@@ -335,6 +455,9 @@ export function PreviewPane({
         )}
 
         <div className="flex flex-1 items-center justify-end gap-1.5">
+          {/* Web-only branch (the tauri runner returned early above), so the
+              share tunnel always has a localhost server to expose. */}
+          {status === "ready" && <ShareControl server={server} />}
           {!running && (
             <Button
               size="sm"
