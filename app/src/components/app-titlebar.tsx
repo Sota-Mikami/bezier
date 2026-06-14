@@ -8,6 +8,7 @@
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { BezierMark } from "@/components/bezier-mark";
+import { cn, IS_DEV } from "@/lib/utils";
 
 export function AppTitlebar() {
   return (
@@ -16,9 +17,21 @@ export function AppTitlebar() {
       className="fixed inset-x-0 top-0 z-50 flex h-[var(--titlebar-h)] items-center gap-2 border-b bg-background/70 pl-[78px] backdrop-blur"
     >
       <SidebarTrigger className="size-6 text-muted-foreground" />
-      <span className="pointer-events-none flex items-center gap-1.5 text-foreground/80">
+      {/* Brand. In the dev build the mark is greyed + a "dev" tag, so the dev
+          window is never mistaken for the shipped .app you dogfood (DEC-079). */}
+      <span
+        className={cn(
+          "pointer-events-none flex items-center gap-1.5",
+          IS_DEV ? "text-muted-foreground" : "text-foreground/80",
+        )}
+      >
         <BezierMark className="size-[15px]" />
         <span className="text-[12px] font-semibold tracking-tight">Bezier</span>
+        {IS_DEV && (
+          <span className="rounded border border-current/30 px-1 py-px text-[9px] font-medium uppercase tracking-wide">
+            dev
+          </span>
+        )}
       </span>
     </div>
   );

@@ -66,7 +66,7 @@ import {
   type AgentStatus,
   type AgentState,
 } from "@/lib/pty";
-import { cn } from "@/lib/utils";
+import { cn, IS_DEV } from "@/lib/utils";
 
 /** How many issues a repo toggle shows before "もっと見る". */
 const PAGE = 5;
@@ -418,8 +418,13 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="gap-2 p-2">
         <div className="flex items-center gap-2 px-1 pt-1">
-          <BezierMark className="size-6 text-foreground" />
+          <BezierMark className={cn("size-6", IS_DEV ? "text-muted-foreground" : "text-foreground")} />
           <span className="text-sm font-semibold tracking-tight">Bezier</span>
+          {IS_DEV && (
+            <span className="rounded border border-muted-foreground/40 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              dev
+            </span>
+          )}
         </div>
 
         {!showTrash && (
