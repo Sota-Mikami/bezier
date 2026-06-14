@@ -1324,11 +1324,11 @@ function IssueRepoChip({
     return (
       <span
         title="作業を開始したため、このIssueのリポジトリは変更できません"
-        className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground"
+        className="flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded-md border border-dashed border-border/70 px-2 text-xs text-muted-foreground"
       >
-        <FolderGit2 className="size-3 shrink-0" />
-        <span className="max-w-[8rem] truncate">{name}</span>
-        <Lock className="size-2.5 shrink-0 opacity-60" />
+        <FolderGit2 className="size-3.5 shrink-0" />
+        <span className="max-w-[10rem] truncate">{name}</span>
+        <Lock className="size-3 shrink-0 opacity-60" />
       </span>
     );
   }
@@ -1336,18 +1336,18 @@ function IssueRepoChip({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        title="このIssueのリポジトリ（作業開始前まで変更可）"
-        className="group flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground"
+        title="このIssueのリポジトリ（クリックで変更・作業開始前まで）"
+        className="group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:border-foreground/25 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:border-foreground/25 data-[popup-open]:bg-muted data-[popup-open]:text-foreground"
       >
         {busy ? (
-          <Loader2 className="size-3 shrink-0 animate-spin" />
+          <Loader2 className="size-3.5 shrink-0 animate-spin" />
         ) : (
-          <FolderGit2 className="size-3 shrink-0" />
+          <FolderGit2 className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground group-data-[popup-open]:text-foreground" />
         )}
-        <span className="max-w-[8rem] truncate">{name}</span>
-        <ChevronDown className="size-2.5 shrink-0 opacity-40 transition-opacity group-hover:opacity-80" />
+        <span className="max-w-[10rem] truncate">{name}</span>
+        <ChevronDown className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[popup-open]:rotate-180" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-56">
+      <DropdownMenuContent align="start" className="min-w-60">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
             このIssueを置くリポジトリ
@@ -1355,14 +1355,19 @@ function IssueRepoChip({
           {recents.map((r) => (
             <DropdownMenuItem
               key={r.path}
-              className="cursor-pointer gap-2 text-xs"
+              className="cursor-pointer gap-2 py-1.5 text-sm"
               disabled={busy}
               onClick={() => void move(r.path)}
             >
-              <FolderGit2 className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{repoLabel(r)}</span>
+              <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate leading-tight">{repoLabel(r)}</span>
+                <span className="truncate text-[10px] leading-tight text-muted-foreground">
+                  {r.path}
+                </span>
+              </span>
               {r.path === root && (
-                <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <Check className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               )}
             </DropdownMenuItem>
           ))}
