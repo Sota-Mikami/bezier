@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-14 / DEC-085 Before/After スライダー・DEC-084 repoチップ・DEC-082 ⌘K・DEC-081 コマンドpack配布 -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-085 Before/After・DEC-084 repoチップ・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布・DEC-080 チェックポイント）
+<!-- 最終更新: 2026-06-14 / DEC-087 自動チェックポイント+squash・DEC-084 repoチップ・DEC-082 ⌘K・DEC-081 コマンドpack配布 -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-087 自動CP+squash・DEC-086 §B撤回・DEC-084 repoチップ・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布）
+
+## ▶ 2026-06-14 セッション（DEC-087 — 自動チェックポイント＋ main squash）
+- ideas-backlog §D／DEC-080 後続。**ターン開始時（idle/waiting→running）に前ターンの結果を自動コミット**＝「覚えてなくても1ターン戻せる」。開始時にした理由＝終了時だと未コミット Diff が空になり証拠収集と競合。現在ターンは未コミットのまま＝Diff/Commit/証拠収集は不変。`autoCheckpoint`（QUIET・clean はスキップ・thread 汚さない）。
+- **main マージ squash**: Rust `git_merge_to_main` を `--squash`→1コミット化（WIP CP を畳む）。3重ガード維持。Rust 変更あり（dev は tauri が再ビルド）。tsc 0・eslint 0・cargo Finished。
+- prod 反映済み: 〜DEC-084（DEC-085/086 は撤回なので無関係）。**DEC-087 は未反映**。
 
 ## ▶ 2026-06-14 セッション（DEC-085 — Before/After 視覚比較スライダー＝§B moat 本丸）
 - ideas-backlog §B「最優先の差別化」。接地で**スクショ機構が既存**（DEC-045/046 の captureShot/loadImageDataUrl）→ 再構築不要、スライダー UI を足すだけ。

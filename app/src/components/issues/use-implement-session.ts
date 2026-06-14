@@ -1087,6 +1087,41 @@ export function useImplementSession(
     [ref, action, refreshDiff, loadBehind, loadCheckpoints, logEvent],
   );
 
+  // Auto-checkpoint (DEC-087): on each agent turn START, snapshot the PRIOR turn's
+  // result (commit iff the worktree is dirty) so a turn is always undoable without
+  // remembering. QUIET — no UI action/error noise; the CURRENT turn stays
+  // uncommitted, so Diff / Commit / the turn-end evidence collection are
+  // unaffected. Skips when clean (the very first turn, or no new work).
+  const autoCheckpoint = React.useCallback(async () => {
+    const r = refRef.current;
+    if (!r) return;
+    try {
+      const dirty = changedPathsFromStatus(await gitStatus(r.path)).length > 0;
+      if (!dirty) return;
+      await gitCommitAll(
+        r.path,
+        `checkpoint (auto) ${new Date(Date.now()).toLocaleTimeString("ja-JP", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`,
+      );
+      await loadCheckpoints(r.path);
+      await loadBehind(r.path);
+    } catch {
+      /* nothing to commit / race with the agent — ignore */
+    }
+  }, [loadCheckpoints, loadBehind]);
+
+  // Detect a turn START (idle/waiting → running) and snapshot the prior state.
+  const prevAgentForCp = React.useRef<AgentState | null>(agentState);
+  React.useEffect(() => {
+    const was = prevAgentForCp.current;
+    prevAgentForCp.current = agentState;
+    if (was !== "running" && agentState === "running") {
+      void autoCheckpoint();
+    }
+  }, [agentState, autoCheckpoint]);
+
   // Roll the worktree back to a checkpoint (§D / DEC-080). reset --hard discards
   // later commits + uncommitted changes (reflog-recoverable); main is untouched.
   const rollbackTo = React.useCallback(

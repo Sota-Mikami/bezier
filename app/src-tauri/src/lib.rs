@@ -1740,10 +1740,18 @@ fn git_merge_to_main(repo_path: String, branch: String) -> Result<String, String
         ));
     }
 
-    // Guards passed: merge into base. With behind=0 this fast-forwards (or is a
-    // no-op "Already up to date"); never forced.
-    let merged = git_run(&["-C", repo, "merge", "--no-edit", &branch])?;
-    Ok(merged.trim().to_string())
+    // Guards passed: SQUASH-merge into base (DEC-087). Auto-checkpoints make the
+    // branch a long string of WIP commits; `--squash` collapses them into ONE
+    // commit on base so main history stays clean. `--squash` stages without
+    // committing, then we commit once (message = branch name). If nothing got
+    // staged (branch had no unique work), it's a no-op.
+    git_run(&["-C", repo, "merge", "--squash", &branch])?;
+    let staged = git_run(&["-C", repo, "diff", "--cached", "--name-only"])?;
+    if staged.trim().is_empty() {
+        return Ok("Already up to date".to_string());
+    }
+    let out = git_run(&["-C", repo, "commit", "-m", &branch])?;
+    Ok(out.trim().to_string())
 }
 
 // ============================================================================
