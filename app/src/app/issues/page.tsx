@@ -52,12 +52,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import { confirmDialog, messageDialog, openExternal } from "@/lib/ipc";
 import { copyText } from "@/lib/clipboard";
+import { useSettings } from "@/lib/settings";
 import { useWorkspaceRoot, repoLabel, repoName } from "@/lib/workspace-root";
 import {
   readIssue,
@@ -1455,8 +1457,16 @@ function IssueCheckpoints({ session }: { session: ImplementSession }) {
 // the App publish + the Journey share + the publish account (DEC-094/098).
 function IssueShare({ session }: { session: ImplementSession }) {
   const { ref, publish, journey } = session;
+  const { settings, update } = useSettings();
+  const layers = settings.journeyLayers;
   if (!ref) return null;
   const busy = publish.status === "building" || journey.status === "building";
+  const journeyLayerItems: { key: keyof typeof layers; label: string }[] = [
+    { key: "app", label: "アプリ" },
+    { key: "spec", label: "Spec" },
+    { key: "design", label: "デザイン" },
+    { key: "impl", label: "実装（履歴・リンク）" },
+  ];
   const tag = (s: string) =>
     s === "ready"
       ? "· 共有済"
@@ -1539,8 +1549,20 @@ function IssueShare({ session }: { session: ImplementSession }) {
 
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-            ジャーニー {tag(journey.status)}
+            ジャーニー {tag(journey.status)} · 含める内容
           </DropdownMenuLabel>
+          {journeyLayerItems.map((it) => (
+            <DropdownMenuCheckboxItem
+              key={it.key}
+              checked={layers[it.key]}
+              onCheckedChange={(v) =>
+                update({ journeyLayers: { ...layers, [it.key]: v } })
+              }
+              className="text-xs"
+            >
+              {it.label}
+            </DropdownMenuCheckboxItem>
+          ))}
           <DropdownMenuItem
             className="cursor-pointer gap-2 text-xs"
             disabled={journey.status === "building"}

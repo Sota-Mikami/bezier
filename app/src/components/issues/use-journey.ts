@@ -94,14 +94,17 @@ export function useJourney(
         return;
       }
 
-      // Gather + generate the journey page from local data.
-      const specMd = issueDir
-        ? await readFile(`${issueDir}/spec.md`).catch(() => "")
-        : "";
+      // Per-share section toggles (DEC-094). Only gather what's enabled.
+      const layers = getSettings().journeyLayers;
+
+      const specMd =
+        layers.spec && issueDir
+          ? await readFile(`${issueDir}/spec.md`).catch(() => "")
+          : "";
 
       // Design: embed the adopted wireframe (else the first), if any.
       let designHtml: string | null = null;
-      if (issueDir) {
+      if (layers.design && issueDir) {
         try {
           const variants = await listVariants({ dir: issueDir });
           if (variants.length) {
@@ -117,13 +120,16 @@ export function useJourney(
       }
 
       // Implementation: PR link if opened, else a GitHub branch link.
-      const repoUrl = await gitRemoteUrl(root).catch(() => "");
+      const repoUrl = layers.impl
+        ? await gitRemoteUrl(root).catch(() => "")
+        : "";
 
       const html = buildJourneyHtml({
         title,
         specMd,
         checkpoints,
         appUrl,
+        layers,
         designHtml,
         prUrl,
         repoUrl: repoUrl || null,

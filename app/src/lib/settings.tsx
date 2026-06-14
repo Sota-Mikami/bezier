@@ -63,6 +63,21 @@ export interface PublishConnection {
   scope: string;
 }
 
+/** Which sections a shared journey page includes (DEC-094, per-share toggle). */
+export interface JourneyLayers {
+  app: boolean;
+  spec: boolean;
+  design: boolean;
+  impl: boolean;
+}
+
+export const DEFAULT_JOURNEY_LAYERS: JourneyLayers = {
+  app: true,
+  spec: true,
+  design: true,
+  impl: true,
+};
+
 export interface Settings {
   /** Spec slot template with {{title}} / {{id}} placeholders. */
   specTemplate: string;
@@ -84,6 +99,8 @@ export interface Settings {
   defaultConnectionId: string;
   /** Per-repo binding: repo path → connection id (prevents cross-account deploy). */
   repoConnections: Record<string, string>;
+  /** Which sections a shared journey includes (DEC-094). */
+  journeyLayers: JourneyLayers;
 }
 
 export const DEFAULT_CONNECTIONS: PublishConnection[] = [
@@ -101,6 +118,7 @@ export const DEFAULT_SETTINGS: Settings = {
   publishConnections: DEFAULT_CONNECTIONS,
   defaultConnectionId: "default",
   repoConnections: {},
+  journeyLayers: DEFAULT_JOURNEY_LAYERS,
 };
 
 const STORAGE_KEY = "bezier:settings";
@@ -147,6 +165,21 @@ function coerce(raw: unknown): Settings {
         ? o.defaultConnectionId
         : "default",
     repoConnections: coerceRepoConnections(o.repoConnections),
+    journeyLayers: coerceJourneyLayers(o.journeyLayers),
+  };
+}
+
+function coerceJourneyLayers(raw: unknown): JourneyLayers {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<
+    string,
+    unknown
+  >;
+  const b = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
+  return {
+    app: b(o.app, DEFAULT_JOURNEY_LAYERS.app),
+    spec: b(o.spec, DEFAULT_JOURNEY_LAYERS.spec),
+    design: b(o.design, DEFAULT_JOURNEY_LAYERS.design),
+    impl: b(o.impl, DEFAULT_JOURNEY_LAYERS.impl),
   };
 }
 

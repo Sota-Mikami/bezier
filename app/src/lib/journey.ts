@@ -5,6 +5,7 @@
 // client-side via a CDN `marked` (the page is served online).
 
 import type { Checkpoint } from "./git";
+import type { JourneyLayers } from "./settings";
 
 export interface JourneyData {
   title: string;
@@ -12,6 +13,8 @@ export interface JourneyData {
   checkpoints: Checkpoint[];
   /** The published app URL (Vercel), if the app was shared. */
   appUrl: string | null;
+  /** Which sections to include (DEC-094, per-share toggle). Default: all. */
+  layers?: JourneyLayers;
   /** The adopted design wireframe's self-contained HTML, embedded if present. */
   designHtml?: string | null;
   /** The opened PR URL, if any. */
@@ -89,6 +92,37 @@ export function buildJourneyHtml(data: JourneyData): string {
 
   const badge = `<span class="badge"><span class="dot"></span>Made with Bezier</span>`;
 
+  // Per-share section toggles (DEC-094). Default: all on.
+  const L = data.layers ?? {
+    app: true,
+    spec: true,
+    design: true,
+    impl: true,
+  };
+  const sections = [
+    L.app ? `<h2>アプリ</h2>\n  ${appSection}` : "",
+    L.spec ? `<h2>Spec</h2>\n  <div class="spec" id="spec"></div>` : "",
+    L.design && designSection ? `<h2>デザイン</h2>\n  ${designSection}` : "",
+    L.impl
+      ? `<h2>実装</h2>\n  ${implSection}\n  <ul class="history">${history}</ul>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n  ");
+  const specScript = L.spec
+    ? `<script type="text/markdown" id="spec-src">${specForScript}</script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script>
+(function(){
+  var src=document.getElementById('spec-src').textContent;
+  var el=document.getElementById('spec');
+  if(!el)return;
+  try{ el.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(src) : src; }
+  catch(e){ el.textContent = src; }
+})();
+</script>`
+    : "";
+
   return `<!doctype html>
 <html lang="ja">
 <head>
@@ -132,35 +166,16 @@ footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);color:v
     <h1>${safeTitle}</h1>
     ${badge}
   </header>
-  <p class="lead">Spec → 実装 → アプリ。「出来上がり」だけでなく、どう作ったかの記録です。</p>
+  <p class="lead">「出来上がり」だけでなく、どう作ったかの記録です。</p>
 
-  <h2>アプリ</h2>
-  ${appSection}
-
-  <h2>Spec</h2>
-  <div class="spec" id="spec"></div>
-
-  ${designSection ? `<h2>デザイン</h2>\n  ${designSection}` : ""}
-
-  <h2>実装</h2>
-  ${implSection}
-  <ul class="history">${history}</ul>
+  ${sections}
 
   <footer>
     ${badge}
     <span>このページは Bezier が生成しました</span>
   </footer>
 </div>
-<script type="text/markdown" id="spec-src">${specForScript}</script>
-<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script>
-(function(){
-  var src=document.getElementById('spec-src').textContent;
-  var el=document.getElementById('spec');
-  try{ el.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(src) : src; }
-  catch(e){ el.textContent = src; }
-})();
-</script>
+${specScript}
 </body>
 </html>`;
 }
