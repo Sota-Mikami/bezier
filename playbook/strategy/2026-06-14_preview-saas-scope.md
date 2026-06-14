@@ -47,8 +47,7 @@ local-first → SaaS 境界：
 | レイヤ | 選定 | 理由 / 既存資産 |
 |---|---|---|
 | **ライブ共有（Phase 1）** | **`cloudflared` トンネル**（Tauri に sidecar 同梱）。初手は `trycloudflare`（ゼロ設定）、安定版は **CEO の Cloudflare zone（`duong-sm.com`）で Named Tunnel** → `*.preview.duong-sm.com` | build 不要＝あらゆる FW が動く。**ローカル auth shim（[[DEC-003]]）がトンネル越しでも効く**＝auth gate ありの画面もそのまま見せられる（publish より強い）。CEO は既に CF zone 所持＝「自分の infra」で URL 安定化できる |
-| **公開＝固定（Phase 2・静的）** | **`next build && next export`（静的書き出し）→ CEO の S3 + CloudFront**（Sotas: `d2rlwsyq3zlm5p.cloudfront.net/{token}/`） | CEO スタックは静的化に好都合：**Bezier 自身が `output:"export"`**、prototypes-monorepo も static+nginx build。S3+CF は所持済 |
-| **公開＝固定（Phase 2・SSR/動的）** | **Dockerfile → CEO の Coolify**（`{token}.proto.duong-sm.com`） | static export 不可な repo 用。Coolify API（`coolify.duong-sm.com/api/v1`）＋ワイルドカード DNS 所持済 |
+| **公開＝固定（Phase 2）= Vercel**（DEC-095 で改訂） | **`vercel deploy`（CEO の Vercel）→ 永続プレビュー URL** | **主ケース＝SSR/動的 Web アプリ**（mikan 生徒Web / Sotas）。Vercel は Next.js ネイティブで静的も SSR も API も**1ホストで**ゼロ設定。scale-to-zero で放置$0。CF Pages（静的・edge制約）は Web アプリ不適で却下。Coolify/Fly は自前だが ad-hoc 構築が重く後回し（BYO 余地は残す） |
 | **メタデータ** | **Supabase `preview_links`**（issue_id, kind=live\|published, url, created_at, expires_at） | 既存 Supabase。URL の所在管理のみ |
 | **SaaS 化（Phase 3・後）** | Bezier Cloud（Hetzner+Coolify）ホスト + 有料 plan gate | ③で「後」。検証後に open-core の課金面へ |
 
