@@ -47,6 +47,7 @@ import {
   gitWorktreeRemove,
   gitBranchDelete,
   gitBehindAhead,
+  gitBaseBranch,
   gitSyncMain,
   gitMergeConflictCheck,
   gitMergeToMain,
@@ -91,8 +92,9 @@ export type SessionAction =
   | "pr"
   | null;
 
-/** The base branch Issue branches are cut from / merged back into (DEC-047). */
-const BASE = "main";
+/** Fallback base branch when the repo's real integration branch can't be read
+ * yet (resolved live via gitBaseBranch — OPEN-001: don't hardcode "main"). */
+const DEFAULT_BASE = "main";
 
 export interface TermSpawn {
   cmd: string;
@@ -153,8 +155,11 @@ export interface ImplementSession {
   // Dev-server preview (iframe), shared with the Design tab.
   preview: PreviewServer;
 
-  // Merge-safety layer (OPEN-001). behind/ahead vs main, a dry-run conflict
-  // verdict that gates Merge-to-main, and the conflicted-file list from a Sync.
+  // Merge-safety layer (OPEN-001). behind/ahead vs the repo's integration branch
+  // (`baseBranch`), a dry-run conflict verdict that gates Merge-to-main, and the
+  // conflicted-file list from a Sync. `baseBranch` is the repo's REAL base (not a
+  // hardcoded "main"), for UI labels.
+  baseBranch: string;
   behind: number | null;
   ahead: number | null;
   mergeClean: boolean | null;
@@ -262,6 +267,12 @@ export function useImplementSession(
   const [ahead, setAhead] = React.useState<number | null>(null);
   const [mergeClean, setMergeClean] = React.useState<boolean | null>(null);
   const [syncConflicts, setSyncConflicts] = React.useState<string[]>([]);
+  // The repo's REAL integration branch (what git_merge_to_main merges into), so
+  // behind/ahead + conflict-check use the same base as the merge instead of a
+  // hardcoded "main" (OPEN-001). Resolved live below; the ref feeds the always-
+  // stable loadBehind/syncMain callbacks, the state feeds UI labels.
+  const [baseBranch, setBaseBranch] = React.useState(DEFAULT_BASE);
+  const baseBranchRef = React.useRef(DEFAULT_BASE);
 
   // Open-PR finalize (DEC-015). `canOpenPR` is detected once a worktree exists
   // (GitHub remote + `gh` available); `prUrl` mirrors the WorktreeRef's persisted
@@ -273,8 +284,9 @@ export function useImplementSession(
   // probe is independent: a failure (e.g. base ref missing) just clears that
   // signal rather than surfacing an error in the normal flow.
   const loadBehind = React.useCallback(async (worktreePath: string) => {
+    const base = baseBranchRef.current;
     try {
-      const ba = await gitBehindAhead(worktreePath, BASE);
+      const ba = await gitBehindAhead(worktreePath, base);
       setBehind(ba.behind);
       setAhead(ba.ahead);
     } catch {
@@ -282,7 +294,7 @@ export function useImplementSession(
       setAhead(null);
     }
     try {
-      const c = await gitMergeConflictCheck(worktreePath, BASE);
+      const c = await gitMergeConflictCheck(worktreePath, base);
       setMergeClean(c.clean);
     } catch {
       setMergeClean(null);
@@ -366,6 +378,27 @@ export function useImplementSession(
       cancelled = true;
     };
   }, [root, issue, loadBehind]);
+
+  // Resolve the repo's REAL integration branch once (OPEN-001). Until it lands,
+  // loadBehind/syncMain use DEFAULT_BASE; when it resolves to something else we
+  // re-probe the open worktree so the merge-safety badge reflects the true base
+  // (and `git_merge_to_main`, which merges into this same branch, stays aligned).
+  React.useEffect(() => {
+    let cancelled = false;
+    void gitBaseBranch(root)
+      .then((b) => {
+        if (cancelled || !b) return;
+        baseBranchRef.current = b;
+        setBaseBranch(b);
+        if (refRef.current) void loadBehind(refRef.current.path);
+      })
+      .catch(() => {
+        /* detached HEAD / not a repo — keep DEFAULT_BASE */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [root, loadBehind]);
 
   // Live "running" signal for the derived state (DEC-027): the agent session is
   // ALIVE (running or waiting for input) — not a lingering exited one. Uses
@@ -1040,7 +1073,7 @@ export function useImplementSession(
     setInfo(null);
     setSyncConflicts([]);
     try {
-      const res = await gitSyncMain(ref.path, BASE);
+      const res = await gitSyncMain(ref.path, baseBranchRef.current);
       await refreshDiff(ref.path);
       await loadBehind(ref.path);
       if (res.ok) {
@@ -1067,7 +1100,7 @@ export function useImplementSession(
     if (!ref || action || !selectedAgent?.available) return;
     const files = syncConflicts.join(", ");
     const prompt = [
-      `git worktree \`${ref.path}\` で main(\`${BASE}\`) を取り込んだ際にマージ衝突が発生しました。`,
+      `git worktree \`${ref.path}\` でベースブランチ \`${baseBranchRef.current}\` を取り込んだ際にマージ衝突が発生しました。`,
       files ? `衝突ファイル: ${files}。` : "",
       "各ファイルの衝突マーカー (<<<<<<< / ======= / >>>>>>>) を解決し、解決後に `git add` してください（commit は人間が UI の Commit から行います）。",
     ]
@@ -1194,6 +1227,7 @@ export function useImplementSession(
     canResume,
     handleResume,
     preview,
+    baseBranch,
     behind,
     ahead,
     mergeClean,

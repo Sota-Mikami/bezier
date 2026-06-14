@@ -123,6 +123,16 @@ export function gitBehindAhead(
   return invoke<BehindAhead>("git_behind_ahead", { worktreePath, base });
 }
 
+/**
+ * The repo's integration branch — the branch the MAIN repo working tree is on,
+ * which is exactly what `gitMergeToMain` merges into. The merge-safety checks
+ * pass this as their `base` so they match the real merge target instead of a
+ * hardcoded "main" (OPEN-001). -> invoke("git_base_branch", { repoPath })
+ */
+export function gitBaseBranch(repoPath: string): Promise<string> {
+  return invoke<string>("git_base_branch", { repoPath });
+}
+
 /** Result of Sync-with-main. */
 export interface SyncResult {
   /** true = clean merge; false = conflicted (worktree left conflicted). */

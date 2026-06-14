@@ -1492,6 +1492,17 @@ fn git_behind_ahead(worktree_path: String, base: String) -> Result<BehindAhead, 
     Ok(BehindAhead { behind, ahead })
 }
 
+/// The repo's INTEGRATION branch = the branch the MAIN repo working tree is on
+/// (`rev-parse --abbrev-ref HEAD`). This is exactly what `git_merge_to_main`
+/// merges into, so the merge-safety badges (behind/ahead, conflict-check) must
+/// use THIS as their base instead of a hardcoded "main" — otherwise a repo whose
+/// default branch is `master`/`develop`/etc. shows broken badges (OPEN-001).
+#[tauri::command]
+fn git_base_branch(repo_path: String) -> Result<String, String> {
+    reject_traversal(Path::new(&repo_path))?;
+    current_branch(&repo_path)
+}
+
 /// Result of Sync-with-main: clean merge (`ok`) or the conflicted file list.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2161,6 +2172,7 @@ pub fn run() {
             git_worktree_remove,
             git_branch_delete,
             git_behind_ahead,
+            git_base_branch,
             git_sync_main,
             git_merge_conflict_check,
             git_merge_to_main,

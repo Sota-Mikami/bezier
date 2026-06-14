@@ -1271,6 +1271,7 @@ function IssueShip({ session }: { session: ImplementSession }) {
   const {
     ref,
     action,
+    baseBranch,
     behind,
     ahead,
     mergeClean,
@@ -1323,18 +1324,18 @@ function IssueShip({ session }: { session: ImplementSession }) {
               {behind === null ? (
                 <>
                   <Loader2 className="size-3 animate-spin" />
-                  main との差分を確認中…
+                  {baseBranch} との差分を確認中…
                 </>
               ) : behind === 0 ? (
                 <>
                   <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
-                  main と同期済
+                  {baseBranch} と同期済
                   {ahead != null && ahead > 0 ? ` · ${ahead} ahead` : ""}
                 </>
               ) : (
                 <>
                   <TriangleAlert className="size-3 text-amber-600 dark:text-amber-400" />
-                  main より {behind} commits 遅れ
+                  {baseBranch} より {behind} commits 遅れ
                   {ahead != null && ahead > 0 ? ` · ${ahead} ahead` : ""}
                 </>
               )}
@@ -1346,7 +1347,7 @@ function IssueShip({ session }: { session: ImplementSession }) {
               onClick={() => void syncMain()}
             >
               <ArrowDownToLine className="size-3.5" />
-              Sync with main
+              Sync with {baseBranch}
             </DropdownMenuItem>
 
             {canOpenPR && (
@@ -1366,7 +1367,7 @@ function IssueShip({ session }: { session: ImplementSession }) {
               onClick={() => void mergeToMain()}
             >
               <GitMerge className="size-3.5" />
-              Merge to main{canOpenPR ? "（solo）" : ""}
+              Merge to {baseBranch}{canOpenPR ? "（solo）" : ""}
             </DropdownMenuItem>
           </DropdownMenuGroup>
 

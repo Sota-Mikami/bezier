@@ -1,5 +1,5 @@
-<!-- 最終更新: 2026-06-14 / DEC-076 composer 撤回→/bezier:* スラッシュコマンド配布 -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-076 composer 撤回＋skill配布・DEC-074 Preview 拡張・DEC-073 ショートカット可視化・DEC-072 Verify インライン化・DEC-070 重大バグ修正）
+<!-- 最終更新: 2026-06-14 / DEC-077 OPEN-001 merge安全層 close（BASE修正）・DEC-076 composer撤回→skill配布 -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-077 OPEN-001 close・DEC-076 composer 撤回＋skill配布・DEC-074 Preview 拡張・DEC-073 ショートカット可視化・DEC-072 Verify インライン化）
 
 ## ▶ 2026-06-14 セッション（DEC-076 — composer 撤回 → agent-native スラッシュコマンド配布）
 - CEO「terminal へのチャット欄が2つあるみたいに見える。skill 配布で良い説」。調査→ DEC-075 は chat-native 入力を terminal-native 面に重ね**入力が二重**化していた（Bezier は他人の CLI を pty で動かす B 陣営、composer は claude の `@`/`/` の劣化再実装）。
@@ -10,6 +10,12 @@
 
 ### DEC-075（撤回済み・履歴）— 左チャット composer 化
 - 生ターミナル下に composer を dock し `@`/`/` を実装したが、入力二重で UX 不良 → DEC-076 で撤回。
+
+### OPEN-001 merge 安全層 → ✅ CLOSED（DEC-077）
+- 着手前調査で**既に実装済み**と判明（Ship IA = DEC-052/058 期）。log の「未実装」は陳腐化。再構築でなく正しさレビューに切替。
+- 既存: `git_behind_ahead` / `git_sync_main` / `git_merge_conflict_check` / `git_merge_to_main`（3重ガード）/ Ship メニュー（behind バッジ・Sync・gated Merge・衝突をエージェント委譲）。
+- **唯一の実バグ**: base ブランチが `BASE="main"` ハードコードで、`git_merge_to_main`（メインリポ現在ブランチに merge）と不整合 → 非 main repo でバッジ崩れ。**任意 repo を狙う楔として実害**。
+- **修正**: Rust `git_base_branch`＝`current_branch(repo)` を真実源に統一。`baseBranch` を live 解決して behind/ahead・衝突チェック・UI ラベルへ。tsc 0・eslint 0・cargo Finished。
 
 ### 死にコード掃除（DEC-072 の名残）
 - 旧 self-scoring Verify（`buildVerifyHandoff` / `handleVerify` / `canVerify` / SessionAction `"verify"`）は DEC-072 で撤回済みなのにセッションに残存・UI 消費ゼロ → 削除。DEC-072 の生きた検証（`collectEvidence`→`syncVerifyBlock`＝spec.md の `検証ログ` ブロック）は無傷。tsc 0・eslint 0。挙動変化なし（rebuild 不要）。
