@@ -25,6 +25,10 @@ import {
   GitMerge,
   ArrowDownToLine,
   ChevronDown,
+  Share2,
+  Globe,
+  Route,
+  Copy,
   Keyboard,
   Sparkles,
   ExternalLink,
@@ -52,7 +56,8 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
-import { confirmDialog, messageDialog } from "@/lib/ipc";
+import { confirmDialog, messageDialog, openExternal } from "@/lib/ipc";
+import { copyText } from "@/lib/clipboard";
 import { useWorkspaceRoot, repoLabel, repoName } from "@/lib/workspace-root";
 import {
   readIssue,
@@ -885,6 +890,7 @@ function IssueWorkbench({
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <IssueCheckpoints session={session} />
+          <IssueShare session={session} />
           <IssueShip session={session} />
         </div>
       </header>
@@ -1439,6 +1445,131 @@ function IssueCheckpoints({ session }: { session: ImplementSession }) {
             </DropdownMenuItem>
           ))}
         </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// "共有 ▾" — the share entry point lives in the top bar next to Checkpoints/Ship
+// (CEO: it belongs near ship, not in the Design preview controls). One menu for
+// the App publish + the Journey share + the publish account (DEC-094/098).
+function IssueShare({ session }: { session: ImplementSession }) {
+  const { ref, publish, journey } = session;
+  if (!ref) return null;
+  const busy = publish.status === "building" || journey.status === "building";
+  const tag = (s: string) =>
+    s === "ready"
+      ? "· 共有済"
+      : s === "building"
+        ? "· 公開中…"
+        : s === "error"
+          ? "· 失敗"
+          : "";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="共有"
+        title="アプリ / ジャーニーを共有"
+        className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium outline-none transition hover:bg-muted"
+      >
+        {busy ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Share2 className="size-3.5" />
+        )}
+        共有
+        <ChevronDown className="size-3.5 opacity-70" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-64">
+        {publish.connections.length > 1 && (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+                公開アカウント
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={publish.connectionId}
+                onValueChange={publish.setConnectionId}
+              >
+                {publish.connections.map((c) => (
+                  <DropdownMenuRadioItem key={c.id} value={c.id} className="text-xs">
+                    {c.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
+
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+            アプリ {tag(publish.status)}
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            className="cursor-pointer gap-2 text-xs"
+            disabled={publish.status === "building"}
+            onClick={() => void publish.publish()}
+          >
+            <Globe className="size-3.5" />
+            {publish.status === "ready" ? "再共有（最新を反映）" : "アプリを共有（公開URL）"}
+          </DropdownMenuItem>
+          {publish.status === "ready" && publish.url && (
+            <>
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-xs"
+                onClick={() => void copyText(publish.url ?? "")}
+              >
+                <Copy className="size-3.5" />
+                URL をコピー
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-xs"
+                onClick={() => void openExternal(publish.url ?? "").catch(() => {})}
+              >
+                <ExternalLink className="size-3.5" />
+                ブラウザで開く
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuGroup>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+            ジャーニー {tag(journey.status)}
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            className="cursor-pointer gap-2 text-xs"
+            disabled={journey.status === "building"}
+            onClick={() => void journey.share()}
+          >
+            <Route className="size-3.5" />
+            {journey.status === "ready"
+              ? "再共有（最新を反映）"
+              : "ジャーニーを共有（Spec→実装→アプリ）"}
+          </DropdownMenuItem>
+          {journey.status === "ready" && journey.url && (
+            <>
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-xs"
+                onClick={() => void copyText(journey.url ?? "")}
+              >
+                <Copy className="size-3.5" />
+                URL をコピー
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 text-xs"
+                onClick={() => void openExternal(journey.url ?? "").catch(() => {})}
+              >
+                <ExternalLink className="size-3.5" />
+                ブラウザで開く
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

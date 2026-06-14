@@ -12,6 +12,26 @@ export interface JourneyData {
   checkpoints: Checkpoint[];
   /** The published app URL (Vercel), if the app was shared. */
   appUrl: string | null;
+  /** The adopted design wireframe's self-contained HTML, embedded if present. */
+  designHtml?: string | null;
+  /** The opened PR URL, if any. */
+  prUrl?: string | null;
+  /** The repo's git remote URL (to build a GitHub branch link as a fallback). */
+  repoUrl?: string | null;
+  /** The worktree branch (for the GitHub link). */
+  branch?: string | null;
+}
+
+/** Turn a git remote URL + branch into a GitHub branch URL, or null. */
+function githubBranchUrl(
+  repoUrl: string | null | undefined,
+  branch: string | null | undefined,
+): string | null {
+  if (!repoUrl || !branch) return null;
+  // git@github.com:owner/repo(.git)  OR  https://github.com/owner/repo(.git)
+  const m = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?\/?$/.exec(repoUrl.trim());
+  if (!m) return null;
+  return `https://github.com/${m[1]}/${m[2]}/tree/${encodeURIComponent(branch)}`;
 }
 
 function esc(s: string): string {
@@ -59,6 +79,14 @@ export function buildJourneyHtml(data: JourneyData): string {
         .join("\n")
     : `<li class="muted">履歴はまだありません。</li>`;
 
+  const designSection = data.designHtml
+    ? `<iframe class="design" sandbox="allow-same-origin allow-scripts" title="design" srcdoc="${data.designHtml.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"></iframe>`
+    : "";
+  const implLink = data.prUrl ?? githubBranchUrl(data.repoUrl, data.branch);
+  const implSection = implLink
+    ? `<a class="link" href="${esc(implLink)}" target="_blank" rel="noopener">${data.prUrl ? "PR を見る" : "GitHub で見る"} →</a>`
+    : "";
+
   const badge = `<span class="badge"><span class="dot"></span>Made with Bezier</span>`;
 
   return `<!doctype html>
@@ -87,6 +115,8 @@ h2{font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--muted);text-t
 .spec ul,.spec ol{padding-left:20px}
 .cta{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:8px}
 .frame{display:block;width:100%;height:520px;margin-top:16px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.design{display:block;width:100%;height:480px;margin-top:8px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.link{display:inline-block;color:var(--accent);font-weight:600;text-decoration:none;border-bottom:1px solid var(--accent);margin-bottom:10px}
 ul.history{list-style:none;padding:0;margin:0}
 ul.history li{display:flex;align-items:baseline;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
 ul.history code{font-size:12px;color:var(--muted)}
@@ -110,7 +140,10 @@ footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);color:v
   <h2>Spec</h2>
   <div class="spec" id="spec"></div>
 
-  <h2>実装の履歴</h2>
+  ${designSection ? `<h2>デザイン</h2>\n  ${designSection}` : ""}
+
+  <h2>実装</h2>
+  ${implSection}
   <ul class="history">${history}</ul>
 
   <footer>

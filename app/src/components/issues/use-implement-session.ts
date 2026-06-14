@@ -348,6 +348,8 @@ export function useImplementSession(
     issue.title,
     checkpoints,
     publish.url,
+    prUrl,
+    ref?.branch ?? null,
   );
 
   // Embedded terminal (one at a time). termCwd/termSpawn/termNonce mirror the

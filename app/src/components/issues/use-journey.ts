@@ -20,7 +20,8 @@ import {
 import { readFile, writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
 import { getSettings } from "@/lib/settings";
 import { buildJourneyHtml } from "@/lib/journey";
-import type { Checkpoint } from "@/lib/git";
+import { gitRemoteUrl, type Checkpoint } from "@/lib/git";
+import { listVariants, readVariant, readAdoptedDesign } from "@/lib/variants";
 
 export type JourneyStatus = "idle" | "building" | "ready" | "error";
 
@@ -45,6 +46,8 @@ export function useJourney(
   title: string,
   checkpoints: Checkpoint[],
   appUrl: string | null,
+  prUrl: string | null,
+  branch: string | null,
 ): JourneyController {
   const [status, setStatus] = React.useState<JourneyStatus>("idle");
   const [url, setUrl] = React.useState<string | null>(null);
@@ -95,7 +98,37 @@ export function useJourney(
       const specMd = issueDir
         ? await readFile(`${issueDir}/spec.md`).catch(() => "")
         : "";
-      const html = buildJourneyHtml({ title, specMd, checkpoints, appUrl });
+
+      // Design: embed the adopted wireframe (else the first), if any.
+      let designHtml: string | null = null;
+      if (issueDir) {
+        try {
+          const variants = await listVariants({ dir: issueDir });
+          if (variants.length) {
+            const adopted = await readAdoptedDesign({ dir: issueDir }).catch(
+              () => null,
+            );
+            const chosen = variants.find((v) => v.id === adopted) ?? variants[0];
+            designHtml = await readVariant(chosen.path).catch(() => null);
+          }
+        } catch {
+          /* no design folder */
+        }
+      }
+
+      // Implementation: PR link if opened, else a GitHub branch link.
+      const repoUrl = await gitRemoteUrl(root).catch(() => "");
+
+      const html = buildJourneyHtml({
+        title,
+        specMd,
+        checkpoints,
+        appUrl,
+        designHtml,
+        prUrl,
+        repoUrl: repoUrl || null,
+        branch,
+      });
 
       // Write to an app-data dir (NOT the user's repo) so nothing is polluted.
       const dir = `${await appDataDir()}/bezier-journey/${issueId}`;
@@ -178,7 +211,18 @@ export function useJourney(
     } finally {
       busyRef.current = false;
     }
-  }, [root, issueId, issueDir, title, checkpoints, appUrl, ptyKey, detach]);
+  }, [
+    root,
+    issueId,
+    issueDir,
+    title,
+    checkpoints,
+    appUrl,
+    prUrl,
+    branch,
+    ptyKey,
+    detach,
+  ]);
 
   // Unmount: detach listeners (let any in-flight deploy finish).
   React.useEffect(() => {
