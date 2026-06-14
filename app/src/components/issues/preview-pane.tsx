@@ -170,7 +170,7 @@ function ShareControl({ server }: { server: PreviewServer }) {
         variant="ghost"
         className="h-7 gap-1.5"
         disabled
-        title="公開リンクを準備しています（トンネルの DNS 伝播に最大1分ほどかかります）"
+        title="トンネルを接続して公開リンクを準備しています（数秒）"
       >
         <Loader2 className="size-3.5 animate-spin" />
         公開準備中…
