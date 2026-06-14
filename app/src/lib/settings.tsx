@@ -49,6 +49,20 @@ issue: {{id}}
 
 export type ThemePref = "light" | "dark" | "system";
 
+/**
+ * A named publish "account/connection" (DEC-098): which hosting identity a repo
+ * deploys under. NOW: a Vercel team `scope` (uses the logged-in `vercel`
+ * session — multiple TEAMS under one login). Separate-login accounts via a
+ * Keychain token are a later slice. Per-repo binding (repoConnections) prevents
+ * accidentally deploying one client's work under another's account.
+ */
+export interface PublishConnection {
+  id: string;
+  label: string;
+  /** Vercel team/scope slug used as `vercel deploy --scope <scope>`. */
+  scope: string;
+}
+
 export interface Settings {
   /** Spec slot template with {{title}} / {{id}} placeholders. */
   specTemplate: string;
@@ -64,7 +78,17 @@ export interface Settings {
   trashTtlDays: number;
   /** Auto-commit a checkpoint before each agent turn (DEC-087/090). */
   autoCheckpoint: boolean;
+  /** Named publish accounts (DEC-098). */
+  publishConnections: PublishConnection[];
+  /** Connection id used when a repo has no explicit binding. */
+  defaultConnectionId: string;
+  /** Per-repo binding: repo path → connection id (prevents cross-account deploy). */
+  repoConnections: Record<string, string>;
 }
+
+export const DEFAULT_CONNECTIONS: PublishConnection[] = [
+  { id: "default", label: "個人 (bezier)", scope: "bezier" },
+];
 
 export const DEFAULT_SETTINGS: Settings = {
   specTemplate: DEFAULT_SPEC_TEMPLATE,
@@ -74,6 +98,9 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultAgentId: "",
   trashTtlDays: 30,
   autoCheckpoint: true,
+  publishConnections: DEFAULT_CONNECTIONS,
+  defaultConnectionId: "default",
+  repoConnections: {},
 };
 
 const STORAGE_KEY = "bezier:settings";
@@ -114,7 +141,40 @@ function coerce(raw: unknown): Settings {
       typeof o.autoCheckpoint === "boolean"
         ? o.autoCheckpoint
         : DEFAULT_SETTINGS.autoCheckpoint,
+    publishConnections: coerceConnections(o.publishConnections),
+    defaultConnectionId:
+      typeof o.defaultConnectionId === "string" && o.defaultConnectionId
+        ? o.defaultConnectionId
+        : "default",
+    repoConnections: coerceRepoConnections(o.repoConnections),
   };
+}
+
+function coerceConnections(raw: unknown): PublishConnection[] {
+  if (!Array.isArray(raw)) return DEFAULT_CONNECTIONS;
+  const out: PublishConnection[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const c = item as Record<string, unknown>;
+    if (
+      typeof c.id === "string" &&
+      c.id &&
+      typeof c.label === "string" &&
+      typeof c.scope === "string"
+    ) {
+      out.push({ id: c.id, label: c.label, scope: c.scope });
+    }
+  }
+  return out.length > 0 ? out : DEFAULT_CONNECTIONS;
+}
+
+function coerceRepoConnections(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && v) out[k] = v;
+  }
+  return out;
 }
 
 // --- module store ---------------------------------------------------------

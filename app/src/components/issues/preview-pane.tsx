@@ -290,6 +290,27 @@ function PublishControl({ publish }: { publish: PublishController }) {
   );
 }
 
+// Per-repo publish account picker (DEC-098). Shown only when >1 connection
+// exists (progressive disclosure — invisible for the single-account case).
+// Binding is per-repo so you never deploy one client's work under another's.
+function PublishAccountPicker({ publish }: { publish: PublishController }) {
+  if (publish.connections.length <= 1) return null;
+  return (
+    <select
+      value={publish.connectionId}
+      onChange={(e) => publish.setConnectionId(e.target.value)}
+      title="このリポジトリを公開するアカウント"
+      className="h-7 max-w-[9rem] truncate rounded-md border bg-background px-1.5 text-[11px] text-foreground/80 outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    >
+      {publish.connections.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function StatusBadge({ status }: { status: PreviewStatus }) {
   return (
     <Badge variant="outline" className="gap-1.5 font-normal">
@@ -556,6 +577,9 @@ export function PreviewPane({
         <div className="flex flex-1 items-center justify-end gap-1.5">
           {/* Publish (build → Vercel → persistent URL) works from source, so it's
               available whenever a worktree exists — not gated on the dev server. */}
+          {session?.publish && (
+            <PublishAccountPicker publish={session.publish} />
+          )}
           {session?.publish && <PublishControl publish={session.publish} />}
           {!running && (
             <Button

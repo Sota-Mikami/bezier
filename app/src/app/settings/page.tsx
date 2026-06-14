@@ -18,6 +18,7 @@ import {
 import { detectAgents, type AgentTool } from "@/lib/agents";
 import { confirmDialog } from "@/lib/ipc";
 import { BezierCommandsManager } from "@/components/settings/bezier-commands-manager";
+import { PublishConnectionsManager } from "@/components/settings/publish-connections-manager";
 import { cn } from "@/lib/utils";
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
@@ -123,6 +124,14 @@ export default function SettingsPage() {
           desc="Bezier の定型プロンプトを claude の /bezier:* スラッシュコマンドとして ~/.claude に入れます。入れると Bezier の中でも、あなたの素のターミナルでも使えます。ここで編集・追加・削除でき、勝手には入れません。"
         >
           <BezierCommandsManager />
+        </Section>
+
+        {/* Publish accounts (DEC-098) */}
+        <Section
+          title="公開アカウント（共有）"
+          desc="「共有」で Vercel に公開するときのアカウント。複数登録すると、リポジトリごとに使い分けられます（クライアントワークの取り違え防止）。秘密鍵は Bezier を通りません — サーバ env は Vercel のプロジェクト設定に。"
+        >
+          <PublishConnectionsManager />
         </Section>
 
         {/* Checkpoints (DEC-087/090) */}

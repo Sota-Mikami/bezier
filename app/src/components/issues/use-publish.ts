@@ -27,6 +27,12 @@ import {
 } from "@/lib/pty";
 import { readPreviewConfig, packageCwd } from "@/lib/preview";
 import { readFile, writeFile } from "@/lib/ipc";
+import {
+  getSettings,
+  setSettings,
+  useSettingsValue,
+  type PublishConnection,
+} from "@/lib/settings";
 
 export type PublishStatus = "idle" | "building" | "ready" | "error";
 
@@ -40,6 +46,12 @@ export interface PublishController {
   publish: () => Promise<void>;
   /** Reset (and kill any in-flight deploy). */
   clear: () => Promise<void>;
+  /** Named publish accounts (DEC-098). */
+  connections: PublishConnection[];
+  /** The connection id this repo deploys under. */
+  connectionId: string;
+  /** Bind this repo to a connection (prevents cross-account deploys). */
+  setConnectionId: (id: string) => void;
 }
 
 const PUBLISH_PTY_PREFIX = "publish:";
@@ -49,6 +61,14 @@ const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]/g;
 
 // Vercel sets these itself; injecting them from .env would fight the build.
 const ENV_SKIP = /^(NODE_ENV|VERCEL|VERCEL_.*|CI|PORT)$/;
+
+// Bezier injects ONLY public-prefixed env (NEXT_PUBLIC_ / VITE_) — these are
+// inlined into the client bundle by the framework anyway, so passing them is not
+// a secret leak. SERVER secrets are NEVER read or passed by Bezier; set them on
+// the host (Vercel project env). This is the engineer-grade design (DEC-098).
+function isPublicEnvKey(k: string): boolean {
+  return /^(NEXT_PUBLIC_|VITE_)/.test(k);
+}
 
 function publishPtyKey(key: string): string {
   return `${PUBLISH_PTY_PREFIX}${key}`;
@@ -143,6 +163,25 @@ export function usePublish(
   const publishingRef = React.useRef(false);
   const ptyKey = publishPtyKey(previewKey);
 
+  // Publish account/connection (DEC-098): which hosting identity this repo
+  // deploys under. Reactive so the picker updates; bound per-repo to prevent
+  // deploying one client's work under another's account.
+  const settings = useSettingsValue();
+  const connections = settings.publishConnections;
+  // Resolve to an EXISTING connection (a binding may point at a since-deleted
+  // one) so the picker value always matches a real option.
+  const rawConnId = settings.repoConnections[root] ?? settings.defaultConnectionId;
+  const connectionId = connections.some((c) => c.id === rawConnId)
+    ? rawConnId
+    : (connections[0]?.id ?? "");
+  const setConnectionId = React.useCallback(
+    (id: string) => {
+      const cur = getSettings().repoConnections;
+      setSettings({ repoConnections: { ...cur, [root]: id } });
+    },
+    [root],
+  );
+
   const detach = React.useCallback(() => {
     for (const un of unlistenRef.current.splice(0)) {
       try {
@@ -183,13 +222,11 @@ export function usePublish(
       const cfg = await readPreviewConfig(root).catch(() => null);
       const cwd = packageCwd(worktreePath, cfg?.packageDir ?? "");
 
-      // Resolve the env baked into the deploy. A repo-level
-      // `.bezier/publish-env.json` override WINS (for repos whose .env holds
-      // PRODUCTION secrets — point publish at a dedicated dev/staging env). Else
-      // fall back to .env.local / .env in the package dir, then the worktree
-      // root (monorepos keep env at the root while the app lives in app/).
+      // Bezier injects ONLY public-prefixed env (NEXT_PUBLIC_/VITE_). Server
+      // secrets are NEVER read or passed — set them on the Vercel project env
+      // (DEC-098). A repo-level `.bezier/publish-env.json` may supply explicit
+      // PUBLIC values (e.g. staging URLs); else fall back to the worktree .env.
       let envPairs: [string, string][] = [];
-      let envSource: "override" | "env" | "none" = "none";
       const overrideTxt = await readFile(
         `${root}/.bezier/publish-env.json`,
       ).catch(() => "");
@@ -198,8 +235,6 @@ export function usePublish(
         try {
           parsed = JSON.parse(overrideTxt);
         } catch {
-          // MF: the override exists to point AWAY from prod secrets — NEVER
-          // silently fall back to .env when it's present but unparseable.
           setStatus("error");
           setLog(
             "[Bezier] .bezier/publish-env.json が無効な JSON です。修正するか削除してください。",
@@ -209,7 +244,7 @@ export function usePublish(
         if (parsed && typeof parsed === "object") {
           for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
             if (
-              /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) &&
+              isPublicEnvKey(k) &&
               !ENV_SKIP.test(k) &&
               (typeof v === "string" ||
                 typeof v === "number" ||
@@ -219,17 +254,15 @@ export function usePublish(
             }
           }
         }
-        envSource = "override";
-      }
-      if (envSource !== "override") {
+      } else {
         const dirs = cwd === worktreePath ? [cwd] : [cwd, worktreePath];
         for (const dir of dirs) {
           let found = false;
           for (const name of [".env.local", ".env"]) {
             const txt = await readFile(`${dir}/${name}`).catch(() => "");
             if (!txt) continue;
-            envPairs = parseEnv(txt);
-            envSource = "env";
+            // PUBLIC-prefixed keys ONLY — Bezier never reads/passes secrets.
+            envPairs = parseEnv(txt).filter(([k]) => isPublicEnvKey(k));
             found = true;
             break;
           }
@@ -244,13 +277,19 @@ export function usePublish(
       // Keep `.vercel/` out of the user's git history (MF).
       await ensureVercelExcluded(worktreePath);
 
-      // Make the env injection VISIBLE in the log the user can open (MF).
+      // Which account/scope this repo deploys under (DEC-098).
+      const s = getSettings();
+      const cid = s.repoConnections[root] ?? s.defaultConnectionId;
+      const conn =
+        s.publishConnections.find((c) => c.id === cid) ?? s.publishConnections[0];
+      const scope = conn?.scope ?? "";
+
+      // Make what's injected VISIBLE (the user can open the log).
       const header =
-        envSource === "override"
-          ? `[Bezier] .bezier/publish-env.json の ${envPairs.length} 変数を使用（.env を上書き）\n`
-          : envPairs.length > 0
-            ? `[Bezier] .env から ${envPairs.length} 変数を Vercel に注入します。本番秘密がある場合は .bezier/publish-env.json で上書きを。\n`
-            : "[Bezier] 注入する .env が見つかりませんでした（env なしで deploy）。\n";
+        (envPairs.length > 0
+          ? `[Bezier] 公開値（NEXT_PUBLIC_/VITE_）${envPairs.length} 件を注入。サーバ秘密は注入しません — 必要なら Vercel のプロジェクト設定に。\n`
+          : "[Bezier] 公開env（NEXT_PUBLIC_）は見つかりませんでした。サーバ env は Vercel に設定してください。\n") +
+        (scope ? `[Bezier] アカウント: ${conn?.label}（scope: ${scope}）\n` : "");
 
       detach();
       idRef.current = null;
@@ -267,7 +306,12 @@ export function usePublish(
         id = await ptySpawn({
           cwd,
           cmd: bin,
-          args: ["deploy", "--yes", ...envFlags],
+          args: [
+            "deploy",
+            "--yes",
+            ...(scope ? ["--scope", scope] : []),
+            ...envFlags,
+          ],
           cols: 120,
           rows: 40,
           key: ptyKey,
@@ -404,5 +448,14 @@ export function usePublish(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ptyKey]);
 
-  return { status, url, log, publish, clear };
+  return {
+    status,
+    url,
+    log,
+    publish,
+    clear,
+    connections,
+    connectionId,
+    setConnectionId,
+  };
 }
