@@ -23,6 +23,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
+import { AgentComposer } from "./agent-composer";
 import type { ImplementSession } from "./use-implement-session";
 
 // xterm-backed terminal — client-only (DOM + CSS), like /workspace.
@@ -79,18 +80,25 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
         )}
       </div>
 
-      {/* Body: the conversation. Terminal when live, else resume, else start. */}
+      {/* Body: the conversation. Terminal when live, else resume, else start.
+          When live, the terminal is the TRANSCRIPT and a chat composer (DEC-075)
+          docks under it — a nicer input than typing into the raw terminal. */}
       <div className="min-h-0 flex-1 bg-background">
         {termMounted && termCwd ? (
-          <TerminalPane
-            key={`${termCwd}#${termNonce}#${termSpawn?.cmd ?? "shell"}`}
-            cwd={termCwd}
-            spawn={termSpawn}
-            sessionKey={termKey}
-            eventsPath={termEventsPath}
-            onReady={handleTermReady}
-            onExit={handleTermExit}
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="min-h-0 flex-1">
+              <TerminalPane
+                key={`${termCwd}#${termNonce}#${termSpawn?.cmd ?? "shell"}`}
+                cwd={termCwd}
+                spawn={termSpawn}
+                sessionKey={termKey}
+                eventsPath={termEventsPath}
+                onReady={handleTermReady}
+                onExit={handleTermExit}
+              />
+            </div>
+            <AgentComposer session={session} />
+          </div>
         ) : ref ? (
           <ResumePane canResume={canResume} onResume={() => void handleResume()} />
         ) : (

@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-14 / DEC-074 Preview 拡張（任意幅/枠 chrome/外部で開く） -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-074 Preview 拡張・DEC-073 ショートカット可視化・DEC-072 Verify インライン化・DEC-070 重大バグ修正・DEC-060 Code Editor）
+<!-- 最終更新: 2026-06-14 / DEC-075 左チャット composer 化（@/ コマンド） -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-075 チャット composer・DEC-074 Preview 拡張・DEC-073 ショートカット可視化・DEC-072 Verify インライン化・DEC-070 重大バグ修正）
+
+## ▶ 2026-06-14 セッション（DEC-075 — 左チャット composer 化）
+- 生ターミナルは transcript として残し、下に **composer** を dock。`sendToAgent`（pty stdin 投入）追加。
+- composer＝**Enter 送信**・**`@` コンテキスト**（Spec/Design/diff/受入基準）・**`/` クイックコマンド**（検証して/別案3つ/diff要約/コミット前チェック）。
+- **tsc+eslint green・実機 200**。DEC-075 で commit。**承認キュー #34〜#37 すべて完了**。
 
 ## ▶ 2026-06-14 セッション（DEC-074 — Preview 拡張）
 - **任意幅**（「カスタム幅」＋ 幅×高さ px 入力）／**デバイス枠 chrome**（角丸をデバイス別＋mobile 縦にノッチ・装飾）／**外部ブラウザで開く**（Rust `open_external` http(s) 限定＋`ExternalLink` ボタン）。
