@@ -1061,7 +1061,7 @@ export function useImplementSession(
   // unaffected. Skips when clean (the very first turn, or no new work).
   const autoCheckpoint = React.useCallback(async () => {
     const r = refRef.current;
-    if (!r) return;
+    if (!r || !getSettings().autoCheckpoint) return;
     try {
       const dirty = changedPathsFromStatus(await gitStatus(r.path)).length > 0;
       if (!dirty) return;

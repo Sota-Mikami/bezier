@@ -125,6 +125,35 @@ export default function SettingsPage() {
           <BezierCommandsManager />
         </Section>
 
+        {/* Checkpoints (DEC-087/090) */}
+        <Section
+          title="チェックポイント"
+          desc="エージェントの各ターンの前に、worktree の状態を自動でチェックポイント（コミット）します。オフにすると、必要なときに手動で「いまを保存」だけになります。"
+        >
+          <Field label="ターン前に自動で保存">
+            <div className="inline-flex rounded-md border p-0.5">
+              {[
+                { v: true, label: "オン" },
+                { v: false, label: "オフ" },
+              ].map((opt) => (
+                <button
+                  key={String(opt.v)}
+                  type="button"
+                  onClick={() => update({ autoCheckpoint: opt.v })}
+                  className={cn(
+                    "rounded px-3 py-1 text-xs font-medium transition-colors",
+                    settings.autoCheckpoint === opt.v
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </Section>
+
         {/* Preview */}
         <Section title="プレビュー" desc="デザインプレビューの dev サーバーは Issue を離れても保持されます（DEC-040）。その上限と自動停止の設定です。">
           <Field label="同時に保持する数">

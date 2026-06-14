@@ -62,6 +62,8 @@ export interface Settings {
   defaultAgentId: string;
   /** Days a trashed issue is kept before auto-purge (DEC-020). */
   trashTtlDays: number;
+  /** Auto-commit a checkpoint before each agent turn (DEC-087/090). */
+  autoCheckpoint: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -71,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   previewIdleMinutes: 10,
   defaultAgentId: "",
   trashTtlDays: 30,
+  autoCheckpoint: true,
 };
 
 const STORAGE_KEY = "bezier:settings";
@@ -107,6 +110,10 @@ function coerce(raw: unknown): Settings {
     defaultAgentId:
       typeof o.defaultAgentId === "string" ? o.defaultAgentId : "",
     trashTtlDays: clampInt(o.trashTtlDays, 1, 365, DEFAULT_SETTINGS.trashTtlDays),
+    autoCheckpoint:
+      typeof o.autoCheckpoint === "boolean"
+        ? o.autoCheckpoint
+        : DEFAULT_SETTINGS.autoCheckpoint,
   };
 }
 
