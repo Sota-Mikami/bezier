@@ -165,9 +165,15 @@ function ShareControl({ server }: { server: PreviewServer }) {
 
   if (tunnelStatus === "connecting") {
     return (
-      <Button size="sm" variant="ghost" className="h-7 gap-1.5" disabled>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 gap-1.5"
+        disabled
+        title="公開リンクを準備しています（トンネルの DNS 伝播に最大1分ほどかかります）"
+      >
         <Loader2 className="size-3.5 animate-spin" />
-        共有中…
+        公開準備中…
       </Button>
     );
   }

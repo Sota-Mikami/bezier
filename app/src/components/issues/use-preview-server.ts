@@ -218,6 +218,7 @@ export function usePreviewServer(
   const unlistenRef = React.useRef<UnlistenFn[]>([]);
   const tunnelIdRef = React.useRef<string | null>(null);
   const tunnelTimerRef = React.useRef<number | null>(null);
+  const tunnelPollRef = React.useRef<number | null>(null);
   // Detected runner + (for tauri) the worktree-relative Tauri crate dir, read in
   // start(). Kept in a ref so start()'s identity doesn't churn on detection.
   const runnerRef = React.useRef<RunnerKind>("web");
@@ -233,6 +234,10 @@ export function usePreviewServer(
     if (tunnelTimerRef.current !== null) {
       window.clearTimeout(tunnelTimerRef.current);
       tunnelTimerRef.current = null;
+    }
+    if (tunnelPollRef.current !== null) {
+      window.clearInterval(tunnelPollRef.current);
+      tunnelPollRef.current = null;
     }
   }, []);
 
@@ -558,12 +563,44 @@ export function usePreviewServer(
     unlistenRef.current.push(
       await onPtyData((p) => {
         if (p.id !== id || tunnelIdRef.current !== id) return;
+        // `tunnelTimerRef !== null` means we're still waiting for the URL line;
+        // it's cleared on the first match, so this fires exactly once.
+        if (tunnelTimerRef.current === null) return;
         const m = TUNNEL_URL_RE.exec(p.chunk);
-        if (m) {
-          clearTunnelTimer();
-          setTunnelUrl(m[0]);
-          setTunnelStatus("ready");
-        }
+        if (!m) return;
+        const found = m[0];
+        // The URL is printed, but a trycloudflare quick tunnel takes ~30-60s for
+        // DNS to propagate ("may take some time to be reachable"). Surfacing it
+        // now lets the viewer open it too early → NXDOMAIN, which macOS then
+        // NEGATIVE-caches. So gate "ready" on actual reachability: http_ping
+        // resolves DNS + connects, returning true only once it's openable.
+        window.clearTimeout(tunnelTimerRef.current);
+        tunnelTimerRef.current = null;
+        const deadline = Date.now() + 120_000;
+        const probe = () => {
+          if (tunnelIdRef.current !== id) {
+            if (tunnelPollRef.current !== null) {
+              window.clearInterval(tunnelPollRef.current);
+              tunnelPollRef.current = null;
+            }
+            return;
+          }
+          void httpPing(found)
+            .catch(() => false)
+            .then((ok) => {
+              if (tunnelIdRef.current !== id) return;
+              if (ok || Date.now() > deadline) {
+                if (tunnelPollRef.current !== null) {
+                  window.clearInterval(tunnelPollRef.current);
+                  tunnelPollRef.current = null;
+                }
+                setTunnelUrl(found);
+                setTunnelStatus("ready");
+              }
+            });
+        };
+        probe();
+        tunnelPollRef.current = window.setInterval(probe, 2500);
       }),
     );
     unlistenRef.current.push(
@@ -605,6 +642,8 @@ export function usePreviewServer(
       if (pollRef.current !== null) window.clearInterval(pollRef.current);
       if (tunnelTimerRef.current !== null)
         window.clearTimeout(tunnelTimerRef.current);
+      if (tunnelPollRef.current !== null)
+        window.clearInterval(tunnelPollRef.current);
       for (const un of listeners.splice(0)) {
         try {
           un();
