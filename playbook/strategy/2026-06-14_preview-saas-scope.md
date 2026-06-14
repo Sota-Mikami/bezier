@@ -160,7 +160,14 @@ local-first → SaaS 境界：
 > CEO「ちゃんとドメインを用意するかも。`bezier.com` は取れないので `bezier-app.com` 等。あとで差し替えでも良いが理解しておいて。購入・Coolify 接続・別基盤（Supabase 等）の手動作業は私が対応する」。
 
 - **登録状況（2026-06-14 whois 確認）**: 空き＝`trybezier.com` ／ `bezierhq.com` ／ `bezier-app.com` ／ `bezier-lab.com`。登録済＝`bezier.com`・`.app`・`.dev`・`.io`・`.tools`・`.design`・`bezierapp.com`・**`bezierlab.app`（候補だが取得不可）**・`getbezier.com`・`usebezier.com`。
-- **CEO 選好（2026-06-14）＝`trybezier.com`**（"try" が気に入った）。→ Named Tunnel host は `*.preview.trybezier.com`、publish は `preview.trybezier.com/{token}` 等。**購入後 `TUNNEL_URL_RE` と host 文字列を差し替え**（Slice 4 で）。
+- **CEO 選好＝`trybezier.com`**（"try" が気に入った）。**2026-06-14 購入済**（Cloudflare Registrar・zone Active）。
+- **Slice 4 実装済（2026-06-14）の実構成**:
+  - Named Tunnel `bezier-preview`（id `cbe15b7a-09ea-44fb-b717-478b17e5b432`、creds `~/.cloudflared/<id>.json` ＋ `cert.pem`）。
+  - DNS: **`*.trybezier.com`**（level-1 ワイルドカード CNAME → トンネル）。
+  - **⚠️ SSL の罠**: Cloudflare Universal SSL（無料）は **apex ＋ level-1（`*.trybezier.com`）のみ**カバー。`*.preview.trybezier.com`（level-2）は **TLS 不可**（Advanced Cert＝有料が要る）。→ **共有 host は level-1 の `<random>.trybezier.com`** にした（証明書 SAN = `trybezier.com, *.trybezier.com` を実測確認）。
+  - 共有 URL = **`bz-<20hex>.trybezier.com`**（`crypto` 生成・**localStorage 保存＝git に入れない**＝推測不能 × 安定）。ready は cloudflared `Registered tunnel connection` ログ（~3s）。
+  - **セキュリティ（CEO ask）**: 推測不能サブドメイン＝baseline。**外部クライアント向けの本認証は Cloudflare Access（メール OTP・無料・L2/L3）を後付け**（§3.5・未実装）。
+  - 実証: 登録 3s ／ TLS OK ／ `bz-host` 経由 **200 ＋ 配信** を smoke test で確認。
 - **差し込み箇所**: ① Phase 1 Slice 4 の Named Tunnel host（現 `*.preview.duong-sm.com` → 例 `*.preview.bezier-app.com`）② Phase 2 publish URL（`preview.{domain}/{token}` 静的／`{token}.preview.{domain}` SSR）③ DEC-093 バッジ CTA の landing（＝apex ドメイン＝ブランドの顔。クライアントに渡す URL の見栄えにも効く）。
 - **差し替えコスト＝ほぼゼロ（config）**: コード側は host 文字列＋`TUNNEL_URL_RE` 一箇所。アーキ依存なし。**dogfood は当面 trycloudflare / duong-sm.com で進め、Slice 4 着手時に確定すれば良い**＝今は実装をブロックしない。
 - **CEO 手動チェックリスト（適切なタイミングで案内）**: ① 購入（**Cloudflare Registrar 推奨**＝原価・DNS が既に CF）② CF に zone 追加（duong-sm.com と同様）③ Phase 1: `cloudflared tunnel route dns bezier-preview '*.preview.{domain}'` ④ Phase 2: 静的=CloudFront/CF に CNAME、SSR=Coolify アプリにドメイン追加（Let's Encrypt 自動）。
