@@ -13,7 +13,7 @@
 - **CEO 構想**: agentation 的な体験 ＋ **Figma の Comment のような体験**。プレビュー上の任意の場所にピンを刺してコメント → それが Agent へのフィードバックになる。
 - **狙い**: デザイナー/PdM は unified diff を読まない。レビューを **視覚（レンダリング結果）起点** にする。
   - Design タブをデフォルト&主役へ（terminal/diff は上級者向けに格下げ）。
-  - ~~Before/After の視覚比較~~ → スライダー実装→**撤回（DEC-086）**。CEO は静止画比較でなく **ライブ localhost を IDE 的タイルで並べて比較**したい（§C スプリットビューと合流候補）。要 spec。
+  - ~~Before/After の視覚比較 / IDE タイル比較~~ → 実装→**撤回・保留（DEC-086）**。CEO は非エンジニアで「動くものを触る」志向、比較は今は不要（要るとしても **Preview のみ・軽量**）。**先回りで作らない**。再要望時に Preview 限定で。
   - **プレビュー上を直接クリックしてコメント（Figma comment 風ピン）→ Agent にフィードバック**。
   - チャットを生 terminal でなく綺麗な composer（吹き出し＋ `/`コマンド＋ `@`コンテキスト= @spec/@screen/@file）に。terminal は「詳細表示」で展開。
 - **位置づけ**: 「Design Agent 用 IDE/Orchestrator」を名乗れるかの分水嶺。
