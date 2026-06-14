@@ -78,6 +78,35 @@ export function gitCommitAll(
   return invoke<string>("git_commit_all", { worktreePath, message });
 }
 
+/** One checkpoint = one commit on the issue branch (§D / DEC-080). */
+export interface Checkpoint {
+  /** full SHA */
+  sha: string;
+  /** short SHA */
+  short: string;
+  /** commit message subject */
+  subject: string;
+  /** committer ISO date */
+  iso: string;
+}
+
+/**
+ * The issue branch's own commits (`<base>..HEAD`, newest first) = its checkpoints.
+ * -> invoke("git_log", { worktreePath, base })
+ */
+export function gitLog(worktreePath: string, base: string): Promise<Checkpoint[]> {
+  return invoke<Checkpoint[]>("git_log", { worktreePath, base });
+}
+
+/**
+ * Roll the worktree back to a checkpoint commit (`reset --hard <sha>`). Later
+ * commits + uncommitted changes are discarded (reflog-recoverable); main is never
+ * touched. -> invoke("git_reset_hard", { worktreePath, sha })
+ */
+export function gitResetHard(worktreePath: string, sha: string): Promise<void> {
+  return invoke<void>("git_reset_hard", { worktreePath, sha });
+}
+
 /**
  * Remove the worktree at `worktreePath` (force, discarding its changes).
  * -> invoke("git_worktree_remove", { repo, worktreePath })

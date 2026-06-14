@@ -968,7 +968,11 @@ export type ThreadEventType =
   // into the implement handoff today, reserved for when it becomes its own turn.)
   | "clarify"
   | "verify"
-  | "variant";
+  | "variant"
+  // §D / DEC-080: a manual checkpoint (commit) was made, or the worktree was
+  // rolled back to an earlier checkpoint.
+  | "checkpoint"
+  | "rollback";
 
 export interface ThreadEvent {
   type: ThreadEventType;
@@ -1050,6 +1054,8 @@ const THREAD_LABELS: Record<ThreadEventType, string> = {
   clarify: "Clarify（確認）",
   verify: "Verify（受入基準を採点）",
   variant: "Design 別案 / 採用",
+  checkpoint: "チェックポイント保存",
+  rollback: "チェックポイントに戻す",
 };
 
 /** Render the durable thread as a compact bulleted activity log. */

@@ -1,5 +1,9 @@
-<!-- 最終更新: 2026-06-14 / DEC-078 /bezier:* UIマネージャ・DEC-077 OPEN-001 close・DEC-076 composer撤回→skill配布 -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-078 コマンドUIマネージャ・DEC-077 OPEN-001 close・DEC-076 composer 撤回＋skill配布・DEC-074 Preview 拡張・DEC-073 ショートカット可視化）
+<!-- 最終更新: 2026-06-14 / DEC-080 チェックポイント・DEC-079 dev判別ロゴ・DEC-078 /bezier:* UIマネージャ・DEC-077 OPEN-001 close -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-080 チェックポイント・DEC-079 dev判別・DEC-078 コマンドUIマネージャ・DEC-077 OPEN-001 close・DEC-076 composer 撤回＋skill配布）
+
+## ▶ 2026-06-14 セッション（DEC-080 — チェックポイント / worktree スナップショット＋ロールバック）
+- ideas-backlog §D。Discard（全消し）のみ → **任意の点に戻せる**手動チェックポイント（＝branch の commit）。作られ方は**手動 MVP**を採択（自動・毎ターン前は WIP 増＋squash 要 → 後続）。
+- Rust `git_log`（`base..HEAD` 新しい順）/ `git_reset_hard`（reset --hard・reflog 復元可・main 不触）。session に `checkpoints`/`makeCheckpoint`/`rollbackTo`。ヘッダの Ship 隣に「チェックポイント」ドロップダウン（いまを保存＋一覧＋各行「戻す」）。tsc 0・eslint 0・cargo Finished。
 
 ## ▶ 2026-06-14 セッション（DEC-078 — /bezier:* コマンドの UI マネージャ＝marketplace 入口）
 - **codex は将来対応**（接地で確定: comingSoon・未インストール・~/.codex は別物。推測実装しない）。一旦 claude 最適化。

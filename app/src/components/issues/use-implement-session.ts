@@ -44,6 +44,8 @@ import {
   gitDiff,
   gitStatus,
   gitCommitAll,
+  gitLog,
+  gitResetHard,
   gitWorktreeRemove,
   gitBranchDelete,
   gitBehindAhead,
@@ -57,6 +59,7 @@ import {
   ghPrState,
   gitRepoStatus,
   changedPathsFromStatus,
+  type Checkpoint,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
 import {
@@ -85,6 +88,8 @@ export type SessionAction =
   | "implement"
   | "rerun"
   | "variant"
+  | "checkpoint"
+  | "rollback"
   | "accept"
   | "discard"
   | "sync"
@@ -164,6 +169,13 @@ export interface ImplementSession {
   ahead: number | null;
   mergeClean: boolean | null;
   syncConflicts: string[];
+
+  // Checkpoints (§D / DEC-080): the branch's commits as restore points.
+  checkpoints: Checkpoint[];
+  /** Commit the current worktree state as a checkpoint (label → commit subject). */
+  makeCheckpoint: (label?: string) => Promise<void>;
+  /** reset --hard the worktree to a checkpoint commit (discards later work). */
+  rollbackTo: (sha: string) => Promise<void>;
   syncMain: () => Promise<void>;
   mergeToMain: () => Promise<void>;
   resolveConflictsWithAI: () => void;
@@ -274,6 +286,11 @@ export function useImplementSession(
   const [baseBranch, setBaseBranch] = React.useState(DEFAULT_BASE);
   const baseBranchRef = React.useRef(DEFAULT_BASE);
 
+  // Checkpoints (§D / DEC-080): the branch's own commits = restore points. List
+  // for the dropdown; create commits the current state; rollback resets the
+  // worktree to a chosen one. Only Discard existed before (all-or-nothing).
+  const [checkpoints, setCheckpoints] = React.useState<Checkpoint[]>([]);
+
   // Open-PR finalize (DEC-015). `canOpenPR` is detected once a worktree exists
   // (GitHub remote + `gh` available); `prUrl` mirrors the WorktreeRef's persisted
   // PR link so a re-opened issue still shows it.
@@ -298,6 +315,15 @@ export function useImplementSession(
       setMergeClean(c.clean);
     } catch {
       setMergeClean(null);
+    }
+  }, []);
+
+  // Load the branch's checkpoints (commits) for the dropdown (§D / DEC-080).
+  const loadCheckpoints = React.useCallback(async (worktreePath: string) => {
+    try {
+      setCheckpoints(await gitLog(worktreePath, baseBranchRef.current));
+    } catch {
+      setCheckpoints([]);
     }
   }, []);
 
@@ -368,8 +394,9 @@ export function useImplementSession(
           .catch(() => {
             /* worktree may have been removed externally */
           });
-        // And its behind/ahead vs main (merge-safety badge).
+        // And its behind/ahead vs main (merge-safety badge) + checkpoints.
         void loadBehind(r.path);
+        void loadCheckpoints(r.path);
       })
       .catch(() => {
         /* no ref */
@@ -377,7 +404,7 @@ export function useImplementSession(
     return () => {
       cancelled = true;
     };
-  }, [root, issue, loadBehind]);
+  }, [root, issue, loadBehind, loadCheckpoints]);
 
   // Resolve the repo's REAL integration branch once (OPEN-001). Until it lands,
   // loadBehind/syncMain use DEFAULT_BASE; when it resolves to something else we
@@ -390,7 +417,10 @@ export function useImplementSession(
         if (cancelled || !b) return;
         baseBranchRef.current = b;
         setBaseBranch(b);
-        if (refRef.current) void loadBehind(refRef.current.path);
+        if (refRef.current) {
+          void loadBehind(refRef.current.path);
+          void loadCheckpoints(refRef.current.path);
+        }
       })
       .catch(() => {
         /* detached HEAD / not a repo — keep DEFAULT_BASE */
@@ -398,7 +428,7 @@ export function useImplementSession(
     return () => {
       cancelled = true;
     };
-  }, [root, loadBehind]);
+  }, [root, loadBehind, loadCheckpoints]);
 
   // Live "running" signal for the derived state (DEC-027): the agent session is
   // ALIVE (running or waiting for input) — not a lingering exited one. Uses
@@ -1015,12 +1045,76 @@ export function useImplementSession(
       await refreshDiff(ref.path);
       // Re-evaluate behind/ahead + merge cleanliness now that the branch moved.
       await loadBehind(ref.path);
+      await loadCheckpoints(ref.path);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setAction(null);
     }
-  }, [ref, action, issue, refreshDiff, loadBehind, logEvent]);
+  }, [ref, action, issue, refreshDiff, loadBehind, loadCheckpoints, logEvent]);
+
+  // Make a checkpoint: commit the current worktree state on the branch (§D /
+  // DEC-080). `label` becomes the commit subject (defaults to a timestamp). A
+  // clean tree surfaces a friendly "nothing to save".
+  const makeCheckpoint = React.useCallback(
+    async (label?: string) => {
+      if (!ref || action) return;
+      const msg =
+        label?.trim() ||
+        `checkpoint ${new Date(Date.now()).toLocaleString("ja-JP", {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`;
+      setAction("checkpoint");
+      setError(null);
+      setInfo(null);
+      try {
+        const sha = await gitCommitAll(ref.path, msg);
+        setInfo(`チェックポイントを作成: ${sha.slice(0, 9)}`);
+        void logEvent("checkpoint", msg);
+        await refreshDiff(ref.path);
+        await loadBehind(ref.path);
+        await loadCheckpoints(ref.path);
+      } catch (e) {
+        const m = String(e);
+        setError(/nothing to commit/.test(m) ? "保存する変更がありません。" : errMsg(e));
+      } finally {
+        setAction(null);
+      }
+    },
+    [ref, action, refreshDiff, loadBehind, loadCheckpoints, logEvent],
+  );
+
+  // Roll the worktree back to a checkpoint (§D / DEC-080). reset --hard discards
+  // later commits + uncommitted changes (reflog-recoverable); main is untouched.
+  const rollbackTo = React.useCallback(
+    async (sha: string) => {
+      if (!ref || action) return;
+      const ok = await confirmDialog(
+        "このチェックポイントに戻します。これより後の変更（未コミット分を含む）は失われます（git の reflog から復元は可能）。",
+        { title: "チェックポイントに戻す", okLabel: "戻す", cancelLabel: "やめる" },
+      );
+      if (!ok) return;
+      setAction("rollback");
+      setError(null);
+      setInfo(null);
+      try {
+        await gitResetHard(ref.path, sha);
+        setInfo(`チェックポイント ${sha.slice(0, 9)} に戻しました。`);
+        void logEvent("rollback", sha.slice(0, 9));
+        await refreshDiff(ref.path);
+        await loadBehind(ref.path);
+        await loadCheckpoints(ref.path);
+      } catch (e) {
+        setError(errMsg(e));
+      } finally {
+        setAction(null);
+      }
+    },
+    [ref, action, refreshDiff, loadBehind, loadCheckpoints, logEvent],
+  );
 
   const handleDiscard = React.useCallback(async () => {
     if (!ref || action) return;
@@ -1232,6 +1326,9 @@ export function useImplementSession(
     ahead,
     mergeClean,
     syncConflicts,
+    checkpoints,
+    makeCheckpoint,
+    rollbackTo,
     syncMain,
     mergeToMain,
     resolveConflictsWithAI,

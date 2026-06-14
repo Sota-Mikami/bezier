@@ -1412,6 +1412,66 @@ fn git_commit_all(worktree_path: String, message: String) -> Result<String, Stri
     Ok(sha.trim().to_string())
 }
 
+/// One checkpoint = one commit on the issue branch (§D, DEC-080).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Checkpoint {
+    pub sha: String,
+    pub short: String,
+    pub subject: String,
+    pub iso: String,
+}
+
+/// The branch's own commits (`<base>..HEAD`, newest first) = the issue's
+/// checkpoints. If `base` isn't a valid ref the range would fail, so fall back to
+/// the most recent commits on HEAD (capped) so the list still renders. Fields are
+/// split on US (0x1f) so subjects with spaces survive.
+#[tauri::command]
+fn git_log(worktree_path: String, base: String) -> Result<Vec<Checkpoint>, String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    let wt = worktree_path.as_str();
+    let fmt = "--pretty=format:%H%x1f%h%x1f%s%x1f%cI";
+    let base_ok = git_run(&["-C", wt, "rev-parse", "--verify", "--quiet", &base]).is_ok();
+    let out = if base_ok {
+        git_run(&["-C", wt, "log", fmt, &format!("{base}..HEAD")])?
+    } else {
+        git_run(&["-C", wt, "log", fmt, "-n", "50", "HEAD"])?
+    };
+    let mut list = Vec::new();
+    for line in out.lines() {
+        let p: Vec<&str> = line.split('\u{1f}').collect();
+        if p.len() >= 4 {
+            list.push(Checkpoint {
+                sha: p[0].to_string(),
+                short: p[1].to_string(),
+                subject: p[2].to_string(),
+                iso: p[3].to_string(),
+            });
+        }
+    }
+    Ok(list)
+}
+
+/// Roll the worktree back to a checkpoint commit (`reset --hard <sha>`). Later
+/// commits + uncommitted changes are discarded (recoverable via reflog). Only
+/// the worktree/branch is touched — main is never affected.
+#[tauri::command]
+fn git_reset_hard(worktree_path: String, sha: String) -> Result<(), String> {
+    reject_traversal(Path::new(&worktree_path))?;
+    let wt = worktree_path.as_str();
+    git_run(&[
+        "-C",
+        wt,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        &format!("{sha}^{{commit}}"),
+    ])
+    .map_err(|_| format!("not a commit: {sha}"))?;
+    git_run(&["-C", wt, "reset", "--hard", &sha])?;
+    Ok(())
+}
+
 /// Remove the worktree at `worktree_path` (force-discarding its changes).
 #[tauri::command]
 fn git_worktree_remove(repo: String, worktree_path: String) -> Result<(), String> {
@@ -2198,6 +2258,8 @@ pub fn run() {
             git_diff,
             git_status,
             git_commit_all,
+            git_log,
+            git_reset_hard,
             git_worktree_remove,
             git_branch_delete,
             git_behind_ahead,
