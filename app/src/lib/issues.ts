@@ -116,15 +116,23 @@ function stripTrailingSlash(p: string): string {
   return p.replace(/\/+$/, "");
 }
 
-/** kebab-case ASCII slug; falls back to "untitled" when nothing survives. */
+/** kebab-case ASCII slug; "" when nothing survives (so untitled issues get no
+ * "-untitled" noise in their folder/branch — just the ULID, DEC-091). */
 export function slugify(title: string): string {
-  const slug = title
+  return title
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, "")
     .trim()
     .replace(/[\s-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return slug || "untitled";
+}
+
+/** The on-disk / branch identifier for an issue: the ULID, plus `-<slug>` ONLY
+ * when there's a real slug (a title was given at creation). Untitled issues are
+ * just the ULID — no "-untitled" (DEC-091). Back-compatible: an existing issue
+ * carries slug "untitled" (parsed from its old folder), so it keeps its name. */
+export function issueFolderName(id: string, slug: string): string {
+  return slug ? `${id}-${slug}` : id;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +291,7 @@ export async function createIssue(root: string, title: string): Promise<Issue> {
   const id = ulid();
   const cleanTitle = title.trim();
   const slug = slugify(cleanTitle);
-  const dir = `${draftsDir(root)}/${id}-${slug}`;
+  const dir = `${draftsDir(root)}/${issueFolderName(id, slug)}`;
   const created = new Date().toISOString();
   const fm = serializeIssueFm({ id, title: cleanTitle || "Untitled", status: "open", created });
   const heading = cleanTitle ? `# ${cleanTitle}\n\n` : "";
@@ -314,7 +322,7 @@ export async function createIssue(root: string, title: string): Promise<Issue> {
  * new `dir`.
  */
 export async function moveIssueToRepo(issue: Issue, toRoot: string): Promise<Issue> {
-  const dest = `${draftsDir(toRoot)}/${issue.id}-${issue.slug}`;
+  const dest = `${draftsDir(toRoot)}/${issueFolderName(issue.id, issue.slug)}`;
   if (dest === issue.dir) return issue;
   await movePath(issue.dir, dest);
   return { ...issue, dir: dest };
@@ -395,7 +403,7 @@ function trashIssuesDir(root: string): string {
  */
 export async function trashIssue(root: string, issue: Issue): Promise<void> {
   const ref = await readWorktreeRef(issue).catch(() => null);
-  const folderName = `${issue.id}-${issue.slug}`;
+  const folderName = issueFolderName(issue.id, issue.slug);
   const meta: TrashMeta = {
     id: issue.id,
     slug: issue.slug,
@@ -513,7 +521,7 @@ export async function readTrashDetail(
 
 /** Restore a trashed issue back into the live store (move-back). */
 export async function restoreFromTrash(root: string, meta: TrashMeta): Promise<void> {
-  const folderName = `${meta.id}-${meta.slug}`;
+  const folderName = issueFolderName(meta.id, meta.slug);
   const draft = `${draftsDir(root)}/${folderName}`;
   await movePath(`${trashDraftsDir(root)}/${folderName}`, draft);
   await removePath(`${draft}/.trashed.json`).catch(() => {});
@@ -529,7 +537,7 @@ export async function restoreFromTrash(root: string, meta: TrashMeta): Promise<v
  * meta.worktreePath) before/after calling this, like purgeIssue does.
  */
 export async function removeTrashEntry(root: string, meta: TrashMeta): Promise<void> {
-  await removePath(`${trashDraftsDir(root)}/${meta.id}-${meta.slug}`);
+  await removePath(`${trashDraftsDir(root)}/${issueFolderName(meta.id, meta.slug)}`);
   await removePath(`${trashIssuesDir(root)}/${meta.id}`);
 }
 
@@ -604,9 +612,10 @@ export interface WorktreeRef {
   prUrl?: string;
 }
 
-/** branch name convention (DEC-047 G2): `issue/<ulid>-<slug>`. */
+/** branch name convention (DEC-047 G2 / DEC-091): `issue/<ulid>[-<slug>]` — just
+ * the ULID for untitled issues (no "-untitled"). */
 export function branchName(issue: Pick<Issue, "id" | "slug">): string {
-  return `issue/${issue.id}-${issue.slug || "untitled"}`;
+  return `issue/${issueFolderName(issue.id, issue.slug)}`;
 }
 
 /**
