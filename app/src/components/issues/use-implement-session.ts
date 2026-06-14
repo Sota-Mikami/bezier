@@ -80,6 +80,7 @@ import {
 import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
 import { usePublish, type PublishController } from "./use-publish";
+import { useJourney, type JourneyController } from "./use-journey";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -162,6 +163,8 @@ export interface ImplementSession {
   preview: PreviewServer;
   // Publish (Phase 2): build + deploy the worktree to Vercel → persistent URL.
   publish: PublishController;
+  // Journey (DEC-094): share Spec → 実装 → App as one generated page.
+  journey: JourneyController;
 
   // Merge-safety layer (OPEN-001). behind/ahead vs the repo's integration branch
   // (`baseBranch`), a dry-run conflict verdict that gates Merge-to-main, and the
@@ -338,6 +341,14 @@ export function useImplementSession(
     issue.id,
   );
   const publish = usePublish(root, ref ? workDir(ref.path) : null, issue.id);
+  const journey = useJourney(
+    root,
+    issue.id,
+    issue.dir,
+    issue.title,
+    checkpoints,
+    publish.url,
+  );
 
   // Embedded terminal (one at a time). termCwd/termSpawn/termNonce mirror the
   // /workspace pattern; pendingInput is written once the pty is ready.
@@ -1338,6 +1349,7 @@ export function useImplementSession(
     handleResume,
     preview,
     publish,
+    journey,
     baseBranch,
     behind,
     ahead,

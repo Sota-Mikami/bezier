@@ -41,6 +41,7 @@ import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./use-implement-session";
 import type { PublishController } from "./use-publish";
+import type { JourneyController } from "./use-journey";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
 
 const STATUS_LABEL: Record<PreviewStatus, string> = {
@@ -308,6 +309,91 @@ function PublishAccountPicker({ publish }: { publish: PublishController }) {
         </option>
       ))}
     </select>
+  );
+}
+
+// Journey share (DEC-094): generate + deploy a "how it was made" page (Spec →
+// 実装 → App) → one URL. Same shape as PublishControl, amber-toned.
+function JourneyControl({ journey }: { journey: JourneyController }) {
+  const { status, url } = journey;
+  const [copied, setCopied] = React.useState(false);
+  const copy = React.useCallback(async () => {
+    if (!url) return;
+    if (await copyText(url)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
+  }, [url]);
+
+  if (status === "ready" && url) {
+    const host = url.replace(/^https?:\/\//, "");
+    return (
+      <div className="flex h-7 items-center gap-0.5 rounded-md border border-amber-500/30 bg-amber-500/5 pl-2 pr-0.5">
+        <Route className="size-3 shrink-0 text-amber-600" />
+        <button
+          type="button"
+          onClick={() => void copy()}
+          title={`${url}\nクリックでコピー`}
+          className="max-w-[9rem] truncate font-mono text-[11px] text-foreground/80 hover:text-foreground"
+        >
+          {host}
+        </button>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          title="ジャーニーURLをコピー"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {copied ? (
+            <Check className="size-3.5 text-emerald-600" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => void openExternal(url).catch(() => {})}
+          title="ジャーニーをブラウザで開く"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ExternalLink className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => void journey.share()}
+          title="最新の状態で再生成して共有"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <RotateCw className="size-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  if (status === "building") {
+    return (
+      <Button size="sm" variant="ghost" className="h-7 gap-1.5" disabled>
+        <Loader2 className="size-3.5 animate-spin" />
+        生成中…
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={cn("h-7 gap-1.5", status === "error" && "text-destructive")}
+      onClick={() => void journey.share()}
+      title={
+        status === "error"
+          ? `ジャーニーの生成に失敗しました。クリックで再試行。\n\n${journey.log.slice(-500)}`
+          : "ジャーニーを共有（Spec → 実装 → アプリ を1ページに）"
+      }
+    >
+      <Route className="size-3.5" />
+      {status === "error" ? "ジャーニー失敗" : "ジャーニー"}
+    </Button>
   );
 }
 
@@ -581,6 +667,7 @@ export function PreviewPane({
             <PublishAccountPicker publish={session.publish} />
           )}
           {session?.publish && <PublishControl publish={session.publish} />}
+          {session?.journey && <JourneyControl journey={session.journey} />}
           {!running && (
             <Button
               size="sm"

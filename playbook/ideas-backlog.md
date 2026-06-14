@@ -54,3 +54,15 @@
 ## 更新履歴
 - 2026-06-12: 初版。IDE/Agent オーケストレータのキャッチアップを受けた CEO 議論から B（着手予定）/ C / D を記録。A（Agent Inbox＋通知）は実装へ（DEC-028 予定）。
 - 2026-06-13: **E. Skills/Agents マーケットプレイス・配布** を追加（CEO idea・GTM 候補）。repo 継承 moat（DEC-050）の延長＝"継承される土台を共有可能にする"施策として位置づけ。
+
+---
+
+## F. 共有体験 backlog（DEC-097/098 後・2026-06-14）
+
+> 共有（Vercel publish）の磨き込み残スライス。**#1 ジャーニー共有を実装中**。他は必要時に着手。
+
+- **#2 Made with Bezier バッジ＋CTA（[[DEC-093]]）**：ジャーニーページ（#1）が Bezier 生成 HTML なので、そこに載せる。拡散ループ＋UTM 計測。
+- **#3 アクセス制御（[[DEC-097]] ③）**：(a)リンク=済（推測不能URL）。**(b)ドメイン/(c)パスワード・招待 ＋ 記憶 viewer セッション**＝Bezier 共有層（SaaS）。bypass 防止に host origin を Bezier ゲート専用ロック。
+- **#4 磨き込み**：staleness インジケータ（共有後にコード変更→「再共有を」）／初回 Vercel プロジェクト作成の告知ログ／ビルド進捗。
+- **#5 env を easy×secure（[[DEC-097]]）**：OAuth Connect（Supabase/Neon の env 自動投入）＝鍵コピー無し・Bezier 非経路。OIDC（静的秘密ゼロ）。SaaS。
+- **#6 基盤拡張**：multi-host（Netlify/Coolify/self-host）＝プロファイルに「ホスト種別」を増やす／別ログイン用 token-Keychain（[[DEC-098]] の identity を separate-login へ）。
