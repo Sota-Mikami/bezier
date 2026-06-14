@@ -39,13 +39,22 @@ interface PaletteItem {
   run: () => void | Promise<void>;
 }
 
+/** An issue + the repo it lives in (for cross-repo search, DEC-090). */
+interface RepoIssue {
+  issue: Issue;
+  repoPath: string;
+  repoName: string;
+}
+
 export function CommandPalette() {
   const router = useRouter();
   const { root, recents, switchTo, openRoot } = useWorkspaceRoot();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
-  const [issues, setIssues] = React.useState<Issue[]>([]);
+  // Issues across ALL repos (DEC-090): each tagged with its repo so selecting one
+  // switches to that repo + navigates.
+  const [issues, setIssues] = React.useState<RepoIssue[]>([]);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   // Mirror `open` into a ref so the (mount-once) key handler can read the latest
@@ -92,20 +101,30 @@ export function CommandPalette() {
     return () => window.clearTimeout(t);
   }, [open]);
 
-  // Load the current repo's issues on open (setState only in the async
-  // continuation, never synchronously in the effect body).
+  // Load issues from ALL repos on open (DEC-090). `recents` already includes the
+  // current root. setState only in the async continuation.
   React.useEffect(() => {
-    if (!open || !root) return;
+    if (!open) return;
     let cancelled = false;
-    void listIssues(root)
-      .then((is) => {
-        if (!cancelled) setIssues(is);
-      })
-      .catch(() => {});
+    void Promise.all(
+      recents.map((r) =>
+        listIssues(r.path)
+          .then((is) =>
+            is.map((issue): RepoIssue => ({
+              issue,
+              repoPath: r.path,
+              repoName: repoLabel(r),
+            })),
+          )
+          .catch(() => [] as RepoIssue[]),
+      ),
+    ).then((lists) => {
+      if (!cancelled) setIssues(lists.flat());
+    });
     return () => {
       cancelled = true;
     };
-  }, [open, root]);
+  }, [open, recents]);
 
   const go = (run: () => void | Promise<void>) => {
     setOpen(false);
@@ -157,16 +176,18 @@ export function CommandPalette() {
         },
       });
     }
-    if (root) {
-      for (const is of issues) {
-        out.push({
-          key: `issue:${is.id}`,
-          group: "Issue",
-          label: is.title || "(無題)",
-          icon: <FileText className="size-3.5" />,
-          run: () => router.push(`/issues?issue=${encodeURIComponent(is.id)}`),
-        });
-      }
+    for (const { issue, repoPath, repoName } of issues) {
+      out.push({
+        key: `issue:${repoPath}:${issue.id}`,
+        group: "Issue",
+        label: issue.title || "(無題)",
+        hint: repoName,
+        icon: <FileText className="size-3.5" />,
+        run: () => {
+          if (repoPath !== root) switchTo(repoPath);
+          router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
+        },
+      });
     }
     return out;
   }, [root, recents, issues, switchTo, openRoot, router]);
@@ -255,7 +276,7 @@ export function CommandPalette() {
                   >
                     <span className="shrink-0 text-muted-foreground">{it.icon}</span>
                     <span className="min-w-0 flex-1 truncate">{it.label}</span>
-                    {it.group === "リポジトリ" && it.hint && (
+                    {it.group !== "アクション" && it.hint && (
                       <span className="hidden min-w-0 max-w-[45%] truncate text-[10px] text-muted-foreground sm:inline">
                         {it.hint}
                       </span>
