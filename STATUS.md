@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-14 / DEC-083 新規Issueのrepoピッカー・DEC-082 コマンドパレット⌘K・DEC-081 コマンドpack配布・DEC-080 チェックポイント -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-083 repoピッカー・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別）
+<!-- 最終更新: 2026-06-14 / DEC-085 Before/After スライダー・DEC-084 repoチップ・DEC-082 ⌘K・DEC-081 コマンドpack配布 -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-085 Before/After・DEC-084 repoチップ・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布・DEC-080 チェックポイント）
+
+## ▶ 2026-06-14 セッション（DEC-085 — Before/After 視覚比較スライダー＝§B moat 本丸）
+- ideas-backlog §B「最優先の差別化」。接地で**スクショ機構が既存**（DEC-045/046 の captureShot/loadImageDataUrl）→ 再構築不要、スライダー UI を足すだけ。
+- Preview ツールバーに「Before/After」→ いまをキャプチャ→比較モード。frame に before 画像を重ね、中央仕切りを左右ドラッグ（左=before/右=ライブ after・`clip-path`）。比較中は iframe pointer-events-none＋注釈レイヤ隠す。再固定/解除。Rust 変更なし・tsc 0・eslint 0。
+- 後続: ターン開始時の自動 before / 画像×画像比較 / Design A/B。既知制約: スクロール/リサイズでズレ（同表示で撮る前提）。
 
 ## ▶ 2026-06-14 セッション（DEC-084 — Issue の repo を「開いた後・作業開始前まで」変更可 / DEC-083 撤回）
 - CEO「入り口で1回選ぶより、開いた後に default 表示＋切替が良い（選び忘れ防止）。①開始前は切替可 ②ヘッダ表示 ③ホバー切替 ④開始後ロック。ファイル作成を遅らせられる？」
