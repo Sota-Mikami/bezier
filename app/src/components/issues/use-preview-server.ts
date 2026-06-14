@@ -22,7 +22,6 @@ import {
   ptyBacklog,
   onPtyData,
   onPtyExit,
-  resolveCommand,
   type UnlistenFn,
 } from "@/lib/pty";
 import {
@@ -69,63 +68,6 @@ const maxPreviews = () => getSettings().maxPreviews;
 const idleStopMs = () => getSettings().previewIdleMinutes * 60_000;
 const SWEEP_MS = 60_000;
 
-// --- Share tunnel (DEC-092 Slice 4: Named Tunnel) --------------------------
-// A "Share" action exposes the running web preview at a STABLE public URL via a
-// `cloudflared tunnel run --url http://localhost:<port> bezier-preview` child,
-// keyed `tunnel:<key>` SEPARATELY from the dev-server pty. It is tied to the
-// preview's lifetime: any path that kills the preview (Stop, idle sweep, cap
-// eviction, restart, crash) MUST also kill the tunnel, else a cloudflared
-// process orphans (Phase 0 CTO review). dropPreview() owns that coupling.
-//
-// SECURITY (CEO ask: shares carry code, keep it secure without being strict):
-// the host is `<random>.trybezier.com` — an UNGUESSABLE per-install subdomain
-// (stored in localStorage, NOT git) under the wildcard CNAME `*.trybezier.com`,
-// so the URL is stable yet not discoverable. Cloudflare Access (email gate,
-// L2/L3) is the opt-in next tier for external client shares (§3.5).
-const TUNNEL_PTY_PREFIX = "tunnel:";
-function tunnelPtyKey(key: string): string {
-  return `${TUNNEL_PTY_PREFIX}${key}`;
-}
-const NAMED_TUNNEL = "bezier-preview";
-// Level-1 subdomain: Cloudflare Universal SSL (free) covers `*.trybezier.com`
-// but NOT a 2nd-level wildcard like `*.preview.trybezier.com` (that needs paid
-// Advanced Cert). So the share host is `<random>.trybezier.com`.
-const SHARE_DOMAIN = "trybezier.com";
-const SHARE_SUBDOMAIN_KEY = "bezier.shareSubdomain";
-// cloudflared logs this once the tunnel origin is registered with the CF edge —
-// our "the URL now serves this port" signal (DNS for the wildcard is already
-// live, so no propagation wait, unlike trycloudflare quick tunnels).
-const TUNNEL_REGISTERED_RE = /[Rr]egistered tunnel connection/;
-const TUNNEL_TIMEOUT_MS = 60_000;
-
-// The named tunnel serves ONE origin at a time, so only one preview can be
-// shared at once. Tracks which preview currently holds the share (module-level,
-// across hook instances) so a new share stops the previous one.
-let activeShareKey: string | null = null;
-
-/** Stable, unguessable per-install share subdomain (localStorage, not git). */
-function shareSubdomain(): string {
-  try {
-    const existing = window.localStorage.getItem(SHARE_SUBDOMAIN_KEY);
-    if (existing && /^[a-z0-9-]+$/.test(existing)) return existing;
-    const bytes = new Uint8Array(10);
-    crypto.getRandomValues(bytes);
-    const s =
-      "bz-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-    window.localStorage.setItem(SHARE_SUBDOMAIN_KEY, s);
-    return s;
-  } catch {
-    // localStorage unavailable (shouldn't happen in Tauri). Fall back to an
-    // UNGUESSABLE (if non-stable) value rather than a predictable one (CTO N-2).
-    return "bz-" + crypto.randomUUID().replace(/-/g, "").slice(0, 20);
-  }
-}
-function shareUrl(): string {
-  return `https://${shareSubdomain()}.${SHARE_DOMAIN}`;
-}
-
-export type TunnelStatus = "idle" | "connecting" | "ready" | "error";
-
 interface PreviewEntry {
   port: number;
   isTauri: boolean;
@@ -144,13 +86,10 @@ function touchPreview(key: string): void {
   if (e) e.lastViewedAt = Date.now();
 }
 
-/** Stop + forget a preview (kills its keyed pty AND its share tunnel). The
- * tunnel is killed here so EVERY eviction path — Stop, idle sweep, cap, restart
- * — tears it down too; otherwise cloudflared orphans (Phase 0 CTO review). */
+/** Stop + forget a preview (kills its keyed pty). */
 async function dropPreview(key: string): Promise<void> {
   previewRegistry.delete(key);
   await ptyKillKey(previewPtyKey(key)).catch(() => {});
-  await ptyKillKey(tunnelPtyKey(key)).catch(() => {});
 }
 
 /** Enforce the concurrency cap before starting `keepKey`: evict the
@@ -223,14 +162,6 @@ export interface PreviewServer {
   start: (override?: PreviewConfig) => Promise<void>;
   /** Kill the dev server and detach listeners. Safe to call repeatedly. */
   stop: () => Promise<void>;
-  /** Share tunnel state (DEC-092 Phase 1): connecting → ready (tunnelUrl set). */
-  tunnelStatus: TunnelStatus;
-  /** The public share URL once the tunnel is ready, else null. */
-  tunnelUrl: string | null;
-  /** Expose the running web preview at a public URL via cloudflared. */
-  startShare: () => Promise<void>;
-  /** Tear down the share tunnel (the preview keeps running). */
-  stopShare: () => Promise<void>;
 }
 
 export function usePreviewServer(
@@ -248,15 +179,10 @@ export function usePreviewServer(
   const [error, setError] = React.useState<string | null>(null);
   const [url, setUrl] = React.useState<string | null>(null);
   const [configLoaded, setConfigLoaded] = React.useState(false);
-  const [tunnelStatus, setTunnelStatus] = React.useState<TunnelStatus>("idle");
-  const [tunnelUrl, setTunnelUrl] = React.useState<string | null>(null);
 
   const ptyIdRef = React.useRef<string | null>(null);
   const pollRef = React.useRef<number | null>(null);
   const unlistenRef = React.useRef<UnlistenFn[]>([]);
-  const tunnelIdRef = React.useRef<string | null>(null);
-  const tunnelTimerRef = React.useRef<number | null>(null);
-  const tunnelPollRef = React.useRef<number | null>(null);
   // Detected runner + (for tauri) the worktree-relative Tauri crate dir, read in
   // start(). Kept in a ref so start()'s identity doesn't churn on detection.
   const runnerRef = React.useRef<RunnerKind>("web");
@@ -265,19 +191,6 @@ export function usePreviewServer(
   // Persistent-preview key (DEC-040). The pty survives leaving the issue; this
   // key identifies it for reattach / cap / idle.
   const ptyKey = previewPtyKey(previewKey);
-  // Share-tunnel key (DEC-092). Separate pty, same persistence model.
-  const tunnelKey = tunnelPtyKey(previewKey);
-
-  const clearTunnelTimer = React.useCallback(() => {
-    if (tunnelTimerRef.current !== null) {
-      window.clearTimeout(tunnelTimerRef.current);
-      tunnelTimerRef.current = null;
-    }
-    if (tunnelPollRef.current !== null) {
-      window.clearInterval(tunnelPollRef.current);
-      tunnelPollRef.current = null;
-    }
-  }, []);
 
   // Keep this preview "viewed" while the issue is open (out of the idle sweep),
   // and run the sweep at least once.
@@ -367,20 +280,15 @@ export function usePreviewServer(
 
   const stop = React.useCallback(async () => {
     clearTimers();
-    clearTunnelTimer();
     // Detach BEFORE killing so the resulting exit is not flagged as a crash.
     detachListeners();
     ptyIdRef.current = null;
-    tunnelIdRef.current = null;
-    if (activeShareKey === previewKey) activeShareKey = null;
-    // Kill the PERSISTENT keyed pty + forget it (DEC-040). dropPreview also
-    // kills the share tunnel. Used by the explicit Stop button and by Discard.
+    // Kill the PERSISTENT keyed pty + forget it (DEC-040). Used by the explicit
+    // Stop button and by Discard.
     await dropPreview(previewKey);
     setUrl(null);
-    setTunnelUrl(null);
-    setTunnelStatus("idle");
     setStatus((s) => (s === "idle" ? "idle" : "stopped"));
-  }, [clearTimers, clearTunnelTimer, detachListeners, previewKey]);
+  }, [clearTimers, detachListeners, previewKey]);
 
   const start = React.useCallback(
     async (override?: PreviewConfig) => {
@@ -398,24 +306,17 @@ export function usePreviewServer(
       }
 
       // Tear down any prior server for this key first (detach so its exit is
-      // ignored), then make room under the concurrency cap (DEC-040). A restart
-      // invalidates the old port → also drop any share tunnel.
+      // ignored), then make room under the concurrency cap (DEC-040).
       clearTimers();
-      clearTunnelTimer();
       detachListeners();
       ptyIdRef.current = null;
-      tunnelIdRef.current = null;
-      if (activeShareKey === previewKey) activeShareKey = null;
       await ptyKillKey(ptyKey).catch(() => {});
-      await ptyKillKey(tunnelKey).catch(() => {});
       previewRegistry.delete(previewKey);
       await enforcePreviewCap(previewKey);
 
       setLog("");
       setError(null);
       setUrl(null);
-      setTunnelUrl(null);
-      setTunnelStatus("idle");
       setStatus("starting");
 
       // A free port per preview so concurrent dev servers never collide.
@@ -492,15 +393,6 @@ export function usePreviewServer(
           if (p.id !== id || ptyIdRef.current !== id) return;
           clearTimers();
           ptyIdRef.current = null;
-          previewRegistry.delete(previewKey);
-          // The dev server died → the tunnel now proxies a dead port. Kill it
-          // and reset share state (else cloudflared orphans, Phase 0 CTO MF-2).
-          clearTunnelTimer();
-          tunnelIdRef.current = null;
-          if (activeShareKey === previewKey) activeShareKey = null;
-          void ptyKillKey(tunnelKey).catch(() => {});
-          setTunnelUrl(null);
-          setTunnelStatus("idle");
           setStatus((s) => (s === "ready" ? "stopped" : "error"));
           setError(
             "dev server プロセスが終了しました。下のログを確認してください。",
@@ -541,111 +433,8 @@ export function usePreviewServer(
           });
       }, POLL_MS);
     },
-    [
-      root,
-      worktreePath,
-      config,
-      framework,
-      clearTimers,
-      clearTunnelTimer,
-      detachListeners,
-      ptyKey,
-      tunnelKey,
-      previewKey,
-    ],
+    [root, worktreePath, config, framework, clearTimers, detachListeners, ptyKey, previewKey],
   );
-
-  // --- Share tunnel (DEC-092 Phase 1) --------------------------------------
-
-  const stopShare = React.useCallback(async () => {
-    clearTunnelTimer();
-    tunnelIdRef.current = null;
-    if (activeShareKey === previewKey) activeShareKey = null;
-    await ptyKillKey(tunnelKey).catch(() => {});
-    setTunnelUrl(null);
-    setTunnelStatus("idle");
-  }, [clearTunnelTimer, tunnelKey, previewKey]);
-
-  const startShare = React.useCallback(async () => {
-    // Only a running WEB preview has a localhost server to expose.
-    const entry = previewRegistry.get(previewKey);
-    if (!entry || entry.isTauri) return;
-    const port = entry.port;
-
-    // Resolve cloudflared to an absolute path ("" if not installed).
-    const bin = await resolveCommand("cloudflared").catch(() => "");
-    if (!bin) {
-      setTunnelUrl(null);
-      setTunnelStatus("error");
-      return;
-    }
-
-    // Singleton: the named tunnel serves one origin at a time, so stop any OTHER
-    // preview's share before claiming it (its hook's onPtyExit resets its UI).
-    if (activeShareKey && activeShareKey !== previewKey) {
-      await ptyKillKey(tunnelPtyKey(activeShareKey)).catch(() => {});
-    }
-
-    // Tear down any prior tunnel for THIS key too.
-    clearTunnelTimer();
-    await ptyKillKey(tunnelKey).catch(() => {});
-    setTunnelUrl(null);
-    setTunnelStatus("connecting");
-
-    let id: string;
-    try {
-      id = await ptySpawn({
-        cwd: worktreePath ?? root,
-        cmd: "/bin/sh",
-        args: [
-          "-c",
-          `${bin} tunnel run --url http://localhost:${port} ${NAMED_TUNNEL}`,
-        ],
-        cols: 120,
-        rows: 40,
-        key: tunnelKey, // persistent: survives leaving the issue (DEC-040)
-      });
-    } catch {
-      setTunnelStatus("error");
-      return;
-    }
-    tunnelIdRef.current = id;
-    activeShareKey = previewKey;
-
-    unlistenRef.current.push(
-      await onPtyData((p) => {
-        if (p.id !== id || tunnelIdRef.current !== id) return;
-        // `tunnelTimerRef !== null` = still waiting for registration; cleared on
-        // first match, so this fires exactly once.
-        if (tunnelTimerRef.current === null) return;
-        if (!TUNNEL_REGISTERED_RE.test(p.chunk)) return;
-        // Origin registered with the CF edge → the stable wildcard host now
-        // serves this port (DNS already live, no propagation wait).
-        window.clearTimeout(tunnelTimerRef.current);
-        tunnelTimerRef.current = null;
-        setTunnelUrl(shareUrl());
-        setTunnelStatus("ready");
-      }),
-    );
-    unlistenRef.current.push(
-      await onPtyExit((p) => {
-        if (p.id !== id || tunnelIdRef.current !== id) return;
-        tunnelIdRef.current = null;
-        if (activeShareKey === previewKey) activeShareKey = null;
-        setTunnelUrl(null);
-        setTunnelStatus((s) => (s === "error" ? "error" : "idle"));
-      }),
-    );
-
-    // No registration within the window → error + kill (e.g. network blocked).
-    tunnelTimerRef.current = window.setTimeout(() => {
-      tunnelTimerRef.current = null;
-      if (tunnelIdRef.current === id) {
-        setTunnelStatus((s) => (s === "ready" ? "ready" : "error"));
-        void ptyKillKey(tunnelKey).catch(() => {});
-      }
-    }, TUNNEL_TIMEOUT_MS);
-  }, [previewKey, worktreePath, root, tunnelKey, clearTunnelTimer]);
 
   const saveConfig = React.useCallback(
     async (cfg: PreviewConfig) => {
@@ -665,10 +454,6 @@ export function usePreviewServer(
     const listeners = unlistenRef.current;
     return () => {
       if (pollRef.current !== null) window.clearInterval(pollRef.current);
-      if (tunnelTimerRef.current !== null)
-        window.clearTimeout(tunnelTimerRef.current);
-      if (tunnelPollRef.current !== null)
-        window.clearInterval(tunnelPollRef.current);
       for (const un of listeners.splice(0)) {
         try {
           un();
@@ -677,49 +462,8 @@ export function usePreviewServer(
         }
       }
       ptyIdRef.current = null;
-      tunnelIdRef.current = null;
     };
   }, []);
-
-  // Reattach to a live share tunnel on mount (DEC-092 + DEC-040): if a tunnel
-  // is already running for this issue (you left and came back), recover its URL
-  // from the pty backlog and re-listen — so the share survives issue-switching.
-  React.useEffect(() => {
-    if (!worktreePath) return;
-    let cancelled = false;
-    const unlisteners = unlistenRef.current;
-    (async () => {
-      const tid = await ptyLookup(tunnelKey).catch(() => null);
-      if (cancelled || !tid) return;
-      // Singleton (Slice 4 CTO MF-1): if ANOTHER preview already owns the share
-      // slot, this is a stale leftover tunnel — kill it and don't adopt, so the
-      // explicit owner keeps the single live tunnel (never two at once).
-      if (activeShareKey && activeShareKey !== previewKey) {
-        await ptyKillKey(tunnelKey).catch(() => {});
-        return;
-      }
-      tunnelIdRef.current = tid;
-      activeShareKey = previewKey;
-      // A live named-tunnel pty means it already registered → the stable host
-      // serves this issue. The URL is fixed (not parsed from logs).
-      setTunnelUrl(shareUrl());
-      setTunnelStatus("ready");
-      unlisteners.push(
-        await onPtyExit((p) => {
-          if (p.id !== tid || tunnelIdRef.current !== tid) return;
-          tunnelIdRef.current = null;
-          if (activeShareKey === previewKey) activeShareKey = null;
-          setTunnelUrl(null);
-          setTunnelStatus("idle");
-        }),
-      );
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // worktreePath + previewKey identify the issue; run once per mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worktreePath, previewKey]);
 
   // Reattach on mount (DEC-040): if a preview is already RUNNING for this issue
   // (you left and came back), don't restart — find its pty, replay its log, poll
@@ -760,13 +504,6 @@ export function usePreviewServer(
           if (p.id !== id || ptyIdRef.current !== id) return;
           ptyIdRef.current = null;
           previewRegistry.delete(previewKey);
-          // Dev server died → tear down the share tunnel too (Phase 0 CTO MF-2).
-          clearTunnelTimer();
-          tunnelIdRef.current = null;
-          if (activeShareKey === previewKey) activeShareKey = null;
-          void ptyKillKey(tunnelKey).catch(() => {});
-          setTunnelUrl(null);
-          setTunnelStatus("idle");
           setStatus((s) => (s === "ready" ? "stopped" : "error"));
         }),
       );
@@ -808,9 +545,5 @@ export function usePreviewServer(
     saveConfig,
     start,
     stop,
-    tunnelStatus,
-    tunnelUrl,
-    startShare,
-    stopShare,
   };
 }
