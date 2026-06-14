@@ -29,6 +29,7 @@ import {
   Copy,
   Check,
   X,
+  Globe,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ import { cn } from "@/lib/utils";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./use-implement-session";
+import type { PublishController } from "./use-publish";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
 
 const STATUS_LABEL: Record<PreviewStatus, string> = {
@@ -194,6 +196,165 @@ function ShareControl({ server }: { server: PreviewServer }) {
       <Share2 className="size-3.5" />
       共有
     </Button>
+  );
+}
+
+// A small popover anchored under a control, showing the streamed build log
+// (publish failures need to be inspectable). Right-aligned, scrollable, dark.
+function LogPopover({
+  log,
+  onClose,
+  onRetry,
+}: {
+  log: string;
+  onClose: () => void;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="absolute right-0 top-8 z-50 w-[28rem] max-w-[80vw] overflow-hidden rounded-md border bg-popover shadow-lg">
+      <div className="flex items-center justify-between border-b px-2 py-1">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          公開ログ
+        </span>
+        <div className="flex items-center gap-1">
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <RotateCw className="size-3" />
+              再試行
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      </div>
+      <ScrollArea className="h-56 bg-[#0a0a0a]">
+        <pre className="px-2 py-1.5 font-mono text-[11px] leading-[1.5] whitespace-pre-wrap break-all text-zinc-300">
+          {log || "（ログ出力を待っています…）"}
+        </pre>
+      </ScrollArea>
+    </div>
+  );
+}
+
+// Publish control (DEC-092 Phase 2 / DEC-095): build + deploy the worktree app
+// to the user's own Vercel for a PERSISTENT URL (PC can be off). idle → 公開;
+// building → spinner (click for log); ready → URL pill (copy/open/re-publish);
+// error → 公開失敗 (click for log + retry).
+function PublishControl({ publish }: { publish: PublishController }) {
+  const { status, url, log } = publish;
+  const [copied, setCopied] = React.useState(false);
+  const [showLog, setShowLog] = React.useState(false);
+
+  const copy = React.useCallback(async () => {
+    if (!url) return;
+    if (await copyText(url)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
+  }, [url]);
+
+  if (status === "ready" && url) {
+    const host = url.replace(/^https?:\/\//, "");
+    return (
+      <div className="flex h-7 items-center gap-0.5 rounded-md border border-blue-500/30 bg-blue-500/5 pl-2 pr-0.5">
+        <Globe className="size-3 shrink-0 text-blue-600" />
+        <button
+          type="button"
+          onClick={() => void copy()}
+          title={`${url}\nクリックでコピー`}
+          className="max-w-[10rem] truncate font-mono text-[11px] text-foreground/80 hover:text-foreground"
+        >
+          {host}
+        </button>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          title="公開リンクをコピー"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {copied ? (
+            <Check className="size-3.5 text-emerald-600" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => void openExternal(url).catch(() => {})}
+          title="公開URLをブラウザで開く"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ExternalLink className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => void publish.publish()}
+          title="再公開（最新の状態を反映）"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <RotateCw className="size-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  if (status === "building") {
+    return (
+      <div className="relative">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 gap-1.5"
+          onClick={() => setShowLog((v) => !v)}
+          title="ビルドログを表示（Vercel に公開中）"
+        >
+          <Loader2 className="size-3.5 animate-spin" />
+          公開中…
+        </Button>
+        {showLog && <LogPopover log={log} onClose={() => setShowLog(false)} />}
+      </div>
+    );
+  }
+
+  // idle / error
+  return (
+    <div className="relative">
+      <Button
+        size="sm"
+        variant="ghost"
+        className={cn("h-7 gap-1.5", status === "error" && "text-destructive")}
+        onClick={() =>
+          status === "error" ? setShowLog((v) => !v) : void publish.publish()
+        }
+        title={
+          status === "error"
+            ? "公開に失敗しました。クリックでログ表示／再試行。"
+            : "Vercel に公開（永続URL・PCを閉じてもOK）"
+        }
+      >
+        <Globe className="size-3.5" />
+        {status === "error" ? "公開失敗" : "公開"}
+      </Button>
+      {status === "error" && showLog && (
+        <LogPopover
+          log={log}
+          onClose={() => setShowLog(false)}
+          onRetry={() => {
+            setShowLog(false);
+            void publish.publish();
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -461,6 +622,9 @@ export function PreviewPane({
         )}
 
         <div className="flex flex-1 items-center justify-end gap-1.5">
+          {/* Publish (build → Vercel → persistent URL) works from source, so it's
+              available whenever a worktree exists — not gated on the dev server. */}
+          {session?.publish && <PublishControl publish={session.publish} />}
           {/* Web-only branch (the tauri runner returned early above), so the
               share tunnel always has a localhost server to expose. */}
           {status === "ready" && <ShareControl server={server} />}

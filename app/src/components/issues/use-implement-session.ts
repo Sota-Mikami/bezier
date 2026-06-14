@@ -79,6 +79,7 @@ import {
 } from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { usePreviewServer, type PreviewServer } from "./use-preview-server";
+import { usePublish, type PublishController } from "./use-publish";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -159,6 +160,8 @@ export interface ImplementSession {
 
   // Dev-server preview (iframe), shared with the Design tab.
   preview: PreviewServer;
+  // Publish (Phase 2): build + deploy the worktree to Vercel → persistent URL.
+  publish: PublishController;
 
   // Merge-safety layer (OPEN-001). behind/ahead vs the repo's integration branch
   // (`baseBranch`), a dry-run conflict verdict that gates Merge-to-main, and the
@@ -334,6 +337,7 @@ export function useImplementSession(
     ref ? workDir(ref.path) : null,
     issue.id,
   );
+  const publish = usePublish(root, ref ? workDir(ref.path) : null, issue.id);
 
   // Embedded terminal (one at a time). termCwd/termSpawn/termNonce mirror the
   // /workspace pattern; pendingInput is written once the pty is ready.
@@ -1329,6 +1333,7 @@ export function useImplementSession(
     canResume,
     handleResume,
     preview,
+    publish,
     baseBranch,
     behind,
     ahead,
