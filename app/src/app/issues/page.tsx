@@ -1348,23 +1348,25 @@ function IssueRepoChip({
         <ChevronDown className="size-2.5 shrink-0 opacity-40 transition-opacity group-hover:opacity-80" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-56">
-        <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-          このIssueを置くリポジトリ
-        </DropdownMenuLabel>
-        {recents.map((r) => (
-          <DropdownMenuItem
-            key={r.path}
-            className="cursor-pointer gap-2 text-xs"
-            disabled={busy}
-            onClick={() => void move(r.path)}
-          >
-            <FolderGit2 className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">{repoLabel(r)}</span>
-            {r.path === root && (
-              <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            )}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+            このIssueを置くリポジトリ
+          </DropdownMenuLabel>
+          {recents.map((r) => (
+            <DropdownMenuItem
+              key={r.path}
+              className="cursor-pointer gap-2 text-xs"
+              disabled={busy}
+              onClick={() => void move(r.path)}
+            >
+              <FolderGit2 className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{repoLabel(r)}</span>
+              {r.path === root && (
+                <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              )}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
