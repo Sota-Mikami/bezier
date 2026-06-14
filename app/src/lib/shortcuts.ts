@@ -47,6 +47,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
   {
     title: "アプリ全体",
     items: [
+      { keys: ["⌘", "K"], desc: "コマンドパレット（Issue / リポジトリ / アクション）" },
       { keys: ["⌘", "N"], desc: "新しい Issue" },
       { keys: ["⌘", "B"], desc: "サイドバーの開閉" },
       { keys: ["⌘", "R"], desc: "再読み込み" },

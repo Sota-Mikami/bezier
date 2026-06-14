@@ -1,5 +1,10 @@
-<!-- 最終更新: 2026-06-14 / DEC-081 コマンドpack export/import・DEC-080 チェックポイント・DEC-079 dev判別・DEC-078 /bezier:* UIマネージャ -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別・DEC-078 コマンドUIマネージャ・DEC-077 OPEN-001 close）
+<!-- 最終更新: 2026-06-14 / DEC-082 コマンドパレット⌘K・DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別 -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別・DEC-078 コマンドUIマネージャ）
+
+## ▶ 2026-06-14 セッション（DEC-082 — コマンドパレット ⌘K）
+- ideas-backlog §C。**⌘K** で任意の Issue（現在 repo）/ リポジトリ（recents 切替）/ アクション（新規 Issue・フォルダを開く・設定・ショートカット）へジャンプ。グローバル modal（layout 常駐・ShortcutsDialog 同型）。検索＋↑↓/Enter。
+- 配管: 新 `command-palette.tsx`／ layout 常駐／ sidebar に `bezier:new-issue` リスナ／ shortcuts チートシートに ⌘K。**Rust 変更なし**・tsc 0・eslint 0。
+- **本番未反映: DEC-081（export/import）＋DEC-082（⌘K）はまだ prod に入れていない**（prod=DEC-080）。次の区切りで本番再ビルド＋/Applications。
 
 ## ▶ 2026-06-14 セッション（DEC-081 — コマンドパック export/import＝マケプレ配布の最小形）
 - ideas-backlog §E。DEC-078 の続き。**JSON 1ファイル**でコマンドを export（保存ダイアログ）／import（ファイル選択→非破壊マージ・衝突時のみ確認上書き）。「自分用 skill を別 repo/人へ持ち回る」最小配布。

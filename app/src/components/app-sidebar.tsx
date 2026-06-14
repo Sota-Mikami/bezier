@@ -259,8 +259,15 @@ export function AppSidebar() {
         void handleNew();
       }
     };
+    // The command palette (⌘K → "新しい Issue") fires this so the sidebar's full
+    // create + navigate + refresh path runs (DEC-082).
+    const onNewIssue = () => void handleNew();
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    window.addEventListener("bezier:new-issue", onNewIssue);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("bezier:new-issue", onNewIssue);
+    };
   }, [handleNew]);
 
   // "…" menu: reveal the repo in Finder / open it in the user's IDE (DEC-041 #5).

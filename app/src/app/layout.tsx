@@ -9,6 +9,7 @@ import { WorkspaceRootProvider } from "@/lib/workspace-root";
 import { ReloadShortcut } from "@/components/reload-shortcut";
 import { AppCloseGuard } from "@/components/app-close-guard";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
+import { CommandPalette } from "@/components/command-palette";
 import { ThemeKeeper } from "@/lib/settings";
 
 // next/font/google fetches font files at build time, which fails on offline /
@@ -55,6 +56,7 @@ export default function RootLayout({
           <ReloadShortcut />
           <AppCloseGuard />
           <ShortcutsDialog />
+          <CommandPalette />
           <WorkspaceRootProvider>
             <SidebarProvider className="box-border h-svh overflow-hidden pt-[var(--titlebar-h)]">
               <AppTitlebar />
