@@ -192,6 +192,19 @@ export function appDataDir(): Promise<string> {
   return invoke<string>("app_data_dir");
 }
 
+/** The user's home dir. Used to install Bezier's `~/.claude/commands/bezier/`
+ * slash-command pack (DEC-076). -> invoke("home_dir") */
+export function homeDir(): Promise<string> {
+  return invoke<string>("home_dir");
+}
+
+/** Remove the `~/.claude/commands/bezier/` slash-command pack (DEC-076). The path
+ * is resolved on the Rust side, so this only ever targets that one dir.
+ * -> invoke("uninstall_bezier_commands") */
+export function uninstallBezierCommands(): Promise<void> {
+  return invoke<void>("uninstall_bezier_commands");
+}
+
 /** Open a native folder picker. Returns the chosen path, or null if cancelled. */
 export async function pickFolder(): Promise<string | null> {
   const selected = await open({ directory: true, multiple: false });

@@ -1,0 +1,156 @@
+// Bezier's agent-native slash-command pack (DEC-076).
+//
+// Why this exists: the live agent (claude) runs in a real pty whose own prompt
+// already has native `@` file refs and `/` slash commands. Stacking a React
+// composer on top (DEC-075) read as two competing inputs. So instead of building
+// chat chrome, Bezier offers its shortcuts as *real* agent-native slash commands —
+// the maker types `/bezier:verify` into the agent's own prompt (one input), and
+// the same commands keep working in the user's own terminal.
+//
+// Install policy (DEC-076, revised): EXPLICIT + NON-CLOBBERING. We do NOT write
+// these silently on launch — installing is a deliberate action from Settings.
+// Target is the user's GLOBAL `~/.claude/commands/bezier/` (claude exposes a file
+// there as `/bezier:<name>`), so they also work in the user's own terminal. The
+// install never overwrites files that already exist (the maker can edit them and
+// keep their edits); "更新" is a separate, explicit overwrite. Uninstall removes
+// the whole `bezier/` pack dir.
+//
+// Why not repo-local: a Bezier worktree lives OUTSIDE the repo (app_data_dir), so
+// the main repo's `.claude/commands` isn't on claude's discovery path from the
+// worktree cwd; and anything dropped INSIDE a worktree gets swept into the user's
+// commit by `git add -A`. Global is the clean, discoverable, non-polluting home.
+//
+// claude-only: codex doesn't read `~/.claude/commands`. The cross-agent baseline
+// stays the prose conventions in BEZIER.md (bezierGuide); these are a claude
+// ergonomics layer on top, degrading gracefully when absent.
+
+import { writeFile, listDir, uninstallBezierCommands as ipcUninstall } from "@/lib/ipc";
+
+interface BezierCommand {
+  /** file stem → invoked as `/bezier:<name>` */
+  name: string;
+  /** shown in claude's `/` menu */
+  description: string;
+  /** the command body (the prompt claude runs) */
+  body: string;
+}
+
+export const BEZIER_COMMANDS: BezierCommand[] = [
+  {
+    name: "verify",
+    description: "受入基準の直下に「根拠」を1行ずつ付す（採点はしない）",
+    body: [
+      "spec.md（worktree の外。`--add-dir` 済み）の受入基準を上から順に確認し、実装が済んでいる各基準の**直下に「根拠」を1行**付けてください。",
+      "",
+      "- 根拠 ＝ **どこに / どう実装したか・関連ファイル**。例: `  - 根拠: \\`src/auth/login.tsx\\` に実装。`",
+      "- **auth / DB・スキーマ / env / 権限** に触れた基準には ⚠️ を付けて明記する（要目視）。",
+      "- **PASS/FAIL の採点はしない**。採点は maker が根拠を見て行う。",
+      "",
+      "最後に変更点を簡潔に要約してください（commit は人間が Bezier の UI から行います）。",
+    ].join("\n"),
+  },
+  {
+    name: "spec",
+    description: "spec.md を読み直して実装と同期する",
+    body: [
+      "spec.md（`--add-dir` 済み）を読み直し、いまの会話・実装と**食い違う点**を洗い出してください。",
+      "",
+      "- 要件や意図が変わっていれば、**まず spec.md を更新**してから、その差分に合わせて実装を調整する（Spec⇆実装を常に同期）。",
+      "- 「受入基準」は**観察可能・チェック可能な文**に保つ。曖昧なものは具体化する。",
+      "- 「やらないこと」で境界も引く。",
+    ].join("\n"),
+  },
+  {
+    name: "alt3",
+    description: "デザイン別案を3つ（グレースケールのワイヤー）",
+    body: [
+      "$ARGUMENTS の UI について、**方向性の異なるデザイン別案を3つ**、グレースケールのワイヤーで作ってください（引数が無ければ、いま検討中の画面について）。",
+      "",
+      "- Bezier の `design/` 規約に従い、**Design ボードに並ぶ形**で出力する。",
+      "- 各案に**トレードオフを1行**添える（何を取り、何を捨てたか）。",
+      "- まだ実装はしない。方向が選ばれてから実装に入る。",
+    ].join("\n"),
+  },
+  {
+    name: "precommit",
+    description: "型・lint・動作を事前チェックして結果を報告",
+    body: [
+      "コミット前チェックをしてください:",
+      "",
+      "1. 型チェック・lint を実行する。",
+      "2. 主要な変更が**実際に動く**かを確認する。",
+      "3. 結果（PASS/FAIL と、直したもの）を簡潔に報告する。",
+      "",
+      "**commit はしない** — 人間が Bezier の UI（Commit / Ship）から行います。",
+    ].join("\n"),
+  },
+];
+
+/** `~/.claude/commands/bezier` — where the pack lives (claude's user command dir). */
+export function bezierCommandsDir(home: string): string {
+  return `${home.replace(/\/+$/, "")}/.claude/commands/bezier`;
+}
+
+function renderCommandFile(c: BezierCommand): string {
+  return [`---`, `description: ${c.description}`, `---`, ``, c.body, ``].join("\n");
+}
+
+export type BezierCommandsState = "none" | "partial" | "all";
+
+export interface BezierCommandsStatus {
+  state: BezierCommandsState;
+  present: number;
+  total: number;
+}
+
+/** How many of the pack's commands currently exist on disk. */
+export async function bezierCommandsStatus(home: string): Promise<BezierCommandsStatus> {
+  const dir = bezierCommandsDir(home);
+  let names = new Set<string>();
+  try {
+    const entries = await listDir(dir);
+    names = new Set(entries.map((e) => e.name));
+  } catch {
+    // dir missing → nothing installed
+  }
+  const present = BEZIER_COMMANDS.filter((c) => names.has(`${c.name}.md`)).length;
+  const total = BEZIER_COMMANDS.length;
+  const state: BezierCommandsState =
+    present === 0 ? "none" : present === total ? "all" : "partial";
+  return { state, present, total };
+}
+
+/**
+ * Install the `/bezier:*` pack into `~/.claude/commands/bezier/`. EXPLICIT only
+ * (called from Settings, never on launch). By default writes only the files that
+ * are MISSING — existing files (incl. the maker's edits) are left untouched. Pass
+ * `{ overwrite: true }` for an explicit "update to latest" that restamps all.
+ * Returns the number of files actually written.
+ */
+export async function installBezierCommands(
+  home: string,
+  opts?: { overwrite?: boolean },
+): Promise<number> {
+  const dir = bezierCommandsDir(home);
+  let present = new Set<string>();
+  if (!opts?.overwrite) {
+    try {
+      const entries = await listDir(dir);
+      present = new Set(entries.map((e) => e.name));
+    } catch {
+      // dir missing → write all
+    }
+  }
+  const toWrite = BEZIER_COMMANDS.filter(
+    (c) => opts?.overwrite || !present.has(`${c.name}.md`),
+  );
+  await Promise.all(
+    toWrite.map((c) => writeFile(`${dir}/${c.name}.md`, renderCommandFile(c))),
+  );
+  return toWrite.length;
+}
+
+/** Remove the whole `bezier/` pack dir (explicit uninstall from Settings). */
+export async function uninstallBezierCommands(): Promise<void> {
+  await ipcUninstall();
+}

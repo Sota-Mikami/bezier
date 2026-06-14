@@ -1,10 +1,15 @@
-<!-- 最終更新: 2026-06-14 / DEC-075 左チャット composer 化（@/ コマンド） -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-075 チャット composer・DEC-074 Preview 拡張・DEC-073 ショートカット可視化・DEC-072 Verify インライン化・DEC-070 重大バグ修正）
+<!-- 最終更新: 2026-06-14 / DEC-076 composer 撤回→/bezier:* スラッシュコマンド配布 -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-076 composer 撤回＋skill配布・DEC-074 Preview 拡張・DEC-073 ショートカット可視化・DEC-072 Verify インライン化・DEC-070 重大バグ修正）
 
-## ▶ 2026-06-14 セッション（DEC-075 — 左チャット composer 化）
-- 生ターミナルは transcript として残し、下に **composer** を dock。`sendToAgent`（pty stdin 投入）追加。
-- composer＝**Enter 送信**・**`@` コンテキスト**（Spec/Design/diff/受入基準）・**`/` クイックコマンド**（検証して/別案3つ/diff要約/コミット前チェック）。
-- **tsc+eslint green・実機 200**。DEC-075 で commit。**承認キュー #34〜#37 すべて完了**。
+## ▶ 2026-06-14 セッション（DEC-076 — composer 撤回 → agent-native スラッシュコマンド配布）
+- CEO「terminal へのチャット欄が2つあるみたいに見える。skill 配布で良い説」。調査→ DEC-075 は chat-native 入力を terminal-native 面に重ね**入力が二重**化していた（Bezier は他人の CLI を pty で動かす B 陣営、composer は claude の `@`/`/` の劣化再実装）。
+- **composer 撤去**（`agent-composer.tsx` 削除・`sendToAgent`/`termPidRef` 撤去・ターミナル単体に復帰）。入力は claude 自身のプロンプト**1つ**。
+- 価値は **`/bezier:*` スラッシュコマンド**へ移管: `~/.claude/commands/bezier/` に **verify / spec / alt3 / precommit**。**claude 専用**（codex は prose の BEZIER.md が土台）。**持ち出し可能な資産**＝marketplace の楔。
+- **配布ポリシー（セルフレビューで修正）**: 初版は無言・自動・グローバル・毎回上書き → CEO「勝手に配布される？」。**「明示インストール＋編集尊重」**を採択。自動設置撤廃→**設定画面の明示操作のみ**／既存ファイルは**上書きしない**（更新は別ボタン＋confirm）／**削除**は専用 Rust（path を Rust 側算出で安全）。旧挙動で入った4ファイルはクリーンアップ済み。
+- **tsc 0・eslint 0・cargo check Finished**。**承認キュー #34〜#37 すべて完了**（#37 は composer→skill配布に再設計）。
+
+### DEC-075（撤回済み・履歴）— 左チャット composer 化
+- 生ターミナル下に composer を dock し `@`/`/` を実装したが、入力二重で UX 不良 → DEC-076 で撤回。
 
 ## ▶ 2026-06-14 セッション（DEC-074 — Preview 拡張）
 - **任意幅**（「カスタム幅」＋ 幅×高さ px 入力）／**デバイス枠 chrome**（角丸をデバイス別＋mobile 縦にノッチ・装飾）／**外部ブラウザで開く**（Rust `open_external` http(s) 限定＋`ExternalLink` ボタン）。

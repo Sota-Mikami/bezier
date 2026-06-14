@@ -139,8 +139,6 @@ export interface ImplementSession {
   /** Raw agent state (running / waiting / done / error / null), so callers can
    * detect a TURN ending (running → waiting) vs the process exiting (DEC-045). */
   agentState: AgentState | null;
-  /** Send a typed message to the running agent (composer → pty stdin, DEC-075). */
-  sendToAgent: (text: string) => Promise<void>;
   handleTermReady: (id: string) => void;
   handleTermExit: (code: number | null) => void;
 
@@ -599,11 +597,7 @@ export function useImplementSession(
     setTermNonce((n) => n + 1);
   }, []);
 
-  // The live pty id (captured on ready) so the chat composer (DEC-075) can send
-  // typed messages straight to the agent's stdin, not just the seed prompt.
-  const termPidRef = React.useRef<string | null>(null);
   const handleTermReady = React.useCallback((id: string) => {
-    termPidRef.current = id;
     const input = pendingInputRef.current;
     if (!input) return;
     pendingInputRef.current = null;
@@ -613,14 +607,6 @@ export function useImplementSession(
         /* session torn down */
       });
     }, 800);
-  }, []);
-
-  // Send a typed message to the running agent (composer → pty stdin, DEC-075).
-  // Appends CR so the CLI submits it. No-op if no live pty.
-  const sendToAgent = React.useCallback(async (text: string) => {
-    const pid = termPidRef.current;
-    if (!pid) return;
-    await ptyWrite(pid, `${text}\r`).catch(() => {});
   }, []);
 
   // Resume fallback: `claude --continue` exits quickly with a non-zero code when
@@ -1243,7 +1229,6 @@ export function useImplementSession(
     termKey: issue.id,
     termEventsPath: eventsPath,
     running,
-    sendToAgent,
     handleTermReady,
     handleTermExit,
     agentState,

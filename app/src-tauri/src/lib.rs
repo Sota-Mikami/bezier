@@ -2005,6 +2005,37 @@ fn app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
     Ok(dir.to_string_lossy().into_owned())
 }
 
+/// The user's home directory. Bezier installs its agent-native slash-command pack
+/// under `~/.claude/commands/bezier/` (DEC-076), which lives OUTSIDE any repo so it
+/// never gets swept into the user's commits (git_commit_all does `add -A`).
+#[tauri::command]
+fn home_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// Uninstall the `/bezier:*` slash-command pack (DEC-076). Self-contained: the
+/// target path is computed HERE from the home dir, so the frontend can't point it
+/// at an arbitrary location — it only ever removes `~/.claude/commands/bezier/`.
+/// (The general `remove_path` refuses anything outside a `.bezier` store, so this
+/// dedicated, scoped command is the safe way to remove the global pack.)
+#[tauri::command]
+fn uninstall_bezier_commands(app: tauri::AppHandle) -> Result<(), String> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("home_dir: {e}"))?;
+    let dir = home.join(".claude").join("commands").join("bezier");
+    if dir.exists() {
+        fs::remove_dir_all(&dir)
+            .map_err(|e| format!("uninstall_bezier_commands {}: {e}", dir.display()))?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// macOS GUI apps launched from Finder/Dock inherit a minimal PATH
 /// (/usr/bin:/bin:/usr/sbin:/sbin), NOT the user's login-shell PATH — so tools
@@ -2142,6 +2173,8 @@ pub fn run() {
             symlink,
             clone_dir,
             app_data_dir,
+            home_dir,
+            uninstall_bezier_commands,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

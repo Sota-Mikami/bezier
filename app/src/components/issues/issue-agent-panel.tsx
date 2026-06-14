@@ -23,7 +23,6 @@ import {
 
 import { Button } from "@/components/ui/button";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
-import { AgentComposer } from "./agent-composer";
 import type { ImplementSession } from "./use-implement-session";
 
 // xterm-backed terminal — client-only (DOM + CSS), like /workspace.
@@ -81,24 +80,23 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
       </div>
 
       {/* Body: the conversation. Terminal when live, else resume, else start.
-          When live, the terminal is the TRANSCRIPT and a chat composer (DEC-075)
-          docks under it — a nicer input than typing into the raw terminal. */}
+          The terminal IS the chat surface — the embedded agent (claude / codex)
+          has its own prompt with native @ file refs and / slash commands, so we
+          DON'T stack a second composer on top (that read as two inputs; DEC-076
+          reverted DEC-075). Bezier ships its shortcuts as agent-native slash
+          commands instead (/bezier:verify etc.), installed for the agent to pick
+          up — one input, and portable to the user's own terminal. */}
       <div className="min-h-0 flex-1 bg-background">
         {termMounted && termCwd ? (
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="min-h-0 flex-1">
-              <TerminalPane
-                key={`${termCwd}#${termNonce}#${termSpawn?.cmd ?? "shell"}`}
-                cwd={termCwd}
-                spawn={termSpawn}
-                sessionKey={termKey}
-                eventsPath={termEventsPath}
-                onReady={handleTermReady}
-                onExit={handleTermExit}
-              />
-            </div>
-            <AgentComposer session={session} />
-          </div>
+          <TerminalPane
+            key={`${termCwd}#${termNonce}#${termSpawn?.cmd ?? "shell"}`}
+            cwd={termCwd}
+            spawn={termSpawn}
+            sessionKey={termKey}
+            eventsPath={termEventsPath}
+            onReady={handleTermReady}
+            onExit={handleTermExit}
+          />
         ) : ref ? (
           <ResumePane canResume={canResume} onResume={() => void handleResume()} />
         ) : (
