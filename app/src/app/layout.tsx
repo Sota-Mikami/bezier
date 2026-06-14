@@ -56,8 +56,9 @@ export default function RootLayout({
           <ReloadShortcut />
           <AppCloseGuard />
           <ShortcutsDialog />
-          <CommandPalette />
           <WorkspaceRootProvider>
+            {/* Inside the provider — CommandPalette uses useWorkspaceRoot(). */}
+            <CommandPalette />
             <SidebarProvider className="box-border h-svh overflow-hidden pt-[var(--titlebar-h)]">
               <AppTitlebar />
               <Suspense fallback={null}>
