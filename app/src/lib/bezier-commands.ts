@@ -178,6 +178,84 @@ export async function removeCommand(name: string): Promise<void> {
   await ipcRemoveCommand(name);
 }
 
+// --- Command-pack export / import (DEC-081, the marketplace primitive) --------
+// A "pack" is a shareable JSON file of commands — copy it to another machine,
+// commit it to a repo, hand it to a teammate, then import it. The portable unit
+// behind the [[skills-agents-marketplace-idea]].
+
+export interface PackCommand {
+  name: string;
+  description: string;
+  body: string;
+}
+
+export interface ImportSummary {
+  added: number;
+  overwritten: number;
+  skipped: number;
+}
+
+const PACK_VERSION = 1;
+
+/** Build a shareable JSON pack of the currently-installed commands. */
+export async function buildPack(home: string): Promise<string> {
+  const list = await listInstalledCommands(home);
+  const pack = {
+    bezierCommandPack: PACK_VERSION,
+    commands: list.map((c) => ({
+      name: c.name,
+      description: c.description,
+      body: c.body,
+    })),
+  };
+  return `${JSON.stringify(pack, null, 2)}\n`;
+}
+
+/** Parse a pack JSON → valid commands. Throws on malformed JSON / wrong shape;
+ * silently drops individual entries that fail validation. */
+export function readPack(json: string): PackCommand[] {
+  const parsed: unknown = JSON.parse(json);
+  const raw = (parsed as { commands?: unknown } | null)?.commands;
+  if (!Array.isArray(raw)) throw new Error("コマンドパックの形式ではありません。");
+  const out: PackCommand[] = [];
+  for (const entry of raw) {
+    const c = entry as Partial<PackCommand>;
+    if (typeof c?.name !== "string" || !isValidCommandName(c.name)) continue;
+    if (typeof c?.body !== "string") continue;
+    out.push({
+      name: c.name,
+      description: typeof c.description === "string" ? c.description : "",
+      body: c.body,
+    });
+  }
+  return out;
+}
+
+/** Write imported commands. Non-overwrite by default: existing commands are
+ * skipped unless `overwrite` is set (so an import never clobbers the maker's
+ * edits without consent). */
+export async function writePack(
+  home: string,
+  cmds: PackCommand[],
+  opts: { overwrite: boolean },
+): Promise<ImportSummary> {
+  const existing = new Set((await listInstalledCommands(home)).map((c) => c.name));
+  let added = 0;
+  let overwritten = 0;
+  let skipped = 0;
+  for (const c of cmds) {
+    const exists = existing.has(c.name);
+    if (exists && !opts.overwrite) {
+      skipped++;
+      continue;
+    }
+    await writeCommand(home, c.name, c.description, c.body);
+    if (exists) overwritten++;
+    else added++;
+  }
+  return { added, overwritten, skipped };
+}
+
 export type BezierCommandsState = "none" | "partial" | "all";
 
 export interface BezierCommandsStatus {

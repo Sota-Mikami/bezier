@@ -17,9 +17,18 @@ import {
   RotateCcw,
   Download,
   Pencil,
+  Upload,
+  Share2,
 } from "lucide-react";
 
-import { homeDir, confirmDialog } from "@/lib/ipc";
+import {
+  homeDir,
+  confirmDialog,
+  writeFile,
+  readFile,
+  saveFileDialog,
+  pickFile,
+} from "@/lib/ipc";
 import {
   listInstalledCommands,
   installBezierCommands,
@@ -28,6 +37,9 @@ import {
   removeCommand,
   builtinDefault,
   isValidCommandName,
+  buildPack,
+  readPack,
+  writePack,
   BEZIER_COMMANDS,
   type InstalledCommand,
 } from "@/lib/bezier-commands";
@@ -182,6 +194,64 @@ export function BezierCommandsManager() {
       await reload(home);
       setEditing(null);
       setMsg("すべて削除しました。");
+    } catch (e) {
+      setMsg(`失敗: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Export the current commands as a shareable .json pack (DEC-081).
+  const exportPack = async () => {
+    if (!home || busy) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const path = await saveFileDialog({
+        defaultPath: "bezier-commands.json",
+        filters: [{ name: "Bezier command pack", extensions: ["json"] }],
+      });
+      if (!path) return;
+      await writeFile(path, await buildPack(home));
+      setMsg(`エクスポートしました: ${path}`);
+    } catch (e) {
+      setMsg(`失敗: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Import a .json pack: non-clobbering, but offers to overwrite on conflict.
+  const importPack = async () => {
+    if (!home || busy) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const path = await pickFile([{ name: "Bezier command pack", extensions: ["json"] }]);
+      if (!path) return;
+      let cmds;
+      try {
+        cmds = readPack(await readFile(path));
+      } catch (e) {
+        setMsg(`読み込めません: ${String(e)}`);
+        return;
+      }
+      if (cmds.length === 0) {
+        setMsg("有効なコマンドがありません。");
+        return;
+      }
+      const existing = new Set((list ?? []).map((c) => c.name));
+      const conflicts = cmds.filter((c) => existing.has(c.name)).length;
+      let overwrite = false;
+      if (conflicts > 0) {
+        overwrite = await confirmDialog(
+          `${conflicts} 件が既存です。上書きしますか？（やめる＝スキップ）`,
+          { title: "インポート", okLabel: "上書き", cancelLabel: "スキップ" },
+        );
+      }
+      const s = await writePack(home, cmds, { overwrite });
+      await reload(home);
+      setMsg(`インポート: 追加 ${s.added} / 上書き ${s.overwritten} / スキップ ${s.skipped}`);
     } catch (e) {
       setMsg(`失敗: ${String(e)}`);
     } finally {
@@ -352,6 +422,34 @@ export function BezierCommandsManager() {
               不足の組み込みを入れる（{missingBuiltins.length}）
             </button>
           )}
+        </div>
+      )}
+
+      {/* Share: export the pack as a .json / import someone's pack (DEC-081). */}
+      {list !== null && editing !== "+new" && (
+        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Share2 className="size-3" />
+            共有
+          </span>
+          <button
+            type="button"
+            onClick={() => void exportPack()}
+            disabled={busy || list.length === 0}
+            className="flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            <Upload className="size-3" />
+            エクスポート
+          </button>
+          <button
+            type="button"
+            onClick={() => void importPack()}
+            disabled={busy}
+            className="flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            <Download className="size-3" />
+            インポート
+          </button>
         </div>
       )}
 

@@ -1,5 +1,9 @@
-<!-- 最終更新: 2026-06-14 / DEC-080 チェックポイント・DEC-079 dev判別ロゴ・DEC-078 /bezier:* UIマネージャ・DEC-077 OPEN-001 close -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-080 チェックポイント・DEC-079 dev判別・DEC-078 コマンドUIマネージャ・DEC-077 OPEN-001 close・DEC-076 composer 撤回＋skill配布）
+<!-- 最終更新: 2026-06-14 / DEC-081 コマンドpack export/import・DEC-080 チェックポイント・DEC-079 dev判別・DEC-078 /bezier:* UIマネージャ -->
+# Bezier — 現在地（2026-06-14 / ▶ DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別・DEC-078 コマンドUIマネージャ・DEC-077 OPEN-001 close）
+
+## ▶ 2026-06-14 セッション（DEC-081 — コマンドパック export/import＝マケプレ配布の最小形）
+- ideas-backlog §E。DEC-078 の続き。**JSON 1ファイル**でコマンドを export（保存ダイアログ）／import（ファイル選択→非破壊マージ・衝突時のみ確認上書き）。「自分用 skill を別 repo/人へ持ち回る」最小配布。
+- 配管: `capabilities` に `dialog:allow-save` 追加／ ipc `pickFile`・`saveFileDialog`／ `bezier-commands.ts`（`buildPack`/`readPack`/`writePack`）／ マネージャに「共有」行。tsc 0・eslint 0・cargo Finished。
 
 ## ▶ 2026-06-14 セッション（DEC-080 — チェックポイント / worktree スナップショット＋ロールバック）
 - ideas-backlog §D。Discard（全消し）のみ → **任意の点に戻せる**手動チェックポイント（＝branch の commit）。作られ方は**手動 MVP**を採択（自動・毎ターン前は WIP 増＋squash 要 → 後続）。

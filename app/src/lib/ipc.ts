@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   open,
+  save as tauriSave,
   confirm as tauriConfirm,
   message as tauriMessage,
 } from "@tauri-apps/plugin-dialog";
@@ -209,6 +210,25 @@ export function uninstallBezierCommands(): Promise<void> {
  * as a bare slug on the Rust side. -> invoke("remove_bezier_command", { name }) */
 export function removeBezierCommand(name: string): Promise<void> {
   return invoke<void>("remove_bezier_command", { name });
+}
+
+/** Open a native single-file picker (optionally filtered by extension). Returns
+ * the chosen path, or null if cancelled. Used by command-pack import (DEC-081). */
+export async function pickFile(
+  filters?: { name: string; extensions: string[] }[],
+): Promise<string | null> {
+  const selected = await open({ directory: false, multiple: false, filters });
+  if (selected == null) return null;
+  return Array.isArray(selected) ? (selected[0] ?? null) : selected;
+}
+
+/** Native save-file dialog. Returns the chosen path, or null if cancelled. Used
+ * by command-pack export (DEC-081). */
+export function saveFileDialog(opts?: {
+  defaultPath?: string;
+  filters?: { name: string; extensions: string[] }[];
+}): Promise<string | null> {
+  return tauriSave(opts);
 }
 
 /** Open a native folder picker. Returns the chosen path, or null if cancelled. */

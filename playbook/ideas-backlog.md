@@ -46,6 +46,7 @@
   - open-core（DEC-002・fair-code）と相性: 無料配布のOSS skill ＋ 有料 curated パック/private レジストリ/チーム配布、という課金面も置ける。
 - **想定フォーム（要検討）**: ① DS 接地の "design pack"（skill＋テンプレ）② agent テンプレ（特定スタックの Build/Verify 用）③ インストール導線（repo の `.claude/` に入れる or Bezier 内カタログ）④ キュレーション/署名/安全性（任意コード実行のレビュー）⑤ 無料 vs 有料・公式 vs コミュニティ。
 - **未決**: いつやるか（dogfood の core が固まってから）。まずは「自分用に作った skill を別 repo へ持ち回る」最小の配布から芽が出せるか。
+  - **着手済**: コマンドの **UI マネージャ＝DEC-078**（編集/追加/削除）、**export/import パック＝DEC-081**（JSON 1ファイルで持ち回り/共有）。「最小の配布」の芽は出た。残: URL/レジストリ取得・署名/安全性・有料 curated・skill/subagent もパック対象に。
 
 ---
 
