@@ -25,7 +25,6 @@ import {
   Route,
   Ruler,
   ExternalLink,
-  Share2,
   Copy,
   Check,
   X,
@@ -105,100 +104,6 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-// Share control (DEC-092 Phase 1): expose the running web preview at a public
-// cloudflared URL so anyone can open it in a browser (no install). idle → 共有
-// button; connecting → spinner; ready → URL pill with copy / open / stop.
-function ShareControl({ server }: { server: PreviewServer }) {
-  const { tunnelStatus, tunnelUrl, startShare, stopShare } = server;
-  const [copied, setCopied] = React.useState(false);
-
-  const copy = React.useCallback(async () => {
-    if (!tunnelUrl) return;
-    if (await copyText(tunnelUrl)) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    }
-  }, [tunnelUrl]);
-
-  if (tunnelStatus === "ready" && tunnelUrl) {
-    const host = tunnelUrl.replace(/^https?:\/\//, "");
-    return (
-      <div className="flex h-7 items-center gap-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/5 pl-2 pr-0.5">
-        <Share2 className="size-3 shrink-0 text-emerald-600" />
-        <button
-          type="button"
-          onClick={() => void copy()}
-          title={`${tunnelUrl}\nクリックでコピー`}
-          className="max-w-[11rem] truncate font-mono text-[11px] text-foreground/80 hover:text-foreground"
-        >
-          {host}
-        </button>
-        <button
-          type="button"
-          onClick={() => void copy()}
-          title="リンクをコピー"
-          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {copied ? (
-            <Check className="size-3.5 text-emerald-600" />
-          ) : (
-            <Copy className="size-3.5" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => void openExternal(tunnelUrl).catch(() => {})}
-          title="共有リンクをブラウザで開く"
-          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ExternalLink className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => void stopShare()}
-          title="共有を停止"
-          className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-        >
-          <X className="size-3.5" />
-        </button>
-      </div>
-    );
-  }
-
-  if (tunnelStatus === "connecting") {
-    return (
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 gap-1.5"
-        disabled
-        title="トンネルを接続して公開リンクを準備しています（数秒）"
-      >
-        <Loader2 className="size-3.5 animate-spin" />
-        公開準備中…
-      </Button>
-    );
-  }
-
-  // idle / error
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      className={cn("h-7 gap-1.5", tunnelStatus === "error" && "text-destructive")}
-      onClick={() => void startShare()}
-      title={
-        tunnelStatus === "error"
-          ? "共有に失敗しました（cloudflared 未インストール、またはネットワーク）。クリックで再試行。"
-          : "公開リンクで共有（ブラウザで開けるURL）"
-      }
-    >
-      <Share2 className="size-3.5" />
-      共有
-    </Button>
-  );
-}
-
 // A small popover anchored under a control, showing the streamed build log
 // (publish failures need to be inspectable). Right-aligned, scrollable, dark.
 function LogPopover({
@@ -214,7 +119,7 @@ function LogPopover({
     <div className="absolute right-0 top-8 z-50 w-[28rem] max-w-[80vw] overflow-hidden rounded-md border bg-popover shadow-lg">
       <div className="flex items-center justify-between border-b px-2 py-1">
         <span className="text-[11px] font-medium text-muted-foreground">
-          公開ログ
+          共有ログ
         </span>
         <div className="flex items-center gap-1">
           {onRetry && (
@@ -246,9 +151,9 @@ function LogPopover({
 }
 
 // Publish control (DEC-092 Phase 2 / DEC-095): build + deploy the worktree app
-// to the user's own Vercel for a PERSISTENT URL (PC can be off). idle → 公開;
+// to the user's own Vercel for a PERSISTENT URL (PC can be off). idle → 共有;
 // building → spinner (click for log); ready → URL pill (copy/open/re-publish);
-// error → 公開失敗 (click for log + retry).
+// error → 共有失敗 (click for log + retry).
 function PublishControl({ publish }: { publish: PublishController }) {
   const { status, url, log } = publish;
   const [copied, setCopied] = React.useState(false);
@@ -278,7 +183,7 @@ function PublishControl({ publish }: { publish: PublishController }) {
         <button
           type="button"
           onClick={() => void copy()}
-          title="公開リンクをコピー"
+          title="共有リンクをコピー"
           className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           {copied ? (
@@ -290,7 +195,7 @@ function PublishControl({ publish }: { publish: PublishController }) {
         <button
           type="button"
           onClick={() => void openExternal(url).catch(() => {})}
-          title="公開URLをブラウザで開く"
+          title="共有URLをブラウザで開く"
           className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ExternalLink className="size-3.5" />
@@ -298,7 +203,7 @@ function PublishControl({ publish }: { publish: PublishController }) {
         <button
           type="button"
           onClick={() => void publish.publish()}
-          title="再公開（最新の状態を反映）"
+          title="再共有（最新の状態を反映）"
           className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <RotateCw className="size-3.5" />
@@ -315,10 +220,10 @@ function PublishControl({ publish }: { publish: PublishController }) {
           variant="ghost"
           className="h-7 gap-1.5"
           onClick={() => setShowLog((v) => !v)}
-          title="ビルドログを表示（Vercel に公開中）"
+          title="ログを表示（共有リンクを準備中）"
         >
           <Loader2 className="size-3.5 animate-spin" />
-          公開中…
+          共有中…
         </Button>
         {showLog && <LogPopover log={log} onClose={() => setShowLog(false)} />}
       </div>
@@ -337,12 +242,12 @@ function PublishControl({ publish }: { publish: PublishController }) {
         }
         title={
           status === "error"
-            ? "公開に失敗しました。クリックでログ表示／再試行。"
-            : "Vercel に公開（永続URL・PCを閉じてもOK）"
+            ? "共有に失敗しました。クリックでログ表示／再試行。"
+            : "共有リンクを作成（永続URL・PCを閉じてもOK）"
         }
       >
         <Globe className="size-3.5" />
-        {status === "error" ? "公開失敗" : "公開"}
+        {status === "error" ? "共有失敗" : "共有"}
       </Button>
       {status === "error" && showLog && (
         <LogPopover
@@ -625,9 +530,6 @@ export function PreviewPane({
           {/* Publish (build → Vercel → persistent URL) works from source, so it's
               available whenever a worktree exists — not gated on the dev server. */}
           {session?.publish && <PublishControl publish={session.publish} />}
-          {/* Web-only branch (the tauri runner returned early above), so the
-              share tunnel always has a localhost server to expose. */}
-          {status === "ready" && <ShareControl server={server} />}
           {!running && (
             <Button
               size="sm"
