@@ -214,7 +214,6 @@ export interface ImplementSession {
    * AnnotationLayer's "design" surface. The prompt already names the file.
    */
   reviseDesignPattern: (promptText: string, note: string) => Promise<void>;
-  handleAccept: () => Promise<void>;
   handleDiscard: () => Promise<void>;
 }
 
@@ -1017,41 +1016,9 @@ export function useImplementSession(
     };
   }, [ref, termMounted, action, selectedAgent, handleResume, issue.id, workDir]);
 
-  const handleAccept = React.useCallback(async () => {
-    if (!ref || action) return;
-    setAction("accept");
-    setError(null);
-    setInfo(null);
-    try {
-      // Capture changed paths BEFORE committing (status is clean afterwards).
-      const before = await gitStatus(ref.path);
-      const changed = changedPathsFromStatus(before);
-      if (changed.length === 0) {
-        setError("コミットする変更がありません。");
-        setAction(null);
-        return;
-      }
-      const sha = await gitCommitAll(ref.path, issue.title);
-      // Commit is a checkpoint on the branch — NOT a merge. Stay in-progress;
-      // the issue only becomes "merged" on the actual Merge-to-main (or when the
-      // PR merges on the platform, which the user reflects via the status menu).
-      setInfo(`commit ${sha.slice(0, 9)} を ${ref.branch} に作成しました。`);
-      // The durable record of "what changed / where" lives in thread.json
-      // (DEC-014/A) — the accept event carries the committed paths + branch.
-      void logEvent("accept", `commit ${sha.slice(0, 9)}`, {
-        changedPaths: changed,
-        branch: ref.branch,
-      });
-      await refreshDiff(ref.path);
-      // Re-evaluate behind/ahead + merge cleanliness now that the branch moved.
-      await loadBehind(ref.path);
-      await loadCheckpoints(ref.path);
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setAction(null);
-    }
-  }, [ref, action, issue, refreshDiff, loadBehind, loadCheckpoints, logEvent]);
+  // (DEC-088) The explicit "Commit" was removed: checkpoints are automatic per
+  // turn (DEC-087), "いまを保存" covers a manual snapshot, and Merge/Sync/PR all
+  // commit any uncommitted work first — so a separate commit step was redundant.
 
   // Make a checkpoint: commit the current worktree state on the branch (§D /
   // DEC-080). `label` becomes the commit subject (defaults to a timestamp). A
@@ -1248,6 +1215,12 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     try {
+      // Commit any uncommitted worktree work first — like Sync / Open PR do — so
+      // the final (uncommitted) turn isn't silently left behind by the branch-only
+      // merge. Auto-checkpoints (DEC-087) make "all saved" feel true, but the
+      // current turn is still uncommitted; this closes that gap (DEC-088).
+      const dirty = changedPathsFromStatus(await gitStatus(ref.path)).length > 0;
+      if (dirty) await gitCommitAll(ref.path, issue.title || "checkpoint");
       const out = await gitMergeToMain(root, ref.branch);
       const first = out.split("\n").find((l) => l.trim().length > 0) ?? "merged";
       await updateIssueMeta(root, issue, { status: "merged" });
@@ -1379,7 +1352,6 @@ export function useImplementSession(
     handleGenerateVariant,
     handlePickVariant,
     reviseDesignPattern,
-    handleAccept,
     handleDiscard,
   };
 }

@@ -1,6 +1,12 @@
 <!-- 最終更新: 2026-06-14 / DEC-087 自動チェックポイント+squash・DEC-084 repoチップ・DEC-082 ⌘K・DEC-081 コマンドpack配布 -->
 # Bezier — 現在地（2026-06-14 / ▶ DEC-087 自動CP+squash・DEC-086 §B撤回・DEC-084 repoチップ・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布）
 
+## ▶ 2026-06-14 セッション（DEC-088 — コミット/CP 管理の横断レビュー＋整理）
+- CEO「手動コミット/remove との兼ね合い・横断的に違和感ないか確認して」。DEC-087 後を点検。
+- **実害発見＆修正**: Merge が未コミット分を取りこぼす（Sync/PR は dirty 先コミットするのに Merge だけしない）→ DEC-087 で「全部保存済み」の錯覚が出て悪化。→ **`mergeToMain` も dirty を先にコミット**。
+- **整理**: コミット入口が3つ（Ship「Commit」/ CP「いまを保存」/ 自動）で重複 → **Ship の「Commit」撤去＋`handleAccept` 削除**、手動保存は CP「いまを保存」に一本化。モデル＝**進行中（自動CP＋いまを保存＋戻す）／確定（Ship・未コミ自動コミット＋squash）／Discard**。Rust 変更なし・tsc 0・eslint 0。
+- prod 反映済み: 〜DEC-084。**DEC-087/088 未反映**。
+
 ## ▶ 2026-06-14 セッション（DEC-087 — 自動チェックポイント＋ main squash）
 - ideas-backlog §D／DEC-080 後続。**ターン開始時（idle/waiting→running）に前ターンの結果を自動コミット**＝「覚えてなくても1ターン戻せる」。開始時にした理由＝終了時だと未コミット Diff が空になり証拠収集と競合。現在ターンは未コミットのまま＝Diff/Commit/証拠収集は不変。`autoCheckpoint`（QUIET・clean はスキップ・thread 汚さない）。
 - **main マージ squash**: Rust `git_merge_to_main` を `--squash`→1コミット化（WIP CP を畳む）。3重ガード維持。Rust 変更あり（dev は tauri が再ビルド）。tsc 0・eslint 0・cargo Finished。

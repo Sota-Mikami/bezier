@@ -1459,7 +1459,6 @@ function IssueShip({ session }: { session: ImplementSession }) {
     prUrl,
     syncConflicts,
     selectedAgent,
-    handleAccept,
     openPR,
     mergeToMain,
     syncMain,
@@ -1473,8 +1472,8 @@ function IssueShip({ session }: { session: ImplementSession }) {
     <div className="flex items-center gap-1.5">
       <DropdownMenu>
         <DropdownMenuTrigger
-          aria-label="Ship（commit / finalize）"
-          title="Commit / main へ反映 / PR を作成"
+          aria-label="Ship（finalize）"
+          title="main へ反映 / PR を作成（未コミット分は自動でまとめます）"
           className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground outline-none transition hover:bg-primary/90"
         >
           {action ? (
@@ -1486,19 +1485,6 @@ function IssueShip({ session }: { session: ImplementSession }) {
           <ChevronDown className="size-3.5 opacity-80" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-60">
-          <DropdownMenuItem
-            className="cursor-pointer gap-2 text-xs"
-            disabled={!!action}
-            onClick={() => void handleAccept()}
-          >
-            {action === "accept" ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Check className="size-3.5" />
-            )}
-            Commit（チェックポイント）
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-muted-foreground">
               {behind === null ? (
