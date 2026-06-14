@@ -89,14 +89,14 @@ local-first → SaaS 境界：
 - **アクセス制御**：**L1 リンクを知る人のみ**（unguessable URL）。
 - **到達点**：起動中の Preview を Slack に貼れる／会議で「今これ」を相手が触れる。auth ありの画面も **dev ログインで入れる**（§3.5 (a)）。
 
-### Phase 2 — 「公開」で固定（**CEO の #1 価値**） ★本命・〜2.5週
-- Preview ペインに「**公開**」コマンド：worktree で build → 成果物を CEO infra に push → 固定 URL。
-  - 静的：`next export`→ S3 + CloudFront（`/{token}/`）。
-  - 動的：Dockerfile → Coolify（`{token}.proto.duong-sm.com`）。target は repo 構成から推定（[[2026-06-12_preview-runner-roadmap]] の runner 判定と同型）。
-- **アクセス制御**：**L1 ＋ パスワード（nginx basic_auth/CloudFront Function）＋ 期限**（§3.5）。これで外部クライアントに安全に渡せる。
-- 期限付き URL（例: 7日、設定可）。Supabase `published_previews`（kind=published）。
-- **到達点**：PC を閉じても生きる安定 URL をクライアント/上司が任意時刻に開ける＝**ヒアリング①を満たす**。
-- **auth について（de-risk 済み・shim 不要）**：成果物に shim を乗せる必要はない。**build を dev/staging backend に向けて焼けば、クライアントサイド認証アプリは dev/demo ログインで publish 先でも通る**（Vercel/Netlify preview と同型）。サーバサイド/middleware 認証は static export 自体が不可なので **SSR(Coolify) パスへ**＝build 判断に一致。外部共有時のみ **demo-seed アカウント＋(b) 共有パスワード**を推奨（dev 生データ露出を避ける／静的 build に焼くのは public な anon key だけ）。
+### Phase 2 — 「共有」＝ Vercel publish（**CEO の #1 価値**） ✅ 実装済（DEC-095/096・2026-06-14）
+> ※ DEC-095 で host=Vercel に改訂、DEC-096 でライブ共有を廃止し publish 一本化＋ボタン名「共有」。下記は実装済の姿。
+- Design ペインの「**共有**」ボタン → `vercel deploy --yes`（CEO の Vercel・**リモートビルド**）→ **永続プレビュー URL**（`<hash>.vercel.app`・PC を閉じても生きる）。SSR/API/静的すべて 1 ホスト。
+- **env 注入**：worktree の `.env.local`/`.env` を `-b`/`-e` で build+run に注入（→ dev/staging backend に向ける）。**本番秘密を持つ repo は `<root>/.bezier/publish-env.json`（gitignore・`{"KEY":"VAL",...}`）で上書き** ＝ override が `.env` より優先。
+- **URL 永続化**：issue ごとに localStorage 保存 → 離れて戻っても表示（Vercel デプロイは immutable で valid、再共有で更新）。
+- **ライフサイクル**：失敗時は「共有失敗」→ ログ popover（外側クリックで閉じる）＋再試行。直接 exec（shell injection 無し）。
+- **アクセス制御**：Vercel preview URL は hash で**実質推測不能**＝baseline。**パスワード/期限は Vercel Pro 機能**＝SaaS 化時（[[DEC-096]]・当面 Hobby）。
+- **到達点**：PC を閉じても生きる URL をクライアント/上司が任意時刻に開ける＝**ヒアリング①を満たす**。✅
 
 ### Phase 2.5 — L2/L3 アクセス制御（需要が出たら・〜1週）
 - **Cloudflare Access**（CEO の CF アカウント・~50人無料）を Tunnel/Coolify オリジン前段に：Google/メール OTP ログイン＋メアド/ドメイン許可ルール ＝ **L2 ドメイン制限・L3 招待制を自分 infra のまま**（§3.5）。
