@@ -160,15 +160,22 @@ function PublishControl({ publish }: { publish: PublishController }) {
   const [showLog, setShowLog] = React.useState(false);
   const wrapRef = React.useRef<HTMLDivElement>(null);
 
-  // Dismiss the log popover on outside click (the effect only wires a listener;
-  // the setState happens in the event handler, not the effect body).
+  // Dismiss the log popover on outside click OR Escape (the effect only wires
+  // listeners; setState happens in the handlers, not the effect body).
   React.useEffect(() => {
     if (!showLog) return;
     const onDown = (e: MouseEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setShowLog(false);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowLog(false);
+    };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [showLog]);
 
   const copy = React.useCallback(async () => {
@@ -214,7 +221,10 @@ function PublishControl({ publish }: { publish: PublishController }) {
         </button>
         <button
           type="button"
-          onClick={() => void publish.publish()}
+          onClick={() => {
+            setShowLog(false);
+            void publish.publish();
+          }}
           title="再共有（最新の状態を反映）"
           className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
@@ -232,10 +242,10 @@ function PublishControl({ publish }: { publish: PublishController }) {
           variant="ghost"
           className="h-7 gap-1.5"
           onClick={() => setShowLog((v) => !v)}
-          title="ログを表示（共有リンクを準備中）"
+          title="クリックでビルドログを表示（Vercel が公開リンクを準備中）"
         >
           <Loader2 className="size-3.5 animate-spin" />
-          共有中…
+          共有中…（1〜2分）
         </Button>
         {showLog && <LogPopover log={log} onClose={() => setShowLog(false)} />}
       </div>
@@ -249,9 +259,14 @@ function PublishControl({ publish }: { publish: PublishController }) {
         size="sm"
         variant="ghost"
         className={cn("h-7 gap-1.5", status === "error" && "text-destructive")}
-        onClick={() =>
-          status === "error" ? setShowLog((v) => !v) : void publish.publish()
-        }
+        onClick={() => {
+          if (status === "error") {
+            setShowLog((v) => !v);
+          } else {
+            setShowLog(false);
+            void publish.publish();
+          }
+        }}
         title={
           status === "error"
             ? "共有に失敗しました。クリックでログ表示／再試行。"

@@ -18,13 +18,15 @@ import * as React from "react";
 import {
   ptySpawn,
   ptyKillKey,
+  ptyLookup,
+  ptyBacklog,
   onPtyData,
   onPtyExit,
   resolveCommand,
   type UnlistenFn,
 } from "@/lib/pty";
 import { readPreviewConfig, packageCwd } from "@/lib/preview";
-import { readFile } from "@/lib/ipc";
+import { readFile, writeFile } from "@/lib/ipc";
 
 export type PublishStatus = "idle" | "building" | "ready" | "error";
 
@@ -72,6 +74,26 @@ function savePublishedUrl(key: string, value: string | null): void {
   }
 }
 
+// `vercel deploy` writes `.vercel/` (projectId/orgId) into the worktree. The
+// worktree is a checkout of the USER's repo, and auto-checkpoint runs
+// `git add -A` — so `.vercel/` could get committed + pushed to their GitHub.
+// Add it to the worktree's LOCAL git exclude (`.git/info/exclude`, uncommitted)
+// before deploying. Best-effort: a worktree's `.git` is a file `gitdir: <path>`.
+async function ensureVercelExcluded(worktreePath: string): Promise<void> {
+  try {
+    const dotGit = await readFile(`${worktreePath}/.git`).catch(() => "");
+    const m = /^gitdir:\s*(.+?)\s*$/m.exec(dotGit);
+    if (!m) return; // not a worktree (.git is a dir) — skip
+    const excludePath = `${m[1]}/info/exclude`;
+    const cur = await readFile(excludePath).catch(() => "");
+    if (/(^|\n)\.vercel\/?(\n|$)/.test(cur)) return; // already excluded
+    const sep = cur === "" || cur.endsWith("\n") ? "" : "\n";
+    await writeFile(excludePath, `${cur}${sep}.vercel/\n`);
+  } catch {
+    /* best-effort — don't block publish */
+  }
+}
+
 /** Parse a .env file into KEY=VALUE pairs (skip comments/blank, strip quotes). */
 function parseEnv(text: string): [string, string][] {
   const out: [string, string][] = [];
@@ -116,6 +138,9 @@ export function usePublish(
   // if the pty splits it across two data chunks (CTO MF: per-chunk regex misses).
   const logAccRef = React.useRef("");
   const unlistenRef = React.useRef<UnlistenFn[]>([]);
+  // Re-entry guard: publish() has several awaits before the pty spawns; without
+  // this, a rapid double-click spawns two concurrent deploys + leaks listeners.
+  const publishingRef = React.useRef(false);
   const ptyKey = publishPtyKey(previewKey);
 
   const detach = React.useCallback(() => {
@@ -141,36 +166,48 @@ export function usePublish(
   }, [detach, ptyKey, previewKey]);
 
   const publish = React.useCallback(async () => {
-    if (!worktreePath) return;
+    if (!worktreePath || publishingRef.current) return;
+    publishingRef.current = true;
+    try {
+      const bin = await resolveCommand("vercel").catch(() => "");
+      if (!bin) {
+        setUrl(null);
+        setStatus("error");
+        setLog(
+          "vercel CLI が見つかりません。`npm i -g vercel` でインストールし、`vercel login` してください。",
+        );
+        return;
+      }
 
-    const bin = await resolveCommand("vercel").catch(() => "");
-    if (!bin) {
-      setUrl(null);
-      setStatus("error");
-      setLog(
-        "vercel CLI が見つかりません。`npm i -g vercel` でインストールし、`vercel login` してください。",
-      );
-      return;
-    }
+      // Build from the package dir (root or a subdir like app/).
+      const cfg = await readPreviewConfig(root).catch(() => null);
+      const cwd = packageCwd(worktreePath, cfg?.packageDir ?? "");
 
-    // Build from the package dir (root or a subdir like app/).
-    const cfg = await readPreviewConfig(root).catch(() => null);
-    const cwd = packageCwd(worktreePath, cfg?.packageDir ?? "");
-
-    // Resolve the env baked into the deploy (build + run time) so the deployed
-    // app reaches the right backend. A repo-level `.bezier/publish-env.json`
-    // override WINS — for repos whose .env holds PRODUCTION secrets, point
-    // publish at a dedicated dev/staging env instead. Else fall back to the
-    // worktree's .env.local / .env.
-    let envPairs: [string, string][] = [];
-    const overrideTxt = await readFile(
-      `${root}/.bezier/publish-env.json`,
-    ).catch(() => "");
-    if (overrideTxt) {
-      try {
-        const obj: unknown = JSON.parse(overrideTxt);
-        if (obj && typeof obj === "object") {
-          for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      // Resolve the env baked into the deploy. A repo-level
+      // `.bezier/publish-env.json` override WINS (for repos whose .env holds
+      // PRODUCTION secrets — point publish at a dedicated dev/staging env). Else
+      // fall back to .env.local / .env in the package dir, then the worktree
+      // root (monorepos keep env at the root while the app lives in app/).
+      let envPairs: [string, string][] = [];
+      let envSource: "override" | "env" | "none" = "none";
+      const overrideTxt = await readFile(
+        `${root}/.bezier/publish-env.json`,
+      ).catch(() => "");
+      if (overrideTxt.trim()) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(overrideTxt);
+        } catch {
+          // MF: the override exists to point AWAY from prod secrets — NEVER
+          // silently fall back to .env when it's present but unparseable.
+          setStatus("error");
+          setLog(
+            "[Bezier] .bezier/publish-env.json が無効な JSON です。修正するか削除してください。",
+          );
+          return;
+        }
+        if (parsed && typeof parsed === "object") {
+          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
             if (
               /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) &&
               !ENV_SKIP.test(k) &&
@@ -182,88 +219,118 @@ export function usePublish(
             }
           }
         }
-      } catch {
-        /* malformed JSON → fall back to .env */
+        envSource = "override";
       }
-    }
-    if (envPairs.length === 0) {
-      for (const name of [".env.local", ".env"]) {
-        const txt = await readFile(`${cwd}/${name}`).catch(() => "");
-        if (!txt) continue;
-        envPairs = parseEnv(txt);
-        break; // first file found wins (.env.local preferred)
+      if (envSource !== "override") {
+        const dirs = cwd === worktreePath ? [cwd] : [cwd, worktreePath];
+        for (const dir of dirs) {
+          let found = false;
+          for (const name of [".env.local", ".env"]) {
+            const txt = await readFile(`${dir}/${name}`).catch(() => "");
+            if (!txt) continue;
+            envPairs = parseEnv(txt);
+            envSource = "env";
+            found = true;
+            break;
+          }
+          if (found) break;
+        }
       }
-    }
-    const envFlags: string[] = [];
-    for (const [k, v] of envPairs) {
-      envFlags.push("-b", `${k}=${v}`, "-e", `${k}=${v}`);
-    }
+      const envFlags: string[] = [];
+      for (const [k, v] of envPairs) {
+        envFlags.push("-b", `${k}=${v}`, "-e", `${k}=${v}`);
+      }
 
-    detach();
-    idRef.current = null;
-    urlRef.current = null;
-    logAccRef.current = "";
-    await ptyKillKey(ptyKey).catch(() => {});
-    setLog("");
-    setUrl(null);
-    setStatus("building");
+      // Keep `.vercel/` out of the user's git history (MF).
+      await ensureVercelExcluded(worktreePath);
 
-    let id: string;
-    try {
-      // Direct exec (no shell) so env VALUES can't be shell-injected.
-      id = await ptySpawn({
-        cwd,
-        cmd: bin,
-        args: ["deploy", "--yes", ...envFlags],
-        cols: 120,
-        rows: 40,
-        key: ptyKey,
-      });
-    } catch (e) {
-      setStatus("error");
-      setLog(e instanceof Error ? e.message : String(e));
-      return;
-    }
-    idRef.current = id;
+      // Make the env injection VISIBLE in the log the user can open (MF).
+      const header =
+        envSource === "override"
+          ? `[Bezier] .bezier/publish-env.json の ${envPairs.length} 変数を使用（.env を上書き）\n`
+          : envPairs.length > 0
+            ? `[Bezier] .env から ${envPairs.length} 変数を Vercel に注入します。本番秘密がある場合は .bezier/publish-env.json で上書きを。\n`
+            : "[Bezier] 注入する .env が見つかりませんでした（env なしで deploy）。\n";
 
-    unlistenRef.current.push(
-      await onPtyData((p) => {
-        if (p.id !== id || idRef.current !== id) return;
-        const clean = p.chunk.replace(ANSI_RE, "");
-        setLog((l) => {
-          const n = l + clean;
-          return n.length > PUBLISH_LOG_CAP ? n.slice(n.length - PUBLISH_LOG_CAP) : n;
+      detach();
+      idRef.current = null;
+      urlRef.current = null;
+      logAccRef.current = "";
+      await ptyKillKey(ptyKey).catch(() => {});
+      setLog(header);
+      setUrl(null);
+      setStatus("building");
+
+      let id: string;
+      try {
+        // Direct exec (no shell) so env VALUES can't be shell-injected.
+        id = await ptySpawn({
+          cwd,
+          cmd: bin,
+          args: ["deploy", "--yes", ...envFlags],
+          cols: 120,
+          rows: 40,
+          key: ptyKey,
         });
-        const acc = logAccRef.current + clean;
-        logAccRef.current =
-          acc.length > PUBLISH_LOG_CAP ? acc.slice(acc.length - PUBLISH_LOG_CAP) : acc;
-        if (!urlRef.current) {
-          // Scan the ACCUMULATED log so a URL split across chunks is still caught.
-          const m = VERCEL_URL_RE.exec(logAccRef.current);
-          if (m) urlRef.current = m[0]; // first *.vercel.app = the unique deploy URL
-        }
-      }),
-    );
-    unlistenRef.current.push(
-      await onPtyExit((p) => {
-        if (p.id !== id || idRef.current !== id) return;
-        idRef.current = null;
-        const resolved =
-          urlRef.current ?? VERCEL_URL_RE.exec(logAccRef.current)?.[0] ?? null;
-        if (p.code === 0 && resolved) {
-          setUrl(resolved);
-          setStatus("ready");
-          savePublishedUrl(previewKey, resolved); // remember across navigation
-        } else {
-          setStatus("error");
-        }
-      }),
-    );
+      } catch (e) {
+        setStatus("error");
+        setLog((l) => l + (e instanceof Error ? e.message : String(e)));
+        return;
+      }
+      idRef.current = id;
+
+      unlistenRef.current.push(
+        await onPtyData((p) => {
+          if (p.id !== id || idRef.current !== id) return;
+          const clean = p.chunk.replace(ANSI_RE, "");
+          setLog((l) => {
+            const n = l + clean;
+            return n.length > PUBLISH_LOG_CAP ? n.slice(n.length - PUBLISH_LOG_CAP) : n;
+          });
+          const acc = logAccRef.current + clean;
+          logAccRef.current =
+            acc.length > PUBLISH_LOG_CAP ? acc.slice(acc.length - PUBLISH_LOG_CAP) : acc;
+          if (!urlRef.current) {
+            // Scan the ACCUMULATED log so a chunk-split URL is still caught.
+            const m = VERCEL_URL_RE.exec(logAccRef.current);
+            if (m) urlRef.current = m[0]; // first *.vercel.app = unique deploy URL
+          }
+        }),
+      );
+      unlistenRef.current.push(
+        await onPtyExit((p) => {
+          if (p.id !== id || idRef.current !== id) return;
+          idRef.current = null;
+          const resolved =
+            urlRef.current ?? VERCEL_URL_RE.exec(logAccRef.current)?.[0] ?? null;
+          if (p.code === 0 && resolved) {
+            setUrl(resolved);
+            setStatus("ready");
+            savePublishedUrl(previewKey, resolved); // remember across navigation
+          } else {
+            // Friendly hints for the most common non-engineer failures.
+            if (/Not authenticated|vercel login|No existing credentials/i.test(logAccRef.current)) {
+              setLog(
+                (l) =>
+                  l +
+                  "\n[Bezier] ヒント: `vercel login` が必要かもしれません。ターミナルで実行してください。",
+              );
+            } else if (!resolved) {
+              setLog(
+                (l) => l + "\n[Bezier] デプロイ URL を取得できませんでした（exit 0 でも URL なし）。",
+              );
+            }
+            setStatus("error");
+          }
+        }),
+      );
+    } finally {
+      publishingRef.current = false;
+    }
   }, [root, worktreePath, ptyKey, previewKey, detach]);
 
   // Unmount: detach listeners but DON'T kill — let the deploy finish in the
-  // background (it's a keyed pty). On remount status resets to idle (a one-shot
-  // publish doesn't reattach; the URL is shown only for the session that ran it).
+  // background (it's a keyed pty). The reattach effect below re-surfaces it.
   React.useEffect(() => {
     const listeners = unlistenRef.current;
     return () => {
@@ -277,6 +344,65 @@ export function usePublish(
       idRef.current = null;
     };
   }, []);
+
+  // Reattach to an in-flight deploy on mount (MF): a deploy that finishes while
+  // you're on ANOTHER issue must still surface its URL when you return — that's
+  // the "PC can be off" promise. If a `publish:<key>` pty is live, replay its
+  // backlog + re-listen; else leave the lazy-init state (saved URL or idle).
+  React.useEffect(() => {
+    let cancelled = false;
+    const listeners = unlistenRef.current;
+    (async () => {
+      const tid = await ptyLookup(ptyKey).catch(() => null);
+      if (cancelled || !tid) return;
+      idRef.current = tid;
+      const backlog = await ptyBacklog(tid).catch(() => "");
+      if (cancelled) return;
+      const clean = backlog.replace(ANSI_RE, "");
+      logAccRef.current =
+        clean.length > PUBLISH_LOG_CAP ? clean.slice(clean.length - PUBLISH_LOG_CAP) : clean;
+      setLog(logAccRef.current);
+      const m0 = VERCEL_URL_RE.exec(logAccRef.current);
+      if (m0) urlRef.current = m0[0];
+      setStatus("building");
+      listeners.push(
+        await onPtyData((p) => {
+          if (p.id !== tid || idRef.current !== tid) return;
+          const c = p.chunk.replace(ANSI_RE, "");
+          setLog((l) => {
+            const n = l + c;
+            return n.length > PUBLISH_LOG_CAP ? n.slice(n.length - PUBLISH_LOG_CAP) : n;
+          });
+          const acc = logAccRef.current + c;
+          logAccRef.current =
+            acc.length > PUBLISH_LOG_CAP ? acc.slice(acc.length - PUBLISH_LOG_CAP) : acc;
+          if (!urlRef.current) {
+            const mm = VERCEL_URL_RE.exec(logAccRef.current);
+            if (mm) urlRef.current = mm[0];
+          }
+        }),
+      );
+      listeners.push(
+        await onPtyExit((p) => {
+          if (p.id !== tid || idRef.current !== tid) return;
+          idRef.current = null;
+          const resolved =
+            urlRef.current ?? VERCEL_URL_RE.exec(logAccRef.current)?.[0] ?? null;
+          if (p.code === 0 && resolved) {
+            setUrl(resolved);
+            setStatus("ready");
+            savePublishedUrl(previewKey, resolved);
+          } else {
+            setStatus("error");
+          }
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ptyKey]);
 
   return { status, url, log, publish, clear };
 }

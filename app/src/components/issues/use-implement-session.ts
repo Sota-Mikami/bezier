@@ -1139,6 +1139,10 @@ export function useImplementSession(
       // ptyKillKey is what actually stops the agent on Discard.
       await preview.stop();
       await ptyKillKey(issue.id).catch(() => {});
+      // Also kill the publish deploy (keyed `publish:<id>`, NOT `<id>`) and wipe
+      // its saved URL — else re-implementing the same issue shows a stale
+      // "shared" URL from the discarded work (review MF).
+      await publish.clear().catch(() => {});
       teardownTerminal();
       await gitWorktreeRemove(root, ref.path);
       await gitBranchDelete(root, ref.branch).catch(() => {
@@ -1161,7 +1165,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, preview, teardownTerminal, root, issue, onStatusChange, logEvent]);
+  }, [ref, action, preview, publish, teardownTerminal, root, issue, onStatusChange, logEvent]);
 
   // Sync-with-main: merge main INTO the branch (inside the isolated worktree).
   // Clean -> behind goes to 0. Conflict -> surface the file list; the worktree
