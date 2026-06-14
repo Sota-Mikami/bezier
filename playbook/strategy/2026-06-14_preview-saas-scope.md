@@ -155,6 +155,16 @@ local-first → SaaS 境界：
 - **per-share トグル**＋**§3.5 のアクセス制御**で「誰に・どの層まで」を毎回選ぶ（クライアントには絞る／自分用は全部）。
 - **フェーズ**: ジャーニーの大半（spec/design/履歴）は**静的＝Preview より共有が安い**。Phase 2 publish で静的ジャーニーページに同梱、フル Bezier ジャーニーviewer は Phase 3。実行ログ redact は最後。
 
+## 5.7 ドメイン（保留・差し替え前提・CEO 手動）
+
+> CEO「ちゃんとドメインを用意するかも。`bezier.com` は取れないので `bezier-app.com` 等。あとで差し替えでも良いが理解しておいて。購入・Coolify 接続・別基盤（Supabase 等）の手動作業は私が対応する」。
+
+- **登録状況（2026-06-14 whois 確認）**: `bezier-app.com` ✅空き ／ `bezier-lab.com` ✅空き ／ **`bezierlab.app` ⛔登録済**（候補だが取得不可）／ `bezier.app`・`bezierapp.com` ⛔登録済。→ 現実的候補は **`bezier-app.com`（推奨）** か `bezier-lab.com`。
+- **差し込み箇所**: ① Phase 1 Slice 4 の Named Tunnel host（現 `*.preview.duong-sm.com` → 例 `*.preview.bezier-app.com`）② Phase 2 publish URL（`preview.{domain}/{token}` 静的／`{token}.preview.{domain}` SSR）③ DEC-093 バッジ CTA の landing（＝apex ドメイン＝ブランドの顔。クライアントに渡す URL の見栄えにも効く）。
+- **差し替えコスト＝ほぼゼロ（config）**: コード側は host 文字列＋`TUNNEL_URL_RE` 一箇所。アーキ依存なし。**dogfood は当面 trycloudflare / duong-sm.com で進め、Slice 4 着手時に確定すれば良い**＝今は実装をブロックしない。
+- **CEO 手動チェックリスト（適切なタイミングで案内）**: ① 購入（**Cloudflare Registrar 推奨**＝原価・DNS が既に CF）② CF に zone 追加（duong-sm.com と同様）③ Phase 1: `cloudflared tunnel route dns bezier-preview '*.preview.{domain}'` ④ Phase 2: 静的=CloudFront/CF に CNAME、SSR=Coolify アプリにドメイン追加（Let's Encrypt 自動）。
+- **Supabase 等「別基盤」の位置づけ**: ドメインとは別軸。Supabase は **Phase 2.5/3 のメタデータ/認証バックエンド**で必要になるもので、**Phase 1（共有 URL）には不要**。ドメインの手動作業は当面 **Cloudflare だけ**で完結。
+
 ## 6. 作らないもの（non-goals・今回）
 - Bezier ホスト型の有料 SaaS バックエンド（③で「後」＝Phase 3）。
 - 任意ユーザーの任意 repo の汎用 build（Phase 3）。
