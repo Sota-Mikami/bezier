@@ -1,10 +1,12 @@
 <!-- 最終更新: 2026-06-14 / DEC-083 新規Issueのrepoピッカー・DEC-082 コマンドパレット⌘K・DEC-081 コマンドpack配布・DEC-080 チェックポイント -->
 # Bezier — 現在地（2026-06-14 / ▶ DEC-083 repoピッカー・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布・DEC-080 チェックポイント・DEC-079 dev判別）
 
-## ▶ 2026-06-14 セッション（DEC-083 — 新規 Issue の作成先 repo ピッカー）
-- CEO「複数 repo で shortcut 起票が望みの repo にならない」。現状＝⌘N/New/⌘K は全部アクティブ repo に黙って作成 → 意図しない repo に起票。
-- **作成時ピッカー**採択: `handleNew` を「repo 無→開く / 1 repo→直接 / 複数→ピッカー」に分岐。ピッカーはアクティブ既定選択（⌘N→Enter で現 repo 維持）・type 絞り込み。`createIssueIn` 再利用で全経路に効く。新 `repo-picker.tsx`。Rust 変更なし・tsc 0・eslint 0。
-- **本番未反映が積み上がり中**: prod=DEC-080。**DEC-081(export/import)・082(⌘K)・083(repoピッカー)** がまだ。次の区切りで本番再ビルド＋/Applications。
+## ▶ 2026-06-14 セッション（DEC-084 — Issue の repo を「開いた後・作業開始前まで」変更可 / DEC-083 撤回）
+- CEO「入り口で1回選ぶより、開いた後に default 表示＋切替が良い（選び忘れ防止）。①開始前は切替可 ②ヘッダ表示 ③ホバー切替 ④開始後ロック。ファイル作成を遅らせられる？」
+- **回答**: 遅延は侵襲大（層がフォルダ前提）→ **即作成維持＋作業開始前は drafts フォルダ移動**で同じ UX を安く。
+- 実装: **入り口ピッカー（DEC-083）撤回**（現在 repo に即作成へ）→ `repo-picker.tsx` 削除。**ヘッダに repo チップ**（`IssueRepoChip`）: 開始前（worktree 無し＆thread 空）はドロップダウンで別 repo へ移動（`moveIssueToRepo`＝movePath→switchTo→route 再読込）、開始後はロック🔒。Rust 変更なし・tsc 0・eslint 0。
+- DEC-083〔撤回〕: 入り口の repo ピッカー（実装→当日 DEC-084 で supersede）。
+- **本番未反映が積み上がり中**: prod=DEC-080。**DEC-081(export/import)・082(⌘K)・084(repo チップ)** がまだ。次の区切りで本番再ビルド＋/Applications。
 
 ## ▶ 2026-06-14 セッション（DEC-082 — コマンドパレット ⌘K）
 - ideas-backlog §C。**⌘K** で任意の Issue（現在 repo）/ リポジトリ（recents 切替）/ アクション（新規 Issue・フォルダを開く・設定・ショートカット）へジャンプ。グローバル modal（layout 常駐・ShortcutsDialog 同型）。検索＋↑↓/Enter。

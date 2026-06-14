@@ -305,6 +305,21 @@ export async function createIssue(root: string, title: string): Promise<Issue> {
   return issue;
 }
 
+/**
+ * Move an issue's draft folder to another repo (DEC-084). Only safe BEFORE work
+ * starts (no worktree / no agent run): at that point the only on-disk state is
+ * the `drafts/<id>-<slug>/` folder, so a plain folder move re-homes it cleanly.
+ * After work starts, per-repo state (thread.json, agent-events, the worktree) is
+ * tied to the old repo, so the caller must lock this. Returns the issue with its
+ * new `dir`.
+ */
+export async function moveIssueToRepo(issue: Issue, toRoot: string): Promise<Issue> {
+  const dest = `${draftsDir(toRoot)}/${issue.id}-${issue.slug}`;
+  if (dest === issue.dir) return issue;
+  await movePath(issue.dir, dest);
+  return { ...issue, dir: dest };
+}
+
 /** Update issue.md metadata (title/status/labels), preserving id/created/screens + body. */
 export async function updateIssueMeta(
   root: string,

@@ -32,6 +32,8 @@ import {
   History,
   Camera,
   Undo2,
+  FolderGit2,
+  Lock,
   X,
 } from "lucide-react";
 
@@ -51,9 +53,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
-import { useWorkspaceRoot } from "@/lib/workspace-root";
+import { useWorkspaceRoot, repoLabel, repoName } from "@/lib/workspace-root";
 import {
   readIssue,
+  moveIssueToRepo,
   createSlot,
   updateIssueMeta,
   trashIssue,
@@ -778,6 +781,9 @@ function IssueWorkbench({
   // the full porcelain string both debounces (re-editing the same already-dirty
   // file leaves porcelain unchanged → no spam) and catches new/removed files.
   const worktreePath = session.ref?.path ?? null;
+  // Repo is movable only before work starts: no worktree AND the agent never ran
+  // (an empty activity thread). After either, per-repo state is bound (DEC-084).
+  const repoLocked = !!session.ref || session.thread.length > 0;
   React.useEffect(() => {
     if (!worktreePath) return;
     let cancelled = false;
@@ -834,6 +840,12 @@ function IssueWorkbench({
               hasPr: !!session.ref?.prUrl,
               hasWorktree: !!session.ref,
             })}
+          />
+          <IssueRepoChip
+            root={root}
+            issue={issue}
+            setIssue={setIssue}
+            locked={repoLocked}
           />
         </div>
 
@@ -1264,6 +1276,95 @@ function IssueMenu({
             </DropdownMenuLabel>
           </DropdownMenuGroup>
         )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// The Issue's repo binding (DEC-084), in the top bar next to the title. BEFORE
+// work starts (no worktree, agent never ran) it's a dropdown to MOVE the Issue to
+// another repo (the small drafts folder is re-homed); AFTER, it's a read-only,
+// locked chip — per-repo state (worktree, thread) is tied to the repo by then.
+function IssueRepoChip({
+  root,
+  issue,
+  setIssue,
+  locked,
+}: {
+  root: string;
+  issue: Issue;
+  setIssue: React.Dispatch<React.SetStateAction<Issue | null>>;
+  locked: boolean;
+}) {
+  const { recents, switchTo } = useWorkspaceRoot();
+  const [busy, setBusy] = React.useState(false);
+  const name = React.useMemo(() => {
+    const e = recents.find((r) => r.path === root);
+    return e ? repoLabel(e) : repoName(root);
+  }, [recents, root]);
+
+  const move = async (toRoot: string) => {
+    if (toRoot === root || busy) return;
+    setBusy(true);
+    try {
+      const moved = await moveIssueToRepo(issue, toRoot);
+      setIssue(moved);
+      switchTo(toRoot); // active repo follows; the route re-reads from toRoot
+    } catch (e) {
+      await messageDialog(
+        `リポジトリの変更に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
+        { title: "変更エラー" },
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (locked) {
+    return (
+      <span
+        title="作業を開始したため、このIssueのリポジトリは変更できません"
+        className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground"
+      >
+        <FolderGit2 className="size-3 shrink-0" />
+        <span className="max-w-[8rem] truncate">{name}</span>
+        <Lock className="size-2.5 shrink-0 opacity-60" />
+      </span>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        title="このIssueのリポジトリ（作業開始前まで変更可）"
+        className="group flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {busy ? (
+          <Loader2 className="size-3 shrink-0 animate-spin" />
+        ) : (
+          <FolderGit2 className="size-3 shrink-0" />
+        )}
+        <span className="max-w-[8rem] truncate">{name}</span>
+        <ChevronDown className="size-2.5 shrink-0 opacity-40 transition-opacity group-hover:opacity-80" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-56">
+        <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+          このIssueを置くリポジトリ
+        </DropdownMenuLabel>
+        {recents.map((r) => (
+          <DropdownMenuItem
+            key={r.path}
+            className="cursor-pointer gap-2 text-xs"
+            disabled={busy}
+            onClick={() => void move(r.path)}
+          >
+            <FolderGit2 className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{repoLabel(r)}</span>
+            {r.path === root && (
+              <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            )}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
