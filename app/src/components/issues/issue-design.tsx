@@ -27,6 +27,8 @@ import { UnderlineTab } from "@/components/ui/underline-tab";
 import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
 import { designSurface } from "./design-variants";
+import { useAnnotationMode } from "./annotation-mode";
+import { docAnnotationSurface } from "./annotation-surfaces";
 import type { ImplementSession } from "./implement-session-types";
 
 type Item =
@@ -51,6 +53,7 @@ export function IssueDesign({
   onChange?: () => void;
 }) {
   const issue = session.issue;
+  const { on: annotating } = useAnnotationMode();
   const [docs, setDocs] = React.useState<IssueDoc[]>([]);
   const [variants, setVariants] = React.useState<Variant[]>([]);
   const [selected, setSelected] = React.useState<string | null>(null);
@@ -255,11 +258,25 @@ export function IssueDesign({
       {/* Body: doc → editor; design → wireframe + annotation + adopt. */}
       <div className="relative min-h-0 flex-1">
         {selectedItem?.kind === "doc" && (
-          <SlotEditor
-            path={selectedItem.key}
-            label={selectedItem.label}
-            onExternalChange={onChange}
-          />
+          <div className="relative h-full">
+            <SlotEditor
+              path={selectedItem.key}
+              label={selectedItem.label}
+              onExternalChange={onChange}
+            />
+            {annotating && (
+              <AnnotationLayer
+                key={`anno-doc-${selectedItem.key}`}
+                session={session}
+                surface={docAnnotationSurface(
+                  session,
+                  selectedItem.key,
+                  selectedItem.doc.type,
+                  selectedItem.label,
+                )}
+              />
+            )}
+          </div>
         )}
         {selectedItem?.kind === "variant" && (
           <div className="flex h-full min-h-0 flex-col">
@@ -287,16 +304,18 @@ export function IssueDesign({
                 title={selectedItem.label}
                 className="size-full bg-white"
               />
-              <AnnotationLayer
-                key={`anno-${selectedItem.key}`}
-                session={session}
-                surface={designSurface(
-                  session,
-                  selectedItem.variant,
-                  session.canGenerateVariant,
-                  session.reviseDesignPattern,
-                )}
-              />
+              {annotating && (
+                <AnnotationLayer
+                  key={`anno-${selectedItem.key}`}
+                  session={session}
+                  surface={designSurface(
+                    session,
+                    selectedItem.variant,
+                    session.canGenerateVariant,
+                    session.reviseDesignPattern,
+                  )}
+                />
+              )}
             </div>
           </div>
         )}

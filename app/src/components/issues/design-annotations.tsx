@@ -17,7 +17,6 @@
 
 import * as React from "react";
 import {
-  MousePointer2,
   MessageSquarePlus,
   Pencil,
   Send,
@@ -26,8 +25,6 @@ import {
   Trash2,
   Undo2,
   Redo2,
-  Minus,
-  PanelTop,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -91,7 +88,7 @@ export function AnnotationLayer({
   const { root, issue, agentState } = session;
 
   const layerRef = React.useRef<HTMLDivElement | null>(null);
-  const [tool, setTool] = React.useState<Tool>("cursor");
+  const [tool, setTool] = React.useState<Tool>("comment");
   const [items, setItems] = React.useState<Annotation[]>([]);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [draftPath, setDraftPath] = React.useState<{ x: number; y: number }[] | null>(
@@ -100,9 +97,7 @@ export function AnnotationLayer({
   const [draftRect, setDraftRect] = React.useState<Rect | null>(null);
   const [captureMode, setCaptureMode] = React.useState<CaptureMode>("none");
   const [busy, setBusy] = React.useState(false);
-  // Collapse the toolbar out of the way (DEC-068) + a redo stack + a single
-  // "send the whole batch with this instruction" note.
-  const [minimized, setMinimized] = React.useState(false);
+  // A redo stack + a single "send the whole batch with this instruction" note.
   const [redoStack, setRedoStack] = React.useState<Annotation[]>([]);
   const [batchNote, setBatchNote] = React.useState("");
 
@@ -220,7 +215,6 @@ export function AnnotationLayer({
       setActiveId(a.id);
       setRedoStack([]);
       setDraftRect(null);
-      setTool("cursor");
     }
   };
 
@@ -497,12 +491,7 @@ export function AnnotationLayer({
       {/* Toolbar (top, collapsible) + action bar */}
       {showChrome && (
         <>
-          <Toolbar
-            tool={tool}
-            setTool={setTool}
-            minimized={minimized}
-            onToggleMinimized={() => setMinimized((m) => !m)}
-          />
+          <Toolbar tool={tool} setTool={setTool} />
 
           {/* Action bar — one batch send for everything drawn (DEC-068): a single
               optional instruction + undo / redo / clear + send. Pinned at the
@@ -638,47 +627,17 @@ function ToolButton({
 function Toolbar({
   tool,
   setTool,
-  minimized,
-  onToggleMinimized,
 }: {
   tool: Tool;
   setTool: (t: Tool) => void;
-  minimized: boolean;
-  onToggleMinimized: () => void;
 }) {
-  // Collapsed: a small pill at the top — tap to bring the tools back (DEC-068).
-  if (minimized) {
-    return (
-      <button
-        type="button"
-        onClick={onToggleMinimized}
-        title="注釈ツールを表示"
-        aria-label="注釈ツールを表示"
-        className="absolute left-1/2 top-3 flex size-7 -translate-x-1/2 items-center justify-center rounded-lg border bg-background/95 text-muted-foreground shadow-lg backdrop-blur transition-colors hover:text-foreground"
-        style={{ pointerEvents: "auto" }}
-      >
-        <PanelTop className="size-4" />
-      </button>
-    );
-  }
   return (
     <div
       className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-lg backdrop-blur"
       style={{ pointerEvents: "auto" }}
     >
-      <ToolButton t="cursor" current={tool} setTool={setTool} icon={<MousePointer2 className="size-4" />} label="操作（カーソル）" />
       <ToolButton t="comment" current={tool} setTool={setTool} icon={<MessageSquarePlus className="size-4" />} label="コメント（クリック＝点 / ドラッグ＝範囲）" />
       <ToolButton t="pen" current={tool} setTool={setTool} icon={<Pencil className="size-4" />} label="ペン（何度でも描いてまとめて送信）" />
-      <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
-      <button
-        type="button"
-        onClick={onToggleMinimized}
-        title="ツールバーを畳む"
-        aria-label="ツールバーを畳む"
-        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Minus className="size-4" />
-      </button>
     </div>
   );
 }

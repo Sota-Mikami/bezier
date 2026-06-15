@@ -19,6 +19,7 @@ import { UnderlineTab } from "@/components/ui/underline-tab";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
 import { cn } from "@/lib/utils";
 import { PreviewPane } from "./preview-pane";
+import { IssueMap } from "./issue-map";
 import { QaProposal } from "./qa-proposal";
 import type { ImplementSession } from "./implement-session-types";
 
@@ -65,27 +66,9 @@ export function BuildReview({
         <div className={cn("absolute inset-0", tab !== "preview" && "hidden")}>
           <PreviewPane server={session.preview} hasRef={!!session.ref} session={session} />
         </div>
-        {tab === "map" && <MapScaffold />}
-        {tab === "qa" && <QaProposal issue={session.issue} />}
+        {tab === "map" && <IssueMap session={session} />}
+        {tab === "qa" && <QaProposal session={session} />}
       </div>
-    </div>
-  );
-}
-
-function MapScaffold() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <MapIcon className="size-5" />
-      </div>
-      <div className="text-sm font-medium text-foreground">Map — このイシューが触る範囲を俯瞰</div>
-      <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-        範囲（scope）と開始ルート（entry）をイシューに紐づけ、各画面をスクショして
-        Figma のように並べます。scope / entry / スクショは <code className="font-mono">.bezier</code> に
-        保存され、<strong className="font-medium text-foreground">PR には入りません</strong>。
-        <br />
-        撮影 → board 描画は次の段階で実装します。
-      </p>
     </div>
   );
 }

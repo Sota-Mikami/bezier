@@ -49,6 +49,7 @@ import { purgeTrashed } from "@/lib/issue-actions";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { IssueDesign } from "@/components/issues/issue-design";
 import { BuildReview } from "@/components/issues/build-review";
+import { AnnotationModeProvider, AnnotationToggle } from "@/components/issues/annotation-mode";
 import { IssueShare } from "@/components/issues/issue-share";
 import {
   IssueCheckpoints,
@@ -771,6 +772,7 @@ function IssueWorkbench({
   }, [worktreePath, signalChange]);
 
   return (
+    <AnnotationModeProvider>
     <div className="flex h-full flex-col">
       {/* Unified Issue top bar (DEC-058, Lovable-style): title + ▾ menu + state
           on the left, the Spec/Design/Implement SegmentedControl raised to the
@@ -827,6 +829,7 @@ function IssueWorkbench({
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          <AnnotationToggle />
           <IssueCheckpoints session={session} />
           <IssueShare session={session} />
           <IssueShip session={session} />
@@ -899,6 +902,7 @@ function IssueWorkbench({
         )}
       </div>
     </div>
+    </AnnotationModeProvider>
   );
 }
 

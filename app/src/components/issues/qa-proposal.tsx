@@ -11,7 +11,6 @@
 import * as React from "react";
 import { Copy, Check, Plus, X } from "lucide-react";
 
-import { type Issue } from "@/lib/issues";
 import {
   readQa,
   writeQa,
@@ -20,6 +19,10 @@ import {
   type QaStatus,
   type QaPriority,
 } from "@/lib/qa";
+import { AnnotationLayer } from "./design-annotations";
+import { useAnnotationMode } from "./annotation-mode";
+import { qaAnnotationSurface } from "./annotation-surfaces";
+import type { ImplementSession } from "./implement-session-types";
 
 const STATUS_NEXT: Record<QaStatus, QaStatus> = { todo: "pass", pass: "fail", fail: "todo" };
 const STATUS_TSV: Record<QaStatus, string> = { todo: "TODO", pass: "PASS", fail: "FAIL" };
@@ -44,7 +47,9 @@ function uid(items: QaItem[]): string {
   return String(items.reduce((m, i) => Math.max(m, Number(i.id) || 0), 0) + 1);
 }
 
-export function QaProposal({ issue }: { issue: Issue }) {
+export function QaProposal({ session }: { session: ImplementSession }) {
+  const issue = session.issue;
+  const { on: annotating } = useAnnotationMode();
   const [items, setItems] = React.useState<QaItem[] | null>(null);
   const [copied, setCopied] = React.useState<"tsv" | "md" | null>(null);
   const lastSaved = React.useRef("");
@@ -116,7 +121,8 @@ export function QaProposal({ issue }: { issue: Issue }) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="relative min-h-0 flex-1">
+        <div className="h-full overflow-auto">
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 bg-background">
             <tr className="border-b text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -183,6 +189,10 @@ export function QaProposal({ issue }: { issue: Issue }) {
         >
           <Plus className="size-3.5" /> 行を追加
         </button>
+        </div>
+        {annotating && (
+          <AnnotationLayer session={session} surface={qaAnnotationSurface(session)} />
+        )}
       </div>
     </div>
   );

@@ -37,6 +37,7 @@ import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
+import { useAnnotationMode } from "./annotation-mode";
 
 const STATUS_LABEL: Record<PreviewStatus, string> = {
   idle: "未起動",
@@ -150,6 +151,7 @@ export function PreviewPane({
   session?: ImplementSession;
 }) {
   const { status, config, scriptsDev, log, error, url, configLoaded } = server;
+  const { on: annotating } = useAnnotationMode();
 
   const [showSettings, setShowSettings] = React.useState(false);
   const [reloadNonce, setReloadNonce] = React.useState(0);
@@ -417,7 +419,7 @@ export function PreviewPane({
                 {/* Figma-style comment/pen feedback over the live preview
                     (DEC-045/046). The shared AnnotationLayer with a "build"
                     surface → edits the worktree CODE (DEC-056). */}
-                {session && (
+                {session && annotating && (
                   <AnnotationLayer
                     session={session}
                     surface={buildAnnotationSurface(session)}
