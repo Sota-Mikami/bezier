@@ -207,7 +207,7 @@ export const en = {
     moveToTrash: "Move to trash",
     deleteFailedBody: "Failed to delete: {error}",
     deleteFailedTitle: "Delete failed",
-    tabsAriaLabel: "Spec / Design / Implement",
+    tabsAriaLabel: "Design / Prototype",
     tabDesignLabel: "Design",
     tabPrototypeLabel: "Prototype",
     tabDesignTitle: "Design — docs + design options (think & shape) · switch with ⌘⇧[ / ⌘⇧]",
