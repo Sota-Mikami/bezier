@@ -163,6 +163,35 @@ export default function SettingsPage() {
           </Field>
         </Section>
 
+        {/* Protect main (DEC-099) */}
+        <Section
+          title="main の保護"
+          desc="オンにすると Ship の「Merge to main」を隠し、反映は PR 経由のみにします（GitHub のブランチ保護と同じ考え方）。チームで main を直接触らせたくないときに。オフでも、マージ前には必ず確認ダイアログが出ます。"
+        >
+          <Field label="main への直接マージを禁止">
+            <div className="inline-flex rounded-md border p-0.5">
+              {[
+                { v: true, label: "オン" },
+                { v: false, label: "オフ" },
+              ].map((opt) => (
+                <button
+                  key={String(opt.v)}
+                  type="button"
+                  onClick={() => update({ protectMain: opt.v })}
+                  className={cn(
+                    "rounded px-3 py-1 text-xs font-medium transition-colors",
+                    settings.protectMain === opt.v
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </Section>
+
         {/* Preview */}
         <Section title="プレビュー" desc="デザインプレビューの dev サーバーは Issue を離れても保持されます（DEC-040）。その上限と自動停止の設定です。">
           <Field label="同時に保持する数">

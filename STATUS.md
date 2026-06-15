@@ -1,5 +1,65 @@
-<!-- 最終更新: 2026-06-14 / DEC-087 自動チェックポイント+squash・DEC-084 repoチップ・DEC-082 ⌘K・DEC-081 コマンドpack配布 -->
-# Bezier — 現在地（2026-06-14 / ▶ DEC-087 自動CP+squash・DEC-086 §B撤回・DEC-084 repoチップ・DEC-082 ⌘Kパレット・DEC-081 コマンドpack配布）
+<!-- 最終更新: 2026-06-15 / DEC-102 共有失敗修正+3対象+パスワード保護・DEC-101 共有内容UX・DEC-100 共有1動線・DEC-099 Merge確認/main保護 -->
+# Bezier — 現在地
+
+> **新しいチャットへ**: まずこの「オンボーディング・サマリ」(§0〜§5) を読めば、**何のサービスで・何を目指し・今何ができ・次に何を検討しているか**が分かる。詳細な意思決定は `playbook/decisions-log.md`（DEC-###・逆時系列）、憲章は `COMPANY.md`、時系列の作業ログは本ファイルの §6 以降（過去の append ログ）。
+
+---
+
+# 📌 オンボーディング・サマリ（2026-06-15 時点）
+
+## §0. これは何か / 何を目指すか
+- **Bezier = AI-native な PdM+Design ツール**（Tauri 製のデスクトップアプリ）。PdM/Designer/Engineer/QA の境界を溶かし、**一人の「maker」が Spec → Design → Implement → Ship → 共有 を連続で回せる**世界の業界標準を狙う。
+- **作り方**: Personal-first（CEO 自身が日々 dogfood）→ SaaS 化。収益は **open-core**（ローカルの maker ループは無料 / ホスト共有・チーム・SSO は有料）。
+- **moat の核**: Bezier は **ユーザー自身の repo の中で・ユーザー自身の coding agent（claude/codex）に委譲**する。だから各 repo の `CLAUDE.md`/`design.md`/custom skills/MCP/memory が**そのまま土台として継承**される（[[bezier-inherits-repo-conventions-moat]]）。実行がコモディティ化する世界で、Bezier は **maker の意図・判断・決定の記憶**を握る層。
+- **戦略フレーム**: 「固い問題」/ Sierra（既存 SoR の上に立つ SoA）/ Anthropic AI-Native Playbook。適用 = `playbook/strategy/2026-06-04_Bezier-thesis-v1.md`。**現ステージ = Idea→MVP（build≠検証。dogfood で芯を証明中）**。
+
+## §1. プロダクトの形（アーキ）
+- **スタック**: Tauri v2（殻）/ Next.js 15・React 19・Tailwind v4（UI・単一 React web）/ xterm.js + Rust portable-pty（ターミナル）/ Supabase（将来のクラウド SoR）/ Claude API。
+- **エンジンは持たない**: コード生成は**ユーザーの coding agent を pty で起動**して委譲（Bezier は指揮者＝オーケストレータ）。Rust 側は fs + pty + git コマンドのみ。
+- **データモデル**: Issue = フォルダ（ULID）。durable（`issue.md`/`spec.md`/`design/`/`decision.md`）は実コードと同じ **PR 経由で main へ**。ephemeral（`.bezier/` の drafts/status/worktree）は gitignore。変更は **worktree-per-change**。
+- **dev = `cd app && npm run tauri dev`（:3210）/ 日常使い = ビルド済み `.app`（/Applications/Bezier.app）**。
+
+## §2. 今できること（実装済み・dogfood で動く）
+- **メインループ**: 起票 → **Clarify**（着手前の確認3-5問）→ **Spec**（受入基準=完成の定義 DoD）→ **Design**（スタック非依存の自己完結 HTML 別案を発散）→ **Implement**（worktree でユーザーの agent が実装）→ **Verify**（Bezier が証拠を Spec に集約・採点は maker）→ **Ship**。
+- **中央3タブ** = Spec / Design / Implement（=Preview / Diff / Code）。Code は閲覧+軽編集（CodeMirror・⌘F・実 IDE へ逃がす）。
+- **Annotation**（cursor / comment / pen）でプレビュー上に注釈 → Agent への修正依頼に（Design・Preview 共通）。
+- **チェックポイント**（毎ターン前に自動 commit ＋ 手動「いまを保存」＋ロールバック。merge 時 squash）。
+- **Ship**（Sync / Open PR / Merge）。**Merge to main は確認ダイアログ**、設定「main の保護」ON で PR 強制（DEC-099）。
+- **共有**（自分の Vercel に publish）: メニューで**共有する内容を選ぶ（アプリ / デザイン / Spec）→「共有する」→ 1本の URL**（Bezier 生成の1枚ページ＋"Made with Bezier" バッジ）。**パスワード保護**（クライアント側 AES-GCM 暗号化・Hobby 対応）。公開アカウントは repo ごとに使い分け（DEC-098・100・101・102）。
+- **拡張/速度**: `/bezier:*` スラッシュコマンド（UI 管理＋export/import パック）・⌘K コマンドパレット・ショートカット一覧（`?`）・⌘W/⌘Q ガード。
+- **ブランド**: 完全モノクロ・ペンツール由来ロゴ（DEC-048）。LP =「創刊号」雑誌（DEC-049・`site/`・未公開）。
+
+## §3. 直近の状態（本番反映の境目）
+- **dev に反映済み**: 共有 UX 一新（DEC-100/101/102）・**共有失敗の修正**（下記）・Merge 確認/main 保護（DEC-099）・パスワード保護。
+- **🐛 共有失敗の根因と修正（DEC-102）**: `vercel deploy` はデプロイ dir 名をプロジェクト名にし**大文字を拒否** → 共有 dir が**大文字 ULID**で全 share が失敗していた。`bezier-share/<小文字 id>` に修正（CLI で deploy 成功を確認）。
+- **本番 `.app` 反映待ち**: 上記一連（DEC-099〜102 ＋ それ以前の未反映分）。**次の区切りで本番再ビルド＋/Applications コピー**（CEO が dev で確認後）。
+
+## §4. 次に検討する機能（backlog・`playbook/ideas-backlog.md` が正本）
+- **共有体験(§F)**: プリセット（クライアント用/ハンドオフ用・ブランド別）/ 送る前プレビュー / 空の層はトグル非表示 / アクセス制御（ドメイン・viewer セッション）/ env を OAuth Connect で easy×secure / multi-host（Netlify/Coolify）/ **実アプリ自体の保護**（Vercel Pro Deployment Protection か OIDC）。
+- **Review(§B・moat)**: 要素ピックの精密セレクタ等の残。
+- **速度(§C)**: スプリットビュー（2 issue 並べ・並行 Agent）。
+- **品質(§D)**: チェックポイントの設定 on/off・保存ラベル・間 diff。
+- **配布(§E・GTM)**: **skills/agents マーケットプレイス**（"継承される土台"を共有可能に・コンテンツ＝獲得チャネル）。
+- **収益**: open-core（無料=ローカル / 有料=ホスト共有リンク・チーム・SSO）。SaaS 期に。
+
+## §5. 起動 / dogfood
+```
+# 開発（最新コードを試す）
+cd ~/Workspaces/Personal/projects/bezier/app && npm run tauri dev   # → :3210, ネイティブ窓が開く
+# 日常使い（ビルド済み本番アプリ）= /Applications/Bezier.app
+```
+- 共有を試すには `vercel` CLI のログイン（`sota-mikami`・team `bezier`）が必要。tsc/eslint は各変更で green を維持（`cd app && npx tsc --noEmit` / `npx eslint <files>`）。
+
+---
+
+# 📜 §6. 時系列セッションログ（過去・append・新しい順）
+
+## ▶ 2026-06-15 セッション（DEC-099〜102 — 共有 SaaS の磨き込み＋Merge 安全化）
+- **DEC-100 共有を1動線に統合**: 「ジャーニー」名詞を廃止し「**共有する内容を選ぶ→共有する→1URL**」に。`use-publish` の publish を await 可能化（アプリを publish→URL を共有ページに埋め込み）。
+- **DEC-101 共有内容の UX**: 言い換えず**UI の言葉のまま**（アプリ/Spec/デザイン）＋**1行説明**（タブ tooltip 由来）。Checkbox→説明付き行。Principal Designer＋persona 3名レビュー＝`playbook/research/2026-06-14_share-content-ux-review.md`。
+- **DEC-102 失敗修正＋3対象＋パスワード**: 共有失敗の根因（大文字 ULID dir→Vercel 400）を特定し小文字化で修正。対象を**アプリ/デザイン/Spec の3つ**に（「開発の記録」削除）。失敗時に実ログ末尾を UI 表示。**パスワード保護**＝クライアント側 AES-GCM 暗号化（往復を Node で検証・パスワードは非保存）。eye アイコンで表示切替。
+- **DEC-099 Merge 安全化**: Merge to main に**無条件の確認ダイアログ**＋設定「**main の保護**」（ON で PR 強制＝GitHub branch protection 思想・既定 OFF）。
+- 全て **tsc/eslint PASS・dev 反映済み**。**本番 .app 未反映**（次の区切りで）。
 
 ## ▶ 2026-06-14 セッション（DEC-089 — サイドバー UX: +撤去・…を見出しへ・Issue 行に…メニュー）
 - CEO 指摘。repo の hover アクションが `top-1/2`＝group 全体の中央に浮いていた → **`+`撤去・`…`を見出し行（`top-1`）へ**。

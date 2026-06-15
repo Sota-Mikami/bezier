@@ -37,6 +37,87 @@ function githubBranchUrl(
   return `https://github.com/${m[1]}/${m[2]}/tree/${encodeURIComponent(branch)}`;
 }
 
+/** An AES-GCM ciphertext + the params needed to derive the key from a password.
+ *  All binary fields are base64. Used by the password gate (DEC-102). */
+export interface EncryptedBlob {
+  saltB64: string;
+  ivB64: string;
+  dataB64: string;
+  iter: number;
+}
+
+/**
+ * Password gate (DEC-102) — a self-contained page that holds ONLY the ciphertext
+ * of the real share page. On the correct password it derives the key (PBKDF2),
+ * decrypts, and renders the original HTML inside a full-page iframe (so the inner
+ * page's own scripts — marked, the app embed — run normally). Hobby-compatible:
+ * no server, no Vercel Pro. Honest limit: this protects the SHARE PAGE; once
+ * unlocked, the embedded app's (unguessable) URL is revealed — the app itself
+ * isn't separately gated.
+ */
+export function buildGatePage(title: string, b: EncryptedBlob): string {
+  const safeTitle = esc(title || "Untitled");
+  return `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${safeTitle} — Bezier</title>
+<style>
+:root{--bg:#faf9f7;--fg:#1c1a17;--muted:#6b6660;--line:#e7e3dd;--accent:#1c1a17}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+.gate{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{width:100%;max-width:360px;text-align:center}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin-bottom:20px}
+.badge .dot{width:9px;height:9px;border-radius:2px;background:var(--accent)}
+h1{font-size:18px;font-weight:650;margin:0 0 6px}
+.lead{color:var(--muted);margin:0 0 20px;font-size:13px}
+form{display:flex;gap:8px}
+input{flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff;color:var(--fg)}
+button{padding:10px 16px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;font-size:14px;cursor:pointer}
+.err{color:#b4322f;font-size:12px;margin-top:12px;min-height:16px}
+iframe.view{position:fixed;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
+</style>
+</head>
+<body>
+<div class="gate" id="gate">
+  <div class="card">
+    <span class="badge"><span class="dot"></span>Made with Bezier</span>
+    <h1>${safeTitle}</h1>
+    <p class="lead">このページはパスワードで保護されています。</p>
+    <form id="f">
+      <input id="pw" type="password" placeholder="パスワード" autocomplete="current-password" autofocus>
+      <button type="submit">開く</button>
+    </form>
+    <div class="err" id="err"></div>
+  </div>
+</div>
+<script>
+var B={salt:"${b.saltB64}",iv:"${b.ivB64}",data:"${b.dataB64}",iter:${b.iter}};
+function b2u(s){var x=atob(s),a=new Uint8Array(x.length);for(var i=0;i<x.length;i++)a[i]=x.charCodeAt(i);return a;}
+async function tryDecrypt(pw){
+  var enc=new TextEncoder();
+  var bk=await crypto.subtle.importKey("raw",enc.encode(pw),"PBKDF2",false,["deriveKey"]);
+  var key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:b2u(B.salt),iterations:B.iter,hash:"SHA-256"},bk,{name:"AES-GCM",length:256},false,["decrypt"]);
+  var pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:b2u(B.iv)},key,b2u(B.data));
+  return new TextDecoder().decode(pt);
+}
+document.getElementById("f").addEventListener("submit",function(e){
+  e.preventDefault();
+  var err=document.getElementById("err");err.textContent="";
+  var btn=e.target.querySelector("button");btn.disabled=true;
+  tryDecrypt(document.getElementById("pw").value).then(function(html){
+    var f=document.createElement("iframe");f.className="view";f.srcdoc=html;
+    document.body.innerHTML="";document.body.appendChild(f);
+  }).catch(function(){err.textContent="パスワードが違います。";btn.disabled=false;});
+});
+</script>
+</body>
+</html>`;
+}
+
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")

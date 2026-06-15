@@ -42,8 +42,13 @@ export interface PublishController {
   url: string | null;
   /** Streamed build log (tail, capped) — surfaced on building/error. */
   log: string;
-  /** Build + deploy the worktree to Vercel. */
-  publish: () => Promise<void>;
+  /**
+   * Build + deploy the worktree to Vercel. Resolves to the deployment URL when
+   * the deploy finishes (or null on failure / no-op) so callers can chain — the
+   * unified "共有" flow publishes the app, then embeds the resulting URL in the
+   * share page.
+   */
+  publish: () => Promise<string | null>;
   /** Reset (and kill any in-flight deploy). */
   clear: () => Promise<void>;
   /** Named publish accounts (DEC-098). */
@@ -161,6 +166,10 @@ export function usePublish(
   // Re-entry guard: publish() has several awaits before the pty spawns; without
   // this, a rapid double-click spawns two concurrent deploys + leaks listeners.
   const publishingRef = React.useRef(false);
+  // Resolver for the promise returned by publish(), settled when the deploy
+  // exits (so the unified share flow can await the app URL before building the
+  // share page). A new publish() settles any prior wait with null first.
+  const settleRef = React.useRef<((u: string | null) => void) | null>(null);
   const ptyKey = publishPtyKey(previewKey);
 
   // Publish account/connection (DEC-098): which hosting identity this repo
@@ -204,9 +213,23 @@ export function usePublish(
     setLog("");
   }, [detach, ptyKey, previewKey]);
 
-  const publish = React.useCallback(async () => {
-    if (!worktreePath || publishingRef.current) return;
+  const publish = React.useCallback(async (): Promise<string | null> => {
+    if (!worktreePath || publishingRef.current) return null;
     publishingRef.current = true;
+    // Deferred resolved by THIS run's exit handler, so the unified share flow can
+    // `await publish()` and get the URL before building the share page.
+    let settle!: (u: string | null) => void;
+    const done = new Promise<string | null>((r) => {
+      settle = r;
+    });
+    settleRef.current?.(null); // pre-empt any earlier wait
+    settleRef.current = settle;
+    const finish = (u: string | null) => {
+      if (settleRef.current === settle) {
+        settleRef.current = null;
+        settle(u);
+      }
+    };
     try {
       const bin = await resolveCommand("vercel").catch(() => "");
       if (!bin) {
@@ -215,7 +238,8 @@ export function usePublish(
         setLog(
           "vercel CLI が見つかりません。`npm i -g vercel` でインストールし、`vercel login` してください。",
         );
-        return;
+        finish(null);
+        return null;
       }
 
       // Build from the package dir (root or a subdir like app/).
@@ -239,7 +263,8 @@ export function usePublish(
           setLog(
             "[Bezier] .bezier/publish-env.json が無効な JSON です。修正するか削除してください。",
           );
-          return;
+          finish(null);
+          return null;
         }
         if (parsed && typeof parsed === "object") {
           for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
@@ -324,7 +349,8 @@ export function usePublish(
       } catch (e) {
         setStatus("error");
         setLog((l) => l + (e instanceof Error ? e.message : String(e)));
-        return;
+        finish(null);
+        return null;
       }
       idRef.current = id;
 
@@ -356,6 +382,7 @@ export function usePublish(
             setUrl(resolved);
             setStatus("ready");
             savePublishedUrl(previewKey, resolved); // remember across navigation
+            finish(resolved);
           } else {
             // Friendly hints for the most common non-engineer failures.
             if (/Not authenticated|vercel login|No existing credentials/i.test(logAccRef.current)) {
@@ -370,12 +397,14 @@ export function usePublish(
               );
             }
             setStatus("error");
+            finish(null);
           }
         }),
       );
     } finally {
       publishingRef.current = false;
     }
+    return done;
   }, [root, worktreePath, ptyKey, previewKey, detach]);
 
   // Unmount: detach listeners but DON'T kill — let the deploy finish in the

@@ -71,11 +71,13 @@ export interface JourneyLayers {
   impl: boolean;
 }
 
+// Safe default (DEC-101): the "見せる成果物" pair on, the optional/internal pair
+// off — so a first share never accidentally includes the code/commit record.
 export const DEFAULT_JOURNEY_LAYERS: JourneyLayers = {
   app: true,
-  spec: true,
   design: true,
-  impl: true,
+  spec: false,
+  impl: false,
 };
 
 export interface Settings {
@@ -93,6 +95,13 @@ export interface Settings {
   trashTtlDays: number;
   /** Auto-commit a checkpoint before each agent turn (DEC-087/090). */
   autoCheckpoint: boolean;
+  /**
+   * Protect the base branch (DEC-099): when on, the local "Merge to main"
+   * action is hidden — finalizing must go through a PR. Mirrors GitHub branch
+   * protection; a team-grade guardrail. Default off (solo makers merge directly,
+   * always behind a confirm). The merge CONFIRM is unconditional regardless.
+   */
+  protectMain: boolean;
   /** Named publish accounts (DEC-098). */
   publishConnections: PublishConnection[];
   /** Connection id used when a repo has no explicit binding. */
@@ -115,6 +124,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultAgentId: "",
   trashTtlDays: 30,
   autoCheckpoint: true,
+  protectMain: false,
   publishConnections: DEFAULT_CONNECTIONS,
   defaultConnectionId: "default",
   repoConnections: {},
@@ -159,6 +169,10 @@ function coerce(raw: unknown): Settings {
       typeof o.autoCheckpoint === "boolean"
         ? o.autoCheckpoint
         : DEFAULT_SETTINGS.autoCheckpoint,
+    protectMain:
+      typeof o.protectMain === "boolean"
+        ? o.protectMain
+        : DEFAULT_SETTINGS.protectMain,
     publishConnections: coerceConnections(o.publishConnections),
     defaultConnectionId:
       typeof o.defaultConnectionId === "string" && o.defaultConnectionId

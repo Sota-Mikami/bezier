@@ -19,7 +19,7 @@ import {
 } from "@/lib/pty";
 import { readFile, writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
 import { getSettings } from "@/lib/settings";
-import { buildJourneyHtml } from "@/lib/journey";
+import { buildJourneyHtml, buildGatePage, type EncryptedBlob } from "@/lib/journey";
 import { gitRemoteUrl, type Checkpoint } from "@/lib/git";
 import { listVariants, readVariant, readAdoptedDesign } from "@/lib/variants";
 
@@ -29,9 +29,60 @@ export interface JourneyController {
   status: JourneyStatus;
   url: string | null;
   log: string;
-  /** Generate + deploy the journey page → shareable URL. */
-  share: () => Promise<void>;
+  /**
+   * Generate + deploy the share page → shareable URL. `opts.appUrl` overrides
+   * the embedded live-app URL — the unified "共有" flow publishes the app first,
+   * then passes the fresh URL here so the page embeds the just-deployed build.
+   * `opts.password` (DEC-102) gates the page behind client-side encryption.
+   */
+  share: (opts?: {
+    appUrl?: string | null;
+    password?: string | null;
+  }) => Promise<void>;
   clear: () => Promise<void>;
+}
+
+// Base64 a byte array in chunks (avoids String.fromCharCode arg limits on large
+// ciphertext). Used by the password gate (DEC-102).
+function bytesToB64(bytes: Uint8Array): string {
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+
+/** Encrypt the share page (AES-GCM, key = PBKDF2(password)). All in the webview
+ *  via Web Crypto — no plaintext ever leaves the page once gated (DEC-102). */
+async function encryptHtml(html: string, password: string): Promise<EncryptedBlob> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new Error("crypto.subtle unavailable");
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iter = 210_000;
+  const baseKey = await subtle.importKey(
+    "raw",
+    enc.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  const key = await subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"],
+  );
+  const ct = await subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(html));
+  return {
+    saltB64: bytesToB64(salt),
+    ivB64: bytesToB64(iv),
+    dataB64: bytesToB64(new Uint8Array(ct)),
+    iter,
+  };
 }
 
 const VERCEL_RE = /https:\/\/[a-z0-9-]+\.vercel\.app/;
@@ -81,9 +132,17 @@ export function useJourney(
     setLog("");
   }, [detach, ptyKey]);
 
-  const share = React.useCallback(async () => {
+  const share = React.useCallback(
+    async (opts?: { appUrl?: string | null; password?: string | null }) => {
     if (busyRef.current) return;
     busyRef.current = true;
+    // The caller (unified share flow) may hand us a freshly-published app URL;
+    // otherwise fall back to the hook's appUrl.
+    const effectiveAppUrl =
+      opts && Object.prototype.hasOwnProperty.call(opts, "appUrl")
+        ? (opts.appUrl ?? null)
+        : appUrl;
+    const password = opts?.password?.trim() || "";
     try {
       const bin = await resolveCommand("vercel").catch(() => "");
       if (!bin) {
@@ -95,7 +154,10 @@ export function useJourney(
       }
 
       // Per-share section toggles (DEC-094). Only gather what's enabled.
-      const layers = getSettings().journeyLayers;
+      // CEO (DEC-101): the share targets are Spec / Design / Preview only — the
+      // dev record (Diff/code/commit history) is NOT shared. Force `impl` off
+      // here so a stale saved `impl:true` can't leak it.
+      const layers = { ...getSettings().journeyLayers, impl: false };
 
       const specMd =
         layers.spec && issueDir
@@ -124,11 +186,11 @@ export function useJourney(
         ? await gitRemoteUrl(root).catch(() => "")
         : "";
 
-      const html = buildJourneyHtml({
+      let pageHtml = buildJourneyHtml({
         title,
         specMd,
         checkpoints,
-        appUrl,
+        appUrl: effectiveAppUrl,
         layers,
         designHtml,
         prUrl,
@@ -136,9 +198,26 @@ export function useJourney(
         branch,
       });
 
+      // Password protection (DEC-102): encrypt the whole page client-side; the
+      // deployed file holds only ciphertext behind a password gate.
+      if (password) {
+        try {
+          pageHtml = buildGatePage(title, await encryptHtml(pageHtml, password));
+        } catch {
+          setStatus("error");
+          setLog("この環境ではパスワード保護を適用できませんでした。");
+          return;
+        }
+      }
+
       // Write to an app-data dir (NOT the user's repo) so nothing is polluted.
-      const dir = `${await appDataDir()}/bezier-journey/${issueId}`;
-      await writeFile(`${dir}/index.html`, html);
+      // Vercel derives the project name from the deploy dir's BASENAME and
+      // REJECTS uppercase — issue IDs are uppercase ULIDs, so every share failed
+      // (400 "must be lowercase"). Use a lowercase basename. New parent
+      // (`bezier-share`) avoids the case-insensitive-FS clash with the old
+      // uppercase `bezier-journey/<ULID>` dirs.
+      const dir = `${await appDataDir()}/bezier-share/${issueId.toLowerCase()}`;
+      await writeFile(`${dir}/index.html`, pageHtml);
 
       // Account/scope (DEC-098), then drop any stale `.vercel/` so a scope
       // switch re-links cleanly.

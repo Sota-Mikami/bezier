@@ -1232,6 +1232,19 @@ export function useImplementSession(
   // not Commit — is what actually lands on main, so it sets status "merged".
   const mergeToMain = React.useCallback(async () => {
     if (!ref || action) return;
+    // Merging straight into the base branch is hard to undo (and may be pushed),
+    // so always confirm first (DEC-099) — the riskiest finalize action.
+    const countTxt =
+      ahead != null && ahead > 0 ? `${ahead} 件のコミットを` : "この worktree の変更を";
+    const ok = await confirmDialog(
+      `${countTxt} ${baseBranch} に直接マージします。${baseBranch} がすぐ更新され、取り消しは簡単ではありません。続けますか？`,
+      {
+        title: `${baseBranch} へマージ`,
+        okLabel: "マージする",
+        cancelLabel: "やめる",
+      },
+    );
+    if (!ok) return;
     setAction("merge");
     setError(null);
     setInfo(null);
@@ -1254,7 +1267,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, root, issue, onStatusChange, loadBehind, logEvent]);
+  }, [ref, action, root, issue, onStatusChange, loadBehind, logEvent, ahead, baseBranch]);
 
   // Open-PR finalize (DEC-015, the team-safe default): build the PR body (spec +
   // activity, so the "why" rides with the PR — DEC-008), push the branch, then
