@@ -78,6 +78,7 @@ import {
   type AgentState,
 } from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
+import { tt } from "@/lib/i18n";
 import type {
   ImplementSession,
   SessionAction,
@@ -568,9 +569,7 @@ export function useImplementSession(
     if (startedAt == null || !r) return; // last launch wasn't a resume
     const quick = Date.now() - startedAt < 6000;
     if (quick && code !== 0) {
-      setInfo(
-        "前回のセッションを再開できなかったため、新規セッションを開始しました。",
-      );
+      setInfo(tt("session.resumeFallback"));
       void seedLaunchRef.current(r.path);
     }
   }, []);
@@ -594,7 +593,7 @@ export function useImplementSession(
   const handleImplement = React.useCallback(async () => {
     if (!gitRepo || !issue.slots.spec || action) return;
     if (!selectedAgent?.available) {
-      setError("利用可能なエージェント (claude / codex) が見つかりません。");
+      setError(tt("session.noAgent"));
       return;
     }
     setAction("implement");
@@ -645,7 +644,7 @@ export function useImplementSession(
       const msg = message.trim();
       if (!gitRepo || action || !msg) return;
       if (!selectedAgent?.available) {
-        setError("利用可能なエージェント (claude / codex) が見つかりません。");
+        setError(tt("session.noAgent"));
         return;
       }
       setAction("implement");
@@ -693,7 +692,7 @@ export function useImplementSession(
   const handleRerun = React.useCallback(async () => {
     if (!ref || action) return;
     if (!selectedAgent?.available) {
-      setError("利用可能なエージェント (claude / codex) が見つかりません。");
+      setError(tt("session.noAgent"));
       return;
     }
     setAction("rerun");
@@ -728,7 +727,7 @@ export function useImplementSession(
     async (ids: string[], context: string) => {
       if (action || ids.length === 0) return;
       if (!selectedAgent?.available) {
-        setError("利用可能なエージェント (claude / codex) が見つかりません。");
+        setError(tt("session.noAgent"));
         return;
       }
       // Pre-Build: run in the issue folder. Post-Build: run in the worktree and
@@ -767,7 +766,7 @@ export function useImplementSession(
     async (id: string) => {
       if (action) return;
       if (!selectedAgent?.available) {
-        setError("利用可能なエージェント (claude / codex) が見つかりません。");
+        setError(tt("session.noAgent"));
         return;
       }
       const pickPrompt = [
@@ -795,7 +794,7 @@ export function useImplementSession(
         } else {
           // Promote: pre-Build design → create the worktree, then build.
           if (!gitRepo) {
-            setError("Implement には git リポジトリが必要です。");
+            setError(tt("session.gitRequired"));
             setAction(null);
             return;
           }
@@ -839,9 +838,7 @@ export function useImplementSession(
   const reviseDesignPattern = React.useCallback(
     async (promptText: string, note: string) => {
       if (!selectedAgent?.available) {
-        throw new Error(
-          "利用可能なエージェント (claude / codex) が見つかりません。",
-        );
+        throw new Error(tt("session.noAgent"));
       }
       const cwd = ref ? workDir(ref.path) : issue.dir;
       await ptyKillKey(issue.id).catch(() => {});
@@ -858,7 +855,7 @@ export function useImplementSession(
   const handleResume = React.useCallback(async () => {
     if (!ref || action) return;
     if (!selectedAgent?.available) {
-      setError("利用可能なエージェント (claude / codex) が見つかりません。");
+      setError(tt("session.noAgent"));
       return;
     }
     setError(null);
@@ -933,14 +930,14 @@ export function useImplementSession(
       setInfo(null);
       try {
         const sha = await gitCommitAll(ref.path, msg);
-        setInfo(`チェックポイントを作成: ${sha.slice(0, 9)}`);
+        setInfo(tt("session.checkpointCreated", { sha: sha.slice(0, 9) }));
         void logEvent("checkpoint", msg);
         await refreshDiff(ref.path);
         await loadBehind(ref.path);
         await loadCheckpoints(ref.path);
       } catch (e) {
         const m = String(e);
-        setError(/nothing to commit/.test(m) ? "保存する変更がありません。" : errMsg(e));
+        setError(/nothing to commit/.test(m) ? tt("session.nothingToSave") : errMsg(e));
       } finally {
         setAction(null);
       }
@@ -989,8 +986,12 @@ export function useImplementSession(
     async (sha: string) => {
       if (!ref || action) return;
       const ok = await confirmDialog(
-        "このチェックポイントに戻します。これより後の変更（未コミット分を含む）は失われます（git の reflog から復元は可能）。",
-        { title: "チェックポイントに戻す", okLabel: "戻す", cancelLabel: "やめる" },
+        tt("session.rollbackConfirm.message"),
+        {
+          title: tt("session.rollbackConfirm.title"),
+          okLabel: tt("session.rollbackConfirm.ok"),
+          cancelLabel: tt("session.cancelStop"),
+        },
       );
       if (!ok) return;
       setAction("rollback");
@@ -998,7 +999,7 @@ export function useImplementSession(
       setInfo(null);
       try {
         await gitResetHard(ref.path, sha);
-        setInfo(`チェックポイント ${sha.slice(0, 9)} に戻しました。`);
+        setInfo(tt("session.rolledBack", { sha: sha.slice(0, 9) }));
         void logEvent("rollback", sha.slice(0, 9));
         await refreshDiff(ref.path);
         await loadBehind(ref.path);
@@ -1015,8 +1016,12 @@ export function useImplementSession(
   const handleDiscard = React.useCallback(async () => {
     if (!ref || action) return;
     const ok = await confirmDialog(
-      "worktree と branch を破棄し、Issue を open に戻します。",
-      { title: "変更を破棄", okLabel: "破棄", cancelLabel: "キャンセル" },
+      tt("session.discardConfirm.message"),
+      {
+        title: tt("session.discardConfirm.title"),
+        okLabel: tt("session.discardConfirm.ok"),
+        cancelLabel: tt("common.cancel"),
+      },
     );
     if (!ok) return;
     setAction("discard");
@@ -1071,13 +1076,11 @@ export function useImplementSession(
       await refreshDiff(ref.path);
       await loadBehind(ref.path);
       if (res.ok) {
-        setInfo("main を取り込みました（同期済）。");
+        setInfo(tt("session.syncDone"));
         void logEvent("sync");
       } else {
         setSyncConflicts(res.conflicts);
-        setError(
-          `衝突しました（${res.conflicts.length} ファイル）。右のターミナルで解決して commit してください。`,
-        );
+        setError(tt("session.syncConflict", { count: res.conflicts.length }));
         void logEvent("sync", `衝突 ${res.conflicts.length} ファイル`);
       }
     } catch (e) {
@@ -1112,13 +1115,15 @@ export function useImplementSession(
     // Merging straight into the base branch is hard to undo (and may be pushed),
     // so always confirm first (DEC-099) — the riskiest finalize action.
     const countTxt =
-      ahead != null && ahead > 0 ? `${ahead} 件のコミットを` : "この worktree の変更を";
+      ahead != null && ahead > 0
+        ? tt("session.mergeConfirm.countCommits", { count: ahead })
+        : tt("session.mergeConfirm.countChanges");
     const ok = await confirmDialog(
-      `${countTxt} ${baseBranch} に直接マージします。${baseBranch} がすぐ更新され、取り消しは簡単ではありません。続けますか？`,
+      tt("session.mergeConfirm.message", { what: countTxt, base: baseBranch }),
       {
-        title: `${baseBranch} へマージ`,
-        okLabel: "マージする",
-        cancelLabel: "やめる",
+        title: tt("session.mergeConfirm.title", { base: baseBranch }),
+        okLabel: tt("session.mergeConfirm.ok"),
+        cancelLabel: tt("session.cancelStop"),
       },
     );
     if (!ok) return;
@@ -1136,7 +1141,7 @@ export function useImplementSession(
       const first = out.split("\n").find((l) => l.trim().length > 0) ?? "merged";
       await updateIssueMeta(root, issue, { status: "merged" });
       onStatusChange("merged");
-      setInfo(`main に merge しました: ${first}`);
+      setInfo(tt("session.mergedToMain", { first }));
       void logEvent("merge");
       await loadBehind(ref.path);
     } catch (e) {
@@ -1165,7 +1170,7 @@ export function useImplementSession(
       await writeWorktreeRef(issue, nextRef);
       setRef(nextRef);
       setPrUrl(url);
-      setInfo(`PR を作成しました: ${url}`);
+      setInfo(tt("session.prCreated", { url }));
       void logEvent("pr_opened", url);
       // The branch was pushed (and possibly WIP-committed); refresh the local view.
       await refreshDiff(ref.path);
@@ -1184,9 +1189,9 @@ export function useImplementSession(
   // The screenshot lives under issue.dir, already readable via `--add-dir`.
   const sendDesignFeedback = React.useCallback(
     async (promptText: string, note?: string) => {
-      if (!ref) throw new Error("worktree がありません。先に Implement してください。");
+      if (!ref) throw new Error(tt("session.noWorktree"));
       if (!selectedAgent?.available) {
-        throw new Error("利用可能なエージェント (claude / codex) が見つかりません。");
+        throw new Error(tt("session.noAgent"));
       }
       await ptyKillKey(issue.id).catch(() => {});
       launchAgent(selectedAgent, workDir(ref.path), {

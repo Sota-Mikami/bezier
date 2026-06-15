@@ -18,6 +18,8 @@
 
 import * as React from "react";
 
+import { tt } from "@/lib/i18n";
+
 export function AppCloseGuard() {
   React.useEffect(() => {
     let unlistenClose: (() => void) | undefined;
@@ -37,11 +39,11 @@ export function AppCloseGuard() {
           if (confirming) return false;
           confirming = true;
           try {
-            return await confirm("Bezier を終了しますか？", {
-              title: "終了の確認",
+            return await confirm(tt("closeGuard.quitMessage"), {
+              title: tt("closeGuard.quitTitle"),
               kind: "warning",
-              okLabel: "終了",
-              cancelLabel: "やめる",
+              okLabel: tt("closeGuard.quitConfirm"),
+              cancelLabel: tt("closeGuard.quitCancel"),
             });
           } finally {
             confirming = false;

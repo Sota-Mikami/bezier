@@ -58,7 +58,7 @@ import {
 } from "@/components/issues/issue-workflow-actions";
 import { useImplementSession } from "@/components/issues/use-implement-session";
 import type { ImplementSession } from "@/components/issues/implement-session-types";
-import { useT } from "@/lib/i18n";
+import { useT, tt, type MsgKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { gitStatus } from "@/lib/git";
 import { collectEvidence, syncVerifyBlock } from "@/lib/verify";
@@ -96,22 +96,22 @@ function fmtDateTime(iso: string): string {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// JA labels for the structured thread events (DEC-012 chat-first loop).
-const THREAD_EVENT_LABEL: Record<ThreadEventType, string> = {
-  implement: "Implement を開始",
-  rerun: "再 Implement",
-  resume: "セッションを再開",
-  sync: "main を同期",
-  accept: "Commit（branch に確定）",
-  merge: "main に merge",
-  pr_opened: "PR を作成",
-  discard: "破棄",
-  design_feedback: "デザインFB を送信",
-  clarify: "Clarify（確認）",
-  verify: "Verify（受入基準を採点）",
-  variant: "Design 別案 / 採用",
-  checkpoint: "チェックポイントを保存",
-  rollback: "チェックポイントに戻す",
+// i18n keys for the structured thread events (DEC-012 chat-first loop).
+const THREAD_EVENT_KEY: Record<ThreadEventType, MsgKey> = {
+  implement: "issuesPage.threadEvent.implement",
+  rerun: "issuesPage.threadEvent.rerun",
+  resume: "issuesPage.threadEvent.resume",
+  sync: "issuesPage.threadEvent.sync",
+  accept: "issuesPage.threadEvent.accept",
+  merge: "issuesPage.threadEvent.merge",
+  pr_opened: "issuesPage.threadEvent.pr_opened",
+  discard: "issuesPage.threadEvent.discard",
+  design_feedback: "issuesPage.threadEvent.design_feedback",
+  clarify: "issuesPage.threadEvent.clarify",
+  verify: "issuesPage.threadEvent.verify",
+  variant: "issuesPage.threadEvent.variant",
+  checkpoint: "issuesPage.threadEvent.checkpoint",
+  rollback: "issuesPage.threadEvent.rollback",
 };
 
 // ---------------------------------------------------------------------------
@@ -119,11 +119,12 @@ const THREAD_EVENT_LABEL: Record<ThreadEventType, string> = {
 // ---------------------------------------------------------------------------
 
 export default function IssuesPage() {
+  const t = useT();
   return (
     <Suspense
       fallback={
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          Loading…
+          {t("common.loading")}
         </div>
       }
     >
@@ -133,6 +134,7 @@ export default function IssuesPage() {
 }
 
 function IssuesView() {
+  const t = useT();
   const { root, hydrated, openRoot } = useWorkspaceRoot();
   const sp = useSearchParams();
   const selectedId = sp.get("issue");
@@ -141,7 +143,7 @@ function IssuesView() {
   if (!hydrated) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        {t("common.loading")}
       </div>
     );
   }
@@ -162,18 +164,20 @@ function IssuesView() {
 // Shown when a repo is open but no issue is selected — the issue list lives in
 // the left sidebar now (DEC-021), so the main pane just invites picking / New.
 function EmptyLanding() {
+  const t = useT();
   return (
     <div className="flex h-full flex-col">
-      <Header title="Issues" />
+      <Header title={t("issuesPage.headerIssues")} />
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
         <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
           <CircleDot className="size-5 text-muted-foreground" />
         </div>
         <div className="space-y-1">
-          <div className="text-base font-medium">Issue を選択</div>
+          <div className="text-base font-medium">{t("issuesPage.selectIssueTitle")}</div>
           <p className="max-w-sm text-sm text-muted-foreground">
-            左のサイドバーから Issue を選ぶか、{" "}
-            <span className="font-medium">New</span> で新しい Issue を作成してください。
+            {t("issuesPage.selectIssueDescPrefix")}{" "}
+            <span className="font-medium">New</span>
+            {t("issuesPage.selectIssueDescSuffix")}
           </p>
         </div>
       </div>
@@ -184,6 +188,7 @@ function EmptyLanding() {
 // Read-only preview of a trashed issue (DEC-030): its spec / body / activity log
 // without restoring or launching a worktree, with Restore / 完全に削除 actions.
 function TrashPreview({ root, id }: { root: string; id: string }) {
+  const t = useT();
   const router = useRouter();
   const [detail, setDetail] = React.useState<TrashDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -214,8 +219,10 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
       router.push(`/issues?issue=${encodeURIComponent(detail.meta.id)}`);
     } catch (e) {
       await messageDialog(
-        `復元に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-        { title: "復元エラー" },
+        tt("issuesPage.restoreFailedBody", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+        { title: tt("issuesPage.restoreFailedTitle") },
       );
       setBusy(false);
     }
@@ -224,8 +231,14 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
   const onPurge = React.useCallback(async () => {
     if (!detail || busy) return;
     const ok = await confirmDialog(
-      `「${detail.meta.title || "(無題)"}」を完全に削除します。worktree / branch も削除され、元に戻せません。`,
-      { title: "完全に削除", okLabel: "完全に削除", cancelLabel: "キャンセル" },
+      tt("issuesPage.purgeConfirmBody", {
+        title: detail.meta.title || tt("common.untitled"),
+      }),
+      {
+        title: tt("issuesPage.deletePermanently"),
+        okLabel: tt("issuesPage.deletePermanently"),
+        cancelLabel: tt("common.cancel"),
+      },
     );
     if (!ok) return;
     setBusy(true);
@@ -234,8 +247,10 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
       router.push("/issues");
     } catch (e) {
       await messageDialog(
-        `完全削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-        { title: "完全削除エラー" },
+        tt("issuesPage.purgeFailedBody", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+        { title: tt("issuesPage.purgeFailedTitle") },
       );
       setBusy(false);
     }
@@ -246,10 +261,10 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
         <Trash2 className="size-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {detail?.meta.title || (loading ? "読み込み中…" : "(無題)")}
+          {detail?.meta.title || (loading ? t("common.loading") : t("common.untitled"))}
         </span>
         <span className="shrink-0 rounded-md border px-2 py-1 text-xs text-muted-foreground">
-          ゴミ箱
+          {t("issuesPage.trashBadge")}
         </span>
         {detail && (
           <div className="flex shrink-0 items-center gap-1.5">
@@ -261,7 +276,7 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
               onClick={() => void onRestore()}
             >
               <RotateCcw className="size-3.5" />
-              復元
+              {t("issuesPage.restore")}
             </Button>
             <Button
               size="sm"
@@ -271,7 +286,7 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
               onClick={() => void onPurge()}
             >
               <Trash2 className="size-3.5" />
-              完全に削除
+              {t("issuesPage.deletePermanently")}
             </Button>
           </div>
         )}
@@ -280,13 +295,13 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
       {loading ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
-          読み込み中…
+          {t("common.loading")}
         </div>
       ) : !detail ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <div className="text-base font-medium">見つかりません</div>
+          <div className="text-base font-medium">{t("issuesPage.notFoundTitle")}</div>
           <p className="max-w-sm text-sm text-muted-foreground">
-            このゴミ箱項目は既に完全削除されたか、移動された可能性があります。
+            {t("issuesPage.trashNotFoundDesc")}
           </p>
           <Button
             render={<Link href="/issues" />}
@@ -295,7 +310,7 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
             className="gap-2"
           >
             <ArrowLeft className="size-4" />
-            戻る
+            {t("issuesPage.back")}
           </Button>
         </div>
       ) : (
@@ -303,7 +318,7 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
           <div className="mx-auto max-w-3xl space-y-6 p-6">
             {/* Meta */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              <span>削除: {fmtDateTime(detail.meta.deletedAt)}</span>
+              <span>{t("issuesPage.deletedAt", { date: fmtDateTime(detail.meta.deletedAt) })}</span>
               {detail.meta.branch && (
                 <span className="flex items-center gap-1 font-mono">
                   <GitBranch className="size-3" />
@@ -341,14 +356,14 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
                 Spec
               </h3>
               <div className="whitespace-pre-wrap rounded-lg border bg-card p-3 font-mono text-xs leading-relaxed">
-                {detail.spec ?? "（Spec はありません）"}
+                {detail.spec ?? t("issuesPage.noSpec")}
               </div>
             </section>
 
             {detail.thread.length > 0 && (
               <section className="space-y-1.5">
                 <h3 className="text-xs font-semibold text-muted-foreground">
-                  活動ログ
+                  {t("issuesPage.activityLog")}
                 </h3>
                 <div className="rounded-lg border bg-card p-3">
                   <ThreadTimeline events={detail.thread} />
@@ -363,24 +378,25 @@ function TrashPreview({ root, id }: { root: string; id: string }) {
 }
 
 function NoFolder({ onOpen }: { onOpen: () => Promise<string | null> }) {
+  const t = useT();
   return (
     <div className="flex h-full flex-col">
-      <Header title="Issues" />
+      <Header title={t("issuesPage.headerIssues")} />
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
         <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
           <FolderOpen className="size-5 text-muted-foreground" />
         </div>
         <div className="space-y-1">
-          <div className="text-base font-medium">フォルダを開く</div>
+          <div className="text-base font-medium">{t("issuesPage.openFolder")}</div>
           <p className="max-w-sm text-sm text-muted-foreground">
-            Issues は開いたフォルダの{" "}
-            <span className="font-mono">.bezier/</span> に保存されます。対象の
-            repo フォルダを選んでください。
+            {t("issuesPage.openFolderDescPrefix")}{" "}
+            <span className="font-mono">.bezier/</span>
+            {t("issuesPage.openFolderDescSuffix")}
           </p>
         </div>
         <Button className="gap-2" onClick={() => void onOpen()}>
           <FolderOpen className="size-4" />
-          フォルダを開く
+          {t("issuesPage.openFolder")}
         </Button>
       </div>
     </div>
@@ -412,6 +428,7 @@ function Header({
 type DetailTab = "design" | "prototype";
 
 function IssueDetail({ root, id }: { root: string; id: string }) {
+  const t = useT();
   const [issue, setIssue] = React.useState<Issue | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [notFound, setNotFound] = React.useState(false);
@@ -456,10 +473,10 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
   if (loading) {
     return (
       <div className="flex h-full flex-col">
-        <Header title="読み込み中…" />
+        <Header title={t("common.loading")} />
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
-          Loading…
+          {t("common.loading")}
         </div>
       </div>
     );
@@ -468,12 +485,12 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
   if (notFound || !issue) {
     return (
       <div className="flex h-full flex-col">
-        <Header title="Issue" />
+        <Header title={t("issuesPage.headerIssue")} />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <div className="text-base font-medium">Issue が見つかりません</div>
+          <div className="text-base font-medium">{t("issuesPage.issueNotFound")}</div>
           <Button render={<Link href="/issues" />} nativeButton={false} variant="outline" className="gap-2">
             <ArrowLeft className="size-4" />
-            一覧へ戻る
+            {t("issuesPage.backToList")}
           </Button>
         </div>
       </div>
@@ -506,6 +523,7 @@ function IssueWorkbench({
   issue: Issue;
   setIssue: React.Dispatch<React.SetStateAction<Issue | null>>;
 }) {
+  const t = useT();
   const router = useRouter();
   const [tab, setTab] = React.useState<DetailTab>("design");
   const [creatingSpec, setCreatingSpec] = React.useState(false);
@@ -718,8 +736,15 @@ function IssueWorkbench({
   // workbench tears the terminal down).
   const handleDeleteIssue = React.useCallback(async () => {
     const ok = await confirmDialog(
-      `Issue「${issue.title}」をゴミ箱に移動します。${trashTtlDays()}日後に完全削除されます（それまでは復元できます）。`,
-      { title: "ゴミ箱へ移動", okLabel: "ゴミ箱へ移動", cancelLabel: "キャンセル" },
+      tt("issuesPage.deleteIssueConfirmBody", {
+        title: issue.title,
+        days: trashTtlDays(),
+      }),
+      {
+        title: tt("issuesPage.moveToTrash"),
+        okLabel: tt("issuesPage.moveToTrash"),
+        cancelLabel: tt("common.cancel"),
+      },
     );
     if (!ok) return;
     try {
@@ -728,8 +753,10 @@ function IssueWorkbench({
       router.push("/issues");
     } catch (e) {
       await messageDialog(
-        `削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-        { title: "削除エラー" },
+        tt("issuesPage.deleteFailedBody", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+        { title: tt("issuesPage.deleteFailedTitle") },
       );
     }
   }, [issue, root, session, router]);
@@ -809,21 +836,21 @@ function IssueWorkbench({
             <SegmentedControl
               value={tab}
               onChange={handleManualTab}
-              ariaLabel="Spec / Design / Implement"
+              ariaLabel={t("issuesPage.tabsAriaLabel")}
               options={[
                 {
                   value: "design",
                   icon: <LayoutGrid className="size-3.5" />,
-                  label: "Design",
+                  label: t("issuesPage.tabDesignLabel"),
                   trailing: designPulse ? <UpdatingPulse /> : undefined,
-                  title: "Design — ドキュメント＋デザイン案（考える・形にする） ・ ⌘⇧[ / ⌘⇧] で切替",
+                  title: t("issuesPage.tabDesignTitle"),
                 },
                 {
                   value: "prototype",
                   icon: <MonitorPlay className="size-3.5" />,
-                  label: "Prototype",
+                  label: t("issuesPage.tabPrototypeLabel"),
                   trailing: prototypePulse ? <UpdatingPulse /> : undefined,
-                  title: "Prototype — Preview / Map / QA（実物の DS で動く） ・ ⌘⇧[ / ⌘⇧] で切替",
+                  title: t("issuesPage.tabPrototypeTitle"),
                 },
               ]}
             />
@@ -843,10 +870,10 @@ function IssueWorkbench({
         <SegmentedControl
           value={tab}
           onChange={handleManualTab}
-          ariaLabel="Spec / Design / Implement"
+          ariaLabel={t("issuesPage.tabsAriaLabel")}
           options={[
-            { value: "design", icon: <LayoutGrid className="size-3.5" />, label: "Design", trailing: designPulse ? <UpdatingPulse /> : undefined },
-            { value: "prototype", icon: <MonitorPlay className="size-3.5" />, label: "Prototype", trailing: prototypePulse ? <UpdatingPulse /> : undefined },
+            { value: "design", icon: <LayoutGrid className="size-3.5" />, label: t("issuesPage.tabDesignLabel"), trailing: designPulse ? <UpdatingPulse /> : undefined },
+            { value: "prototype", icon: <MonitorPlay className="size-3.5" />, label: t("issuesPage.tabPrototypeLabel"), trailing: prototypePulse ? <UpdatingPulse /> : undefined },
           ]}
         />
       </div>
@@ -872,7 +899,7 @@ function IssueWorkbench({
           aria-orientation="vertical"
           onPointerDown={onResizeStart}
           onDoubleClick={() => setChatWidth(460)}
-          title="ドラッグで幅を調整（ダブルクリックでリセット）"
+          title={t("issuesPage.resizeHandleTitle")}
           className="group/resize hidden w-1.5 shrink-0 cursor-col-resize items-stretch md:flex"
         >
           <div className="mx-auto w-px bg-border transition-colors group-hover/resize:w-0.5 group-hover/resize:bg-primary/50" />
@@ -1043,10 +1070,11 @@ function RestoreList({
 // (DEC-012 §7). Subtle Notion/Figma feel: a soft pinging ring + a solid accent
 // core, in the app's primary token. Decorative only (the pulse is advisory).
 function UpdatingPulse() {
+  const t = useT();
   return (
     <span
       className="relative ml-0.5 flex size-1.5"
-      title="更新中"
+      title={t("issuesPage.updating")}
       aria-hidden="true"
     >
       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60 motion-reduce:animate-none" />
@@ -1059,6 +1087,7 @@ function UpdatingPulse() {
 // first, below 起票). Each event = a small JA label + a compact timestamp; an
 // optional note (commit sha / conflict count) sits underneath.
 function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
+  const t = useT();
   // Newest-first: render a reversed copy (the stored thread is chronological).
   const ordered = [...events].reverse();
   return (
@@ -1072,7 +1101,7 @@ function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-medium text-foreground/80">
-                {THREAD_EVENT_LABEL[e.type] ?? e.type}
+                {THREAD_EVENT_KEY[e.type] ? t(THREAD_EVENT_KEY[e.type]) : e.type}
               </span>
               <span className="shrink-0 font-mono text-[10px]">
                 {fmtDateTime(e.at)}
@@ -1117,7 +1146,7 @@ function TitleEditor({
         }
       }}
       className="w-full truncate rounded-md bg-transparent px-1.5 py-1 text-sm font-medium outline-none hover:bg-muted focus:bg-muted"
-      aria-label="Issue title"
+      aria-label={tt("issuesPage.titleEditorAria")}
     />
   );
 }

@@ -20,6 +20,7 @@ import {
   type Variant,
 } from "@/lib/variants";
 import { removePath, confirmDialog } from "@/lib/ipc";
+import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
 import { Button } from "@/components/ui/button";
@@ -37,12 +38,12 @@ type Item =
 
 const itemKey = (i: Item) => i.key;
 
-const ADD_DOCS: { type: string; label: string }[] = [
-  { type: "decision", label: "決定" },
-  { type: "qa", label: "QA" },
-  { type: "handoff", label: "共有" },
-  { type: "note", label: "空のメモ" },
-];
+const ADD_DOCS = [
+  { type: "decision", labelKey: "design.addDecision" },
+  { type: "qa", labelKey: "design.addQa" },
+  { type: "handoff", labelKey: "design.addHandoff" },
+  { type: "note", labelKey: "design.addNote" },
+] as const;
 
 export function IssueDesign({
   session,
@@ -52,6 +53,7 @@ export function IssueDesign({
   /** Pulse/auto-switch the Design area when the agent rewrites a doc or adds a design. */
   onChange?: () => void;
 }) {
+  const t = useT();
   const issue = session.issue;
   const { on: annotating } = useAnnotationMode();
   const [docs, setDocs] = React.useState<IssueDoc[]>([]);
@@ -102,7 +104,7 @@ export function IssueDesign({
         (v): Item => ({
           kind: "variant",
           key: v.path,
-          label: v.title || v.slug || `案 ${v.id}`,
+          label: v.title || v.slug || tt("design.variantFallback", { id: v.id }),
           deletable: true,
           variant: v,
         }),
@@ -162,10 +164,10 @@ export function IssueDesign({
 
   const remove = async (it: Item) => {
     if (!it.deletable) return;
-    const ok = await confirmDialog(`「${it.label}」を削除しますか？`, {
-      title: "削除の確認",
-      okLabel: "削除",
-      cancelLabel: "やめる",
+    const ok = await confirmDialog(t("design.deleteConfirm", { label: it.label }), {
+      title: t("design.deleteConfirmTitle"),
+      okLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
     });
     if (!ok) return;
     await removePath(it.key).catch(() => {});
@@ -175,7 +177,7 @@ export function IssueDesign({
   if (ordered.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-        準備中…
+        {t("design.preparing")}
       </div>
     );
   }
@@ -190,7 +192,7 @@ export function IssueDesign({
               key={it.key}
               active={it.key === selectedItem?.key}
               onClick={() => setSelected(it.key)}
-              title={it.kind === "variant" ? `${it.label}（デザイン案）` : it.label}
+              title={it.kind === "variant" ? t("design.variantTabTitle", { label: it.label }) : it.label}
               className="max-w-[170px]"
               dragProps={dragProps(it.key)}
             >
@@ -206,7 +208,7 @@ export function IssueDesign({
                     e.stopPropagation();
                     void remove(it);
                   }}
-                  aria-label="削除"
+                  aria-label={t("common.delete")}
                   className="-mr-1 hidden size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground group-hover/tab:flex"
                 >
                   <X className="size-3" />
@@ -218,8 +220,8 @@ export function IssueDesign({
             <button
               type="button"
               onClick={() => setAdding((v) => !v)}
-              title="追加（通常は会話で agent が作成）"
-              aria-label="追加"
+              title={t("design.addTooltip")}
+              aria-label={t("common.add")}
               className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               {session.action === "variant" ? (
@@ -230,14 +232,14 @@ export function IssueDesign({
             </button>
             {adding && (
               <div className="absolute top-8 left-0 z-20 w-40 overflow-hidden rounded-md border bg-background py-1 shadow-lg">
-                {ADD_DOCS.map((t) => (
+                {ADD_DOCS.map((d) => (
                   <button
-                    key={t.type}
+                    key={d.type}
                     type="button"
-                    onClick={() => void addDoc(t.type)}
+                    onClick={() => void addDoc(d.type)}
                     className="block w-full px-2.5 py-1 text-left text-xs hover:bg-muted"
                   >
-                    {t.label}
+                    {t(d.labelKey)}
                   </button>
                 ))}
                 <div className="my-1 border-t" />
@@ -247,7 +249,7 @@ export function IssueDesign({
                   disabled={!session.canGenerateVariant}
                   className="block w-full px-2.5 py-1 text-left text-xs hover:bg-muted disabled:opacity-50"
                 >
-                  デザイン案を生成
+                  {t("design.generateDesign")}
                 </button>
               </div>
             )}
@@ -286,14 +288,14 @@ export function IssueDesign({
                 className="h-6 gap-1.5 px-2.5 text-[11px]"
                 disabled={!!session.action}
                 onClick={() => void session.handlePickVariant(selectedItem.variant.id)}
-                title="この案を採用して Prototype（実物の DS で実装）へ"
+                title={t("design.adoptTooltip")}
               >
                 {session.action === "variant" ? (
                   <Loader2 className="size-3 animate-spin" />
                 ) : (
                   <ArrowRightCircle className="size-3" />
                 )}
-                {adopted === selectedItem.variant.id ? "再 Implement" : "この案で確定"}
+                {adopted === selectedItem.variant.id ? t("design.reImplement") : t("design.adoptThis")}
               </Button>
             </div>
             <div className="relative min-h-0 flex-1 bg-background">

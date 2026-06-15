@@ -10,6 +10,7 @@ import { Plus, X, Play, Crosshair, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import { readScope, writeScope, normalizeRoute, type Scope } from "@/lib/scope";
 import { AnnotationLayer } from "./design-annotations";
 import { useAnnotationMode } from "./annotation-mode";
@@ -23,6 +24,7 @@ const SCALE = CARD_W / BASE_W;
 const CARD_H = Math.round(BASE_H * SCALE);
 
 export function IssueMap({ session }: { session: ImplementSession }) {
+  const t = useT();
   const issue = session.issue;
   const preview = session.preview;
   const { on: annotating } = useAnnotationMode();
@@ -66,7 +68,7 @@ export function IssueMap({ session }: { session: ImplementSession }) {
   if (!scope) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Map を読み込み中…
+        {t("map.loadingMap")}
       </div>
     );
   }
@@ -89,7 +91,7 @@ export function IssueMap({ session }: { session: ImplementSession }) {
     <div className="flex h-full min-h-0 flex-col">
       {/* Scope chips — editable any time (even before Preview starts). */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-3 py-2">
-        <span className="mr-1 text-[11px] text-muted-foreground">範囲</span>
+        <span className="mr-1 text-[11px] text-muted-foreground">{t("map.scopeLabel")}</span>
         {scope.routes.map((r) => (
           <span
             key={r}
@@ -101,7 +103,7 @@ export function IssueMap({ session }: { session: ImplementSession }) {
             <button
               type="button"
               onClick={() => setEntry(r)}
-              title={r === scope.entry ? "開始ルート" : "開始ルートに設定"}
+              title={r === scope.entry ? t("map.entryRoute") : t("map.setEntryRoute")}
               className={cn(
                 "flex items-center gap-1 font-mono",
                 r === scope.entry ? "text-primary" : "hover:text-foreground",
@@ -113,7 +115,7 @@ export function IssueMap({ session }: { session: ImplementSession }) {
             <button
               type="button"
               onClick={() => removeRoute(r)}
-              aria-label={`${r} を範囲から外す`}
+              aria-label={t("map.removeFromScope", { r })}
               className="hidden text-muted-foreground hover:text-foreground group-hover/chip:block"
             >
               <X className="size-3" />
@@ -130,24 +132,24 @@ export function IssueMap({ session }: { session: ImplementSession }) {
                 addRoute();
               }
             }}
-            placeholder="/route を追加"
+            placeholder={t("map.addRoutePlaceholder")}
             className="w-24 bg-transparent font-mono text-[11px] outline-none placeholder:text-muted-foreground/50"
           />
-          <button type="button" onClick={addRoute} aria-label="ルートを追加" className="text-muted-foreground hover:text-foreground">
+          <button type="button" onClick={addRoute} aria-label={t("map.addRoute")} className="text-muted-foreground hover:text-foreground">
             <Plus className="size-3" />
           </button>
         </span>
         <span className="ml-auto text-[11px] text-muted-foreground">
-          .bezier に保存（PR に入りません）
+          {t("map.savedToBezier")}
         </span>
       </div>
 
       {/* Body: live scaled board when Preview is up, else a start prompt. */}
       {!ready ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-          <div className="text-sm font-medium text-foreground">Map は実アプリのライブ縮小ビューです</div>
+          <div className="text-sm font-medium text-foreground">{t("map.liveScaledViewTitle")}</div>
           <p className="max-w-sm text-xs text-muted-foreground">
-            上で範囲（ルート）を決めて、Preview を起動すると、各画面が俯瞰で並びます。
+            {t("map.liveScaledViewDesc")}
           </p>
           <Button
             size="sm"
@@ -160,7 +162,7 @@ export function IssueMap({ session }: { session: ImplementSession }) {
             ) : (
               <Play className="size-3.5" />
             )}
-            Preview を起動
+            {t("map.startPreview")}
           </Button>
         </div>
       ) : (
@@ -200,7 +202,7 @@ export function IssueMap({ session }: { session: ImplementSession }) {
                     className="absolute inset-0 flex items-end justify-center bg-foreground/0 opacity-0 transition hover:bg-foreground/5 hover:opacity-100"
                   >
                     <span className="mb-2 rounded-md bg-background px-2 py-1 text-[11px] font-medium shadow">
-                      開始に設定
+                      {t("map.setAsStart")}
                     </span>
                   </button>
                 )}

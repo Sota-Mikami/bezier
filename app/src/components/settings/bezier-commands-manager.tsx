@@ -43,11 +43,13 @@ import {
   BEZIER_COMMANDS,
   type InstalledCommand,
 } from "@/lib/bezier-commands";
+import { useT } from "@/lib/i18n";
 
 type Draft = { name: string; description: string; body: string };
 const EMPTY: Draft = { name: "", description: "", body: "" };
 
 export function BezierCommandsManager() {
+  const t = useT();
   const [home, setHome] = React.useState<string | null>(null);
   const [list, setList] = React.useState<InstalledCommand[] | null>(null); // null = loading
   const [editing, setEditing] = React.useState<string | null>(null); // name | "+new" | null
@@ -105,9 +107,9 @@ export function BezierCommandsManager() {
       await writeCommand(home, name, draft.description.trim(), draft.body.trimEnd());
       await reload(home);
       setEditing(null);
-      setMsg(`/bezier:${name} を保存しました。`);
+      setMsg(t("commands.savedMsg", { name }));
     } catch (e) {
-      setMsg(`失敗: ${String(e)}`);
+      setMsg(t("commands.failed", { error: String(e) }));
     } finally {
       setBusy(false);
     }
@@ -117,11 +119,11 @@ export function BezierCommandsManager() {
     if (!home || busy) return;
     const name = draft.name.trim();
     if (!isValidCommandName(name)) {
-      setMsg("名前は英小文字・数字・ハイフンのみ（例: my-check）。");
+      setMsg(t("commands.invalidName"));
       return;
     }
     if (list?.some((c) => c.name === name)) {
-      setMsg(`/bezier:${name} は既にあります。`);
+      setMsg(t("commands.alreadyExists", { name }));
       return;
     }
     setBusy(true);
@@ -130,9 +132,9 @@ export function BezierCommandsManager() {
       await writeCommand(home, name, draft.description.trim(), draft.body.trimEnd());
       await reload(home);
       setEditing(null);
-      setMsg(`/bezier:${name} を作成しました。`);
+      setMsg(t("commands.createdMsg", { name }));
     } catch (e) {
-      setMsg(`失敗: ${String(e)}`);
+      setMsg(t("commands.failed", { error: String(e) }));
     } finally {
       setBusy(false);
     }
@@ -141,10 +143,10 @@ export function BezierCommandsManager() {
   const del = async (name: string) => {
     if (!home || busy) return;
     if (
-      !(await confirmDialog(`/bezier:${name} を削除しますか？`, {
-        title: "削除の確認",
-        okLabel: "削除",
-        cancelLabel: "やめる",
+      !(await confirmDialog(t("commands.deleteConfirm", { name }), {
+        title: t("commands.deleteConfirmTitle"),
+        okLabel: t("common.delete"),
+        cancelLabel: t("commands.cancelLabel"),
       }))
     )
       return;
@@ -154,9 +156,9 @@ export function BezierCommandsManager() {
       await removeCommand(name);
       await reload(home);
       if (editing === name) setEditing(null);
-      setMsg(`/bezier:${name} を削除しました。`);
+      setMsg(t("commands.deletedMsg", { name }));
     } catch (e) {
-      setMsg(`失敗: ${String(e)}`);
+      setMsg(t("commands.failed", { error: String(e) }));
     } finally {
       setBusy(false);
     }
@@ -169,9 +171,9 @@ export function BezierCommandsManager() {
     try {
       const n = await installBezierCommands(home, { overwrite: false });
       await reload(home);
-      setMsg(n === 0 ? "すでに揃っています。" : `組み込みを ${n} 件入れました。`);
+      setMsg(n === 0 ? t("commands.allPresent") : t("commands.installedCount", { n }));
     } catch (e) {
-      setMsg(`失敗: ${String(e)}`);
+      setMsg(t("commands.failed", { error: String(e) }));
     } finally {
       setBusy(false);
     }
@@ -180,10 +182,10 @@ export function BezierCommandsManager() {
   const uninstallAll = async () => {
     if (!home || busy) return;
     if (
-      !(await confirmDialog("~/.claude/commands/bezier/ をすべて削除しますか？（カスタム含む）", {
-        title: "すべて削除",
-        okLabel: "削除",
-        cancelLabel: "やめる",
+      !(await confirmDialog(t("commands.uninstallAllConfirm"), {
+        title: t("commands.deleteAll"),
+        okLabel: t("common.delete"),
+        cancelLabel: t("commands.cancelLabel"),
       }))
     )
       return;
@@ -193,9 +195,9 @@ export function BezierCommandsManager() {
       await uninstallBezierCommands();
       await reload(home);
       setEditing(null);
-      setMsg("すべて削除しました。");
+      setMsg(t("commands.deletedAllMsg"));
     } catch (e) {
-      setMsg(`失敗: ${String(e)}`);
+      setMsg(t("commands.failed", { error: String(e) }));
     } finally {
       setBusy(false);
     }
@@ -213,9 +215,9 @@ export function BezierCommandsManager() {
       });
       if (!path) return;
       await writeFile(path, await buildPack(home));
-      setMsg(`エクスポートしました: ${path}`);
+      setMsg(t("commands.exportedMsg", { path }));
     } catch (e) {
-      setMsg(`失敗: ${String(e)}`);
+      setMsg(t("commands.failed", { error: String(e) }));
     } finally {
       setBusy(false);
     }
@@ -233,11 +235,11 @@ export function BezierCommandsManager() {
       try {
         cmds = readPack(await readFile(path));
       } catch (e) {
-        setMsg(`読み込めません: ${String(e)}`);
+        setMsg(t("commands.cannotRead", { error: String(e) }));
         return;
       }
       if (cmds.length === 0) {
-        setMsg("有効なコマンドがありません。");
+        setMsg(t("commands.noValidCommands"));
         return;
       }
       const existing = new Set((list ?? []).map((c) => c.name));
@@ -245,15 +247,21 @@ export function BezierCommandsManager() {
       let overwrite = false;
       if (conflicts > 0) {
         overwrite = await confirmDialog(
-          `${conflicts} 件が既存です。上書きしますか？（やめる＝スキップ）`,
-          { title: "インポート", okLabel: "上書き", cancelLabel: "スキップ" },
+          t("commands.importConflict", { conflicts }),
+          { title: t("commands.import"), okLabel: t("commands.overwrite"), cancelLabel: t("commands.skip") },
         );
       }
       const s = await writePack(home, cmds, { overwrite });
       await reload(home);
-      setMsg(`インポート: 追加 ${s.added} / 上書き ${s.overwritten} / スキップ ${s.skipped}`);
+      setMsg(
+        t("commands.importResult", {
+          added: s.added,
+          overwritten: s.overwritten,
+          skipped: s.skipped,
+        }),
+      );
     } catch (e) {
-      setMsg(`失敗: ${String(e)}`);
+      setMsg(t("commands.failed", { error: String(e) }));
     } finally {
       setBusy(false);
     }
@@ -269,14 +277,14 @@ export function BezierCommandsManager() {
         </code>
         {list && list.length > 0 && (
           <>
-            <span className="text-muted-foreground">{list.length} 件</span>
+            <span className="text-muted-foreground">{t("commands.itemCount", { count: list.length })}</span>
             <button
               type="button"
               onClick={() => void uninstallAll()}
               disabled={busy}
               className="ml-auto text-[11px] text-muted-foreground hover:text-destructive disabled:opacity-50"
             >
-              すべて削除
+              {t("commands.deleteAll")}
             </button>
           </>
         )}
@@ -285,13 +293,13 @@ export function BezierCommandsManager() {
       {list === null ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
-          確認中…
+          {t("commands.checking")}
         </div>
       ) : list.length === 0 && editing !== "+new" ? (
         // Empty state: seed the built-ins.
         <div className="rounded-lg border border-dashed p-4 text-center">
           <p className="text-xs text-muted-foreground">
-            まだ何もインストールされていません。組み込みの 4 コマンドを入れるか、自分で作れます。
+            {t("commands.emptyState")}
           </p>
           <div className="mt-3 flex justify-center gap-2">
             <button
@@ -301,7 +309,7 @@ export function BezierCommandsManager() {
               className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
             >
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-              組み込みをインストール
+              {t("commands.installBuiltins")}
             </button>
             <button
               type="button"
@@ -310,7 +318,7 @@ export function BezierCommandsManager() {
               className="flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs hover:bg-muted disabled:opacity-50"
             >
               <Plus className="size-3.5" />
-              コマンドを追加
+              {t("commands.addCommand")}
             </button>
           </div>
         </div>
@@ -326,7 +334,7 @@ export function BezierCommandsManager() {
                   busy={busy}
                   onCancel={cancel}
                   onSubmit={() => void save(c.name)}
-                  submitLabel="保存"
+                  submitLabel={t("common.save")}
                   extra={
                     <>
                       {c.isBuiltin && (
@@ -345,7 +353,7 @@ export function BezierCommandsManager() {
                           className="flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
                         >
                           <RotateCcw className="size-3" />
-                          既定に戻す
+                          {t("commands.resetToDefault")}
                         </button>
                       )}
                       <button
@@ -355,7 +363,7 @@ export function BezierCommandsManager() {
                         className="flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] text-muted-foreground hover:text-destructive disabled:opacity-50"
                       >
                         <Trash2 className="size-3" />
-                        削除
+                        {t("common.delete")}
                       </button>
                     </>
                   }
@@ -371,11 +379,11 @@ export function BezierCommandsManager() {
                   <code className="font-mono text-xs text-foreground/90">/bezier:{c.name}</code>
                   {c.isBuiltin && (
                     <span className="rounded bg-muted px-1 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
-                      組み込み
+                      {t("commands.builtinBadge")}
                     </span>
                   )}
                   <span className="truncate text-[11px] text-muted-foreground">
-                    {c.description || "（説明なし）"}
+                    {c.description || t("commands.noDescription")}
                   </span>
                   <Pencil className="ml-auto size-3 shrink-0 text-muted-foreground" />
                 </button>
@@ -392,7 +400,7 @@ export function BezierCommandsManager() {
                 busy={busy}
                 onCancel={cancel}
                 onSubmit={() => void create()}
-                submitLabel="作成"
+                submitLabel={t("commands.create")}
               />
             </li>
           )}
@@ -409,7 +417,7 @@ export function BezierCommandsManager() {
             className="flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs hover:bg-muted disabled:opacity-50"
           >
             <Plus className="size-3.5" />
-            コマンドを追加
+            {t("commands.addCommand")}
           </button>
           {missingBuiltins.length > 0 && (
             <button
@@ -419,7 +427,7 @@ export function BezierCommandsManager() {
               className="flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
               <Download className="size-3.5" />
-              不足の組み込みを入れる（{missingBuiltins.length}）
+              {t("commands.installMissingBuiltins", { count: missingBuiltins.length })}
             </button>
           )}
         </div>
@@ -430,7 +438,7 @@ export function BezierCommandsManager() {
         <div className="flex flex-wrap items-center gap-2 border-t pt-3">
           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
             <Share2 className="size-3" />
-            共有
+            {t("commands.share")}
           </span>
           <button
             type="button"
@@ -439,7 +447,7 @@ export function BezierCommandsManager() {
             className="flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             <Upload className="size-3" />
-            エクスポート
+            {t("commands.export")}
           </button>
           <button
             type="button"
@@ -448,7 +456,7 @@ export function BezierCommandsManager() {
             className="flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             <Download className="size-3" />
-            インポート
+            {t("commands.import")}
           </button>
         </div>
       )}
@@ -479,6 +487,7 @@ function CommandForm({
   submitLabel: string;
   extra?: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <div className="space-y-2">
       {nameLocked ? (
@@ -486,7 +495,7 @@ function CommandForm({
       ) : (
         <label className="block space-y-1">
           <span className="text-[11px] text-muted-foreground">
-            名前（`/bezier:` の後ろ・英小文字/数字/ハイフン）
+            {t("commands.nameLabel")}
           </span>
           <div className="flex items-center gap-1.5">
             <span className="font-mono text-xs text-muted-foreground">/bezier:</span>
@@ -502,25 +511,25 @@ function CommandForm({
       )}
 
       <label className="block space-y-1">
-        <span className="text-[11px] text-muted-foreground">説明（/ メニューに出る一行）</span>
+        <span className="text-[11px] text-muted-foreground">{t("commands.descriptionLabel")}</span>
         <input
           value={draft.description}
           onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-          placeholder="このコマンドが何をするか"
+          placeholder={t("commands.descriptionPlaceholder")}
           className="h-8 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </label>
 
       <label className="block space-y-1">
         <span className="text-[11px] text-muted-foreground">
-          本文（エージェントに送るプロンプト。`$ARGUMENTS` で引数を受け取れます）
+          {t("commands.bodyLabel")}
         </span>
         <textarea
           value={draft.body}
           onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
           rows={6}
           spellCheck={false}
-          placeholder="このコマンドが実行する内容…"
+          placeholder={t("commands.bodyPlaceholder")}
           className="w-full resize-y rounded-md border bg-background p-2 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </label>
@@ -541,7 +550,7 @@ function CommandForm({
           disabled={busy}
           className="h-7 rounded-md border px-3 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
         >
-          キャンセル
+          {t("common.cancel")}
         </button>
         <span className="ml-auto flex items-center gap-2">{extra}</span>
       </div>

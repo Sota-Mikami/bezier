@@ -7,6 +7,8 @@
 
 import { useEffect } from "react";
 
+import { tt } from "@/lib/i18n";
+
 export default function GlobalError({
   error,
   unstable_retry,
@@ -36,10 +38,10 @@ export default function GlobalError({
       >
         <div style={{ maxWidth: 420, padding: 24, textAlign: "center" }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 12px" }}>
-            アプリの起動に問題が発生しました
+            {tt("globalError.title")}
           </h2>
           <p style={{ fontSize: 13, opacity: 0.7, margin: "0 0 20px", lineHeight: 1.6 }}>
-            予期しないエラーでアプリ全体が停止しました。再起動してください。直らない場合はログ（アプリのデータフォルダ）を確認できます。
+            {tt("globalError.body")}
           </p>
           <button
             type="button"
@@ -54,7 +56,7 @@ export default function GlobalError({
               cursor: "pointer",
             }}
           >
-            再起動
+            {tt("globalError.restart")}
           </button>
         </div>
       </body>

@@ -62,6 +62,7 @@ import {
   dragHasFiles,
 } from "@/components/workspace/markdown-images";
 import { cn } from "@/lib/utils";
+import { tt } from "@/lib/i18n";
 
 export interface MarkdownEditorHandle {
   /** Persist the document to disk. Zero-diff when nothing was edited. */
@@ -827,11 +828,11 @@ function MarkdownEditorInner(
           imageHandlers,
           flashField,
           editorTheme,
-          cmPlaceholder("Start writing…  (type / for commands)"),
+          cmPlaceholder(tt("markdownEditor.placeholder")),
           updateListener,
           EditorView.contentAttributes.of({
             spellcheck: "false",
-            "aria-label": "Markdown editor",
+            "aria-label": tt("markdownEditor.ariaLabel"),
           }),
         ],
       }),

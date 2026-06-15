@@ -27,6 +27,7 @@ import {
 
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { UnderlineTab } from "@/components/ui/underline-tab";
+import { useT } from "@/lib/i18n";
 
 // Labels are easy to swap. Open brand question is Area②: Prototype vs Preview vs Build.
 const AREA1 = "Design";
@@ -42,9 +43,9 @@ interface Doc {
 }
 const DOCS: Doc[] = [
   { id: "spec", name: "Spec", kind: "md" },
-  { id: "decision", name: "決定", kind: "md" },
-  { id: "hero", name: "Hero 案", kind: "html" },
-  { id: "lp", name: "LP 案", kind: "html" },
+  { id: "decision", name: "Decision", kind: "md" },
+  { id: "hero", name: "Hero draft", kind: "html" },
+  { id: "lp", name: "LP draft", kind: "html" },
 ];
 
 function MockMd({ name }: { name: string }) {
@@ -61,12 +62,13 @@ function MockMd({ name }: { name: string }) {
 }
 
 function MockHtml({ name }: { name: string }) {
+  const t = useT();
   return (
     <div className="flex h-full items-center justify-center bg-muted/30 p-6">
       <div className="flex w-full max-w-md flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="flex items-center gap-1.5 border-b bg-muted/40 px-3 py-1.5">
           <Code2 className="size-3 text-muted-foreground" />
-          <span className="text-[10px] text-muted-foreground">{name}.html ・ 自己完結ワイヤー</span>
+          <span className="text-[10px] text-muted-foreground">{t("iaPage.htmlWireframeLabel", { name })}</span>
         </div>
         <div className="space-y-3 p-5">
           <div className="mx-auto h-5 w-1/2 rounded bg-foreground/20" />
@@ -85,6 +87,7 @@ const ENTRY = "/members";
 
 /** A small framed screen (a captured screenshot stand-in for the Map board). */
 function ScreenCard({ route, primary }: { route: string; primary?: boolean }) {
+  const t = useT();
   return (
     <div
       className={cnLite(
@@ -94,7 +97,7 @@ function ScreenCard({ route, primary }: { route: string; primary?: boolean }) {
     >
       <div className="flex items-center justify-between border-b bg-muted/40 px-2 py-1">
         <span className="truncate font-mono text-[10px] text-muted-foreground">{route}</span>
-        {primary && <span className="text-[9px] font-medium text-primary">開始</span>}
+        {primary && <span className="text-[9px] font-medium text-primary">{t("iaPage.start")}</span>}
       </div>
       <div className="space-y-1.5 p-2.5">
         <div className="h-2 w-1/2 rounded bg-foreground/15" />
@@ -116,11 +119,12 @@ function cnLite(...xs: (string | false | undefined)[]) {
 
 /** Small pill that shows scope/entry metadata + that it's stored outside the repo. */
 function ScopePill({ label, value }: { label: string; value: string }) {
+  const t = useT();
   return (
     <button
       type="button"
       className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-      title=".bezier に保存（worktree の外 → PR に入りません）"
+      title={t("iaPage.scopeTooltip")}
     >
       <span className="text-foreground/60">{label}</span>
       <span className="font-mono text-foreground/90">{value}</span>
@@ -130,15 +134,16 @@ function ScopePill({ label, value }: { label: string; value: string }) {
 }
 
 function PreviewView() {
+  const t = useT();
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <span className="flex items-center gap-1.5 rounded-md border border-emerald-500/30 px-2 py-0.5 text-[11px] text-emerald-600 dark:text-emerald-400">
           <span className="size-1.5 rounded-full bg-emerald-500" />
-          稼働中
+          {t("iaPage.running")}
         </span>
-        <ScopePill label="開始:" value={ENTRY} />
-        <span className="ml-auto text-[11px] text-muted-foreground">worktree · isolated — main は汚れない</span>
+        <ScopePill label={t("iaPage.entryLabel")} value={ENTRY} />
+        <span className="ml-auto text-[11px] text-muted-foreground">{t("iaPage.worktreeIsolated")}</span>
       </div>
       <div className="flex flex-1 items-center justify-center bg-muted/20 p-6">
         <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-background shadow">
@@ -156,7 +161,7 @@ function PreviewView() {
             ))}
           </div>
           <div className="border-t px-4 py-2 text-center text-[10px] text-muted-foreground">
-            ＝ あなたの実アプリ（{ENTRY} から）。artifact ではなく成果物。
+            {t("iaPage.previewRealApp", { entry: ENTRY })}
           </div>
         </div>
       </div>
@@ -165,13 +170,14 @@ function PreviewView() {
 }
 
 function MapView() {
+  const t = useT();
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <MapIcon className="size-4 text-muted-foreground" />
-        <ScopePill label="範囲:" value={`${SCOPE.length} 画面`} />
+        <ScopePill label={t("iaPage.scopeLabel")} value={t("iaPage.screensCount", { count: SCOPE.length })} />
         <span className="ml-auto text-[11px] text-muted-foreground">
-          scope の各ルートをスクショ → 俯瞰（このイシューが触る範囲だけ）
+          {t("iaPage.mapHint")}
         </span>
       </div>
       <div className="flex flex-1 items-center gap-3 overflow-x-auto bg-muted/20 p-6">
@@ -191,27 +197,37 @@ function MapView() {
 // --- Page ---------------------------------------------------------------------
 
 export default function IaPrototypePage() {
+  const t = useT();
   const [area, setArea] = React.useState<"design" | "prototype">("design");
   const [proto, setProto] = React.useState<"preview" | "map" | "qa">("preview");
   const [docs, setDocs] = React.useState<Doc[]>(DOCS);
   const [sel, setSel] = React.useState("spec");
   const selDoc = docs.find((d) => d.id === sel) ?? docs[0];
+  // "Spec" stays English; the others are mock labels that get localized.
+  const docLabel = (d: Doc) =>
+    d.id === "decision"
+      ? t("iaPage.docDecision")
+      : d.id === "hero"
+        ? t("iaPage.docHero")
+        : d.id === "lp"
+          ? t("iaPage.docLp")
+          : d.name;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-        <h1 className="text-sm font-semibold">IA 体験版</h1>
+        <h1 className="text-sm font-semibold">{t("iaPage.title")}</h1>
         <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
           mock
         </span>
         <span className="hidden text-xs text-muted-foreground lg:inline">
-          {AREA1}（考える/形にする） / {AREA2}（Preview・Map・QA：このイシューの動く範囲）
+          {t("iaPage.headerSubtitle", { area1: AREA1, area2: AREA2 })}
         </span>
         <div className="ml-auto">
           <SegmentedControl
             value={area}
             onChange={setArea}
-            ariaLabel="エリア"
+            ariaLabel={t("iaPage.areaAriaLabel")}
             options={[
               { value: "design", label: AREA1 },
               { value: "prototype", label: AREA2, icon: <MonitorPlay className="size-3.5" /> },
@@ -228,15 +244,15 @@ export default function IaPrototypePage() {
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto p-3">
             <div className="ml-auto max-w-[80%] rounded-lg bg-primary px-3 py-2 text-xs text-primary-foreground">
-              この表を、ロールでフィルタできるように。
+              {t("iaPage.chatUserMsg")}
             </div>
             <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-xs">
-              既存の Table と Filter を再利用。触る範囲は /members 周り 3 画面、開始は /members に設定しました。
+              {t("iaPage.chatAssistantMsg")}
             </div>
-            <div className="text-[11px] text-muted-foreground">● 実装中…</div>
+            <div className="text-[11px] text-muted-foreground">{t("iaPage.implementing")}</div>
           </div>
           <div className="border-t p-3">
-            <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">何を作りますか…</div>
+            <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">{t("iaPage.composerPlaceholder")}</div>
           </div>
         </aside>
 
@@ -258,7 +274,7 @@ export default function IaPrototypePage() {
                       ) : (
                         <Code2 className="size-3.5 shrink-0 text-sky-500/80" />
                       )}
-                      <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                      <span className="min-w-0 flex-1 truncate">{docLabel(d)}</span>
                       {d.id !== "spec" && (
                         <button
                           type="button"
@@ -266,7 +282,7 @@ export default function IaPrototypePage() {
                             e.stopPropagation();
                             setDocs((p) => p.filter((x) => x.id !== d.id));
                           }}
-                          aria-label="削除"
+                          aria-label={t("common.delete")}
                           className="-mr-1 hidden size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground group-hover/tab:flex"
                         >
                           <X className="size-3" />
@@ -276,7 +292,7 @@ export default function IaPrototypePage() {
                   ))}
                   <button
                     type="button"
-                    aria-label="追加"
+                    aria-label={t("common.add")}
                     className="my-auto ml-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
                     <Plus className="size-3.5" />
@@ -284,7 +300,7 @@ export default function IaPrototypePage() {
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
-                {selDoc.kind === "md" ? <MockMd name={selDoc.name} /> : <MockHtml name={selDoc.name} />}
+                {selDoc.kind === "md" ? <MockMd name={docLabel(selDoc)} /> : <MockHtml name={docLabel(selDoc)} />}
               </div>
             </>
           ) : (
@@ -311,7 +327,7 @@ export default function IaPrototypePage() {
                   <MapView />
                 ) : (
                   <div className="flex h-full items-center justify-center px-8 text-center text-xs text-muted-foreground">
-                    QA — 実アプリでは Spec の受入基準から自動生成し、per-issue で .bezier に保存（PR に入らない）。
+                    {t("iaPage.qaEmpty")}
                   </div>
                 )}
               </div>

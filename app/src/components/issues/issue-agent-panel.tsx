@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useT, tt } from "@/lib/i18n";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
 import type { ImplementSession } from "./implement-session-types";
 
@@ -31,7 +32,7 @@ const TerminalPane = dynamic(() => import("@/components/workspace/terminal"), {
   loading: () => (
     <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
       <Loader2 className="size-3.5 animate-spin" />
-      Starting terminal…
+      {tt("agentPanel.startingTerminal")}
     </div>
   ),
 }) as React.ComponentType<TerminalPaneProps>;
@@ -41,6 +42,7 @@ interface IssueAgentPanelProps {
 }
 
 export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
+  const t = useT();
   const {
     gitRepo,
     ref,
@@ -67,7 +69,7 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
           / discard) moved to the title ▾ menu in the top bar (DEC-058). */}
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <MessageSquare className="size-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium">チャット</span>
+        <span className="text-xs font-medium">{t("agentPanel.chat")}</span>
         {ref && (
           <span
             className="ml-auto flex min-w-0 items-center gap-1 font-mono text-[10px] text-muted-foreground"
@@ -136,18 +138,19 @@ function ResumePane({
   canResume: boolean;
   onResume: () => void;
 }) {
+  const t = useT();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="flex size-10 items-center justify-center rounded-full border border-border bg-muted">
         <Play className="size-4 text-muted-foreground" />
       </div>
-      <div className="text-sm font-medium text-foreground">セッションは休止中</div>
+      <div className="text-sm font-medium text-foreground">{t("agentPanel.sessionPaused")}</div>
       <p className="max-w-xs text-xs text-muted-foreground">
-        この Issue には worktree があります。前回のエージェント会話を再開できます。
+        {t("agentPanel.sessionPausedDesc")}
       </p>
       <Button size="sm" className="gap-1.5" disabled={!canResume} onClick={onResume}>
         <Play className="size-3.5" />
-        セッションを再開
+        {t("agentPanel.resumeSession")}
       </Button>
     </div>
   );
@@ -169,6 +172,7 @@ function ChatStart({
   agentAvailable: boolean;
   onSend: (message: string) => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = React.useState("");
   const ref = React.useRef<HTMLTextAreaElement>(null);
   React.useEffect(() => {
@@ -184,10 +188,10 @@ function ChatStart({
 
   const placeholder =
     gitRepo === false
-      ? "このフォルダは git リポジトリではありません"
+      ? t("agentPanel.placeholderNotGitRepo")
       : !agentAvailable
-        ? "利用可能なエージェントがありません"
-        : "やりたいことを書く…（Enter で開始 / Shift+Enter で改行）";
+        ? t("agentPanel.placeholderNoAgent")
+        : t("agentPanel.placeholderDefault");
 
   return (
     <div className="flex h-full flex-col">
@@ -195,16 +199,12 @@ function ChatStart({
         <div className="flex size-10 items-center justify-center rounded-full border border-border bg-muted">
           <Sparkles className="size-4 text-muted-foreground" />
         </div>
-        <div className="text-sm font-medium text-foreground">チャットで始める</div>
+        <div className="text-sm font-medium text-foreground">{t("agentPanel.startWithChat")}</div>
         <p className="max-w-xs text-xs text-muted-foreground">
           {gitRepo === false ? (
-            <>
-              Implement には git リポジトリが必要です。リポジトリのフォルダを開いてください。
-            </>
+            <>{t("agentPanel.needGitRepo")}</>
           ) : (
-            <>
-              やりたいことを書くと worktree を作成して AI が起動し、まず 2〜3 問の確認（Clarify）をしてから Spec を一緒に書き起こします。
-            </>
+            <>{t("agentPanel.startHint")}</>
           )}
         </p>
       </div>
@@ -236,7 +236,7 @@ function ChatStart({
             ) : (
               <Sparkles className="size-3.5" />
             )}
-            開始
+            {t("agentPanel.start")}
           </Button>
         </div>
       </div>

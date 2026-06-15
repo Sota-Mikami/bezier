@@ -20,6 +20,7 @@ import * as React from "react";
 import { openFolder } from "@/lib/workspace";
 import { gitRepoStatus, gitInit } from "@/lib/git";
 import { confirmDialog, grantPath, messageDialog } from "@/lib/ipc";
+import { tt } from "@/lib/i18n";
 
 const STORAGE_KEY = "bezier:workspace-root";
 const RECENTS_KEY = "bezier:recent-repos";
@@ -66,11 +67,11 @@ async function ensureUsableRepo(picked: string): Promise<string | null> {
 
 async function offerInit(picked: string): Promise<string | null> {
   const ok = await confirmDialog(
-    `このフォルダは git リポジトリではありません。Bezier で使うには git リポジトリが必要です。今ここで git init し、現在のファイルで初回コミットを作成しますか？`,
+    tt("workspaceRoot.notRepoConfirm"),
     {
-      title: "git リポジトリにする",
-      okLabel: "git init して開く",
-      cancelLabel: "キャンセル",
+      title: tt("workspaceRoot.makeRepoTitle"),
+      okLabel: tt("workspaceRoot.gitInitOpen"),
+      cancelLabel: tt("common.cancel"),
     },
   );
   if (!ok) return null;
@@ -79,8 +80,10 @@ async function offerInit(picked: string): Promise<string | null> {
     return picked;
   } catch (e) {
     await messageDialog(
-      `git init に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-      { title: "エラー" },
+      tt("workspaceRoot.gitInitFailed", {
+        error: e instanceof Error ? e.message : String(e),
+      }),
+      { title: tt("workspaceRoot.errorTitle") },
     );
     return null;
   }

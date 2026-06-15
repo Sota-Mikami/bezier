@@ -59,11 +59,19 @@ export function IssueShare({ session }: { session: ImplementSession }) {
     [
       {
         key: "app",
-        label: "アプリ",
-        desc: "公開して、受け手がその場で触れる（プレビューの共有）",
+        label: t("share.layerAppLabel"),
+        desc: t("share.layerAppDesc"),
       },
-      { key: "design", label: "デザイン", desc: "採用した画面デザイン" },
-      { key: "spec", label: "Spec", desc: "意図と受入基準（なぜ・何を）" },
+      {
+        key: "design",
+        label: t("share.layerDesignLabel"),
+        desc: t("share.layerDesignDesc"),
+      },
+      {
+        key: "spec",
+        label: t("share.layerSpecLabel"),
+        desc: t("share.layerSpecDesc"),
+      },
     ];
   const anySelected = shareItems.some((it) => layers[it.key]);
 
@@ -78,11 +86,11 @@ export function IssueShare({ session }: { session: ImplementSession }) {
 
   const phase =
     publish.status === "building"
-      ? "アプリを公開中…"
+      ? t("share.phasePublishingApp")
       : journey.status === "building"
-        ? "共有ページを作成中…"
+        ? t("share.phaseCreatingPage")
         : publish.status === "error" || journey.status === "error"
-          ? "失敗しました。もう一度お試しください。"
+          ? t("share.phaseError")
           : null;
   const ready = journey.status === "ready" && !!journey.url && !busy;
   // On failure, surface the actual reason (the last lines of whichever step
@@ -113,7 +121,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         {publish.connections.length > 1 && (
           <DropdownMenuGroup>
             <DropdownMenuLabel className="px-1 text-[11px] font-normal text-muted-foreground">
-              公開アカウント
+              {t("share.publishingAccount")}
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={publish.connectionId}
@@ -130,7 +138,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         )}
 
         <div className="px-1 pb-1 text-[11px] font-medium text-muted-foreground">
-          共有する内容を選ぶ
+          {t("share.chooseContent")}
         </div>
         <div className="flex flex-col gap-0.5">
           {shareItems.map((it) => {
@@ -172,7 +180,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         </div>
         {!layers.spec && (
           <div className="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
-            Spec を含めないため、意図と受入基準は共有先に表示されません。
+            {t("share.specOmittedWarning")}
           </div>
         )}
 
@@ -199,10 +207,10 @@ export function IssueShare({ session }: { session: ImplementSession }) {
           <span className="min-w-0">
             <span className="flex items-center gap-1 text-xs font-medium leading-tight">
               <Lock className="size-3" />
-              パスワードで保護
+              {t("share.passwordProtect")}
             </span>
             <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-              合言葉を知っている人だけが開ける
+              {t("share.passwordProtectDesc")}
             </span>
           </span>
         </button>
@@ -219,13 +227,15 @@ export function IssueShare({ session }: { session: ImplementSession }) {
               // these from bubbling to the menu so the field works normally.
               onKeyDown={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
-              placeholder="合言葉"
+              placeholder={t("share.passwordPlaceholder")}
               className="w-full rounded-md border bg-background py-1.5 pr-8 pl-2 text-xs outline-none transition focus:border-foreground"
             />
             <button
               type="button"
               tabIndex={-1}
-              aria-label={pwReveal ? "パスワードを隠す" : "パスワードを表示"}
+              aria-label={
+                pwReveal ? t("share.hidePassword") : t("share.showPassword")
+              }
               onClick={() => setPwReveal((v) => !v)}
               onPointerDown={(e) => e.stopPropagation()}
               className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:text-foreground"
@@ -250,7 +260,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
           ) : (
             <Share2 className="size-3.5" />
           )}
-          {ready ? "再共有（最新を反映）" : "共有する"}
+          {ready ? t("share.reshare") : t("share.share")}
         </button>
 
         {phase && (
@@ -279,7 +289,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
                 className="inline-flex flex-1 items-center justify-center gap-1 rounded border bg-background px-2 py-1 text-[11px] transition hover:bg-muted"
               >
                 <Copy className="size-3" />
-                URL をコピー
+                {t("share.copyUrl")}
               </button>
               <button
                 type="button"
@@ -287,7 +297,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
                 className="inline-flex flex-1 items-center justify-center gap-1 rounded border bg-background px-2 py-1 text-[11px] transition hover:bg-muted"
               >
                 <ExternalLink className="size-3" />
-                開く
+                {t("share.open")}
               </button>
             </div>
           </div>

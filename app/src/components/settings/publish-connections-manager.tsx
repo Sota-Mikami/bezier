@@ -10,6 +10,7 @@ import * as React from "react";
 import { Plus, Trash2, Check } from "lucide-react";
 
 import { useSettings, type PublishConnection } from "@/lib/settings";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 function genId(): string {
@@ -21,6 +22,7 @@ function genId(): string {
 }
 
 export function PublishConnectionsManager() {
+  const t = useT();
   const { settings, update } = useSettings();
   const conns = settings.publishConnections;
   const defaultId = settings.defaultConnectionId;
@@ -36,7 +38,7 @@ export function PublishConnectionsManager() {
     update({
       publishConnections: [
         ...conns,
-        { id: genId(), label: "新しいアカウント", scope: "" },
+        { id: genId(), label: t("publish.newAccountLabel"), scope: "" },
       ],
     });
 
@@ -57,16 +59,20 @@ export function PublishConnectionsManager() {
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        共有（Vercel publish）で使うアカウント。Vercel の team/scope を入れます（ログイン中の
-        <code className="px-0.5">vercel</code> セッションを使用）。リポジトリごとに使うアカウントは、各
-        Issue の Design タブで選べます（誤って別アカウントに公開するのを防ぎます）。
+        {t("publish.descBefore")}
+        <code className="px-0.5">vercel</code>
+        {t("publish.descAfter")}
       </p>
       {conns.map((c) => (
         <div key={c.id} className="flex items-center gap-2 rounded-md border p-2">
           <button
             type="button"
             onClick={() => update({ defaultConnectionId: c.id })}
-            title={c.id === defaultId ? "既定のアカウント" : "既定にする"}
+            title={
+              c.id === defaultId
+                ? t("publish.defaultAccount")
+                : t("publish.makeDefault")
+            }
             className={cn(
               "flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors",
               c.id === defaultId
@@ -79,7 +85,7 @@ export function PublishConnectionsManager() {
           <input
             value={c.label}
             onChange={(e) => editConn(c.id, { label: e.target.value })}
-            placeholder="表示名（例: クライアントA）"
+            placeholder={t("publish.labelPlaceholder")}
             className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           <input
@@ -93,7 +99,7 @@ export function PublishConnectionsManager() {
             type="button"
             onClick={() => removeConn(c.id)}
             disabled={conns.length <= 1}
-            title="削除"
+            title={t("common.delete")}
             className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
           >
             <Trash2 className="size-3.5" />
@@ -106,7 +112,7 @@ export function PublishConnectionsManager() {
         className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         <Plus className="size-3.5" />
-        アカウントを追加
+        {t("publish.addAccount")}
       </button>
     </div>
   );

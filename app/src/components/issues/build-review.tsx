@@ -17,6 +17,7 @@ import { MonitorPlay, Map as MapIcon, ListChecks } from "lucide-react";
 
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { PreviewPane } from "./preview-pane";
 import { IssueMap } from "./issue-map";
@@ -34,6 +35,7 @@ export function BuildReview({
   /** Whether Prototype is the visible center area — gates the sub-tab shortcuts. */
   active?: boolean;
 }) {
+  const t = useT();
   const [tab, setTab] = React.useState<ProtoTab>("preview");
 
   // Same Chrome-style nav as Design (⌘1–9 / ⌘⌥←→ / Ctrl+Tab).
@@ -49,15 +51,15 @@ export function BuildReview({
       <div className="flex h-10 shrink-0 items-stretch border-b px-1.5">
         <UnderlineTab active={tab === "preview"} onClick={() => setTab("preview")}>
           <MonitorPlay className="size-4" />
-          Preview
+          {t("prototype.tabPreview")}
         </UnderlineTab>
         <UnderlineTab active={tab === "map"} onClick={() => setTab("map")}>
           <MapIcon className="size-4" />
-          Map
+          {t("prototype.tabMap")}
         </UnderlineTab>
         <UnderlineTab active={tab === "qa"} onClick={() => setTab("qa")}>
           <ListChecks className="size-4" />
-          QA
+          {t("prototype.tabQa")}
         </UnderlineTab>
       </div>
 

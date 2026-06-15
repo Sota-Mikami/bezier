@@ -11,6 +11,7 @@
 import * as React from "react";
 import { Copy, Check, Plus, X } from "lucide-react";
 
+import { useT, tt } from "@/lib/i18n";
 import {
   readQa,
   writeQa,
@@ -29,17 +30,24 @@ const STATUS_TSV: Record<QaStatus, string> = { todo: "TODO", pass: "PASS", fail:
 const STATUS_GLYPH: Record<QaStatus, string> = { todo: "○", pass: "✓", fail: "✗" };
 const PRIO_NEXT: Record<QaPriority, QaPriority> = { P0: "P1", P1: "P2", P2: "P0" };
 
-const COLS = ["状態", "優先", "範囲", "ケース", "期待結果", "根拠"];
+const cols = (): string[] => [
+  tt("qa.col.status"),
+  tt("qa.col.priority"),
+  tt("qa.col.area"),
+  tt("qa.col.case"),
+  tt("qa.col.expected"),
+  tt("qa.col.basis"),
+];
 
 function toRows(items: QaItem[]): string[][] {
   return items.map((i) => [STATUS_TSV[i.status], i.priority, i.area, i.scenario, i.expected, i.note]);
 }
 function toTsv(items: QaItem[]): string {
-  return [COLS, ...toRows(items)].map((r) => r.join("\t")).join("\n");
+  return [cols(), ...toRows(items)].map((r) => r.join("\t")).join("\n");
 }
 function toMarkdown(items: QaItem[]): string {
-  const head = `| ${COLS.join(" | ")} |`;
-  const sep = `| ${COLS.map(() => "---").join(" | ")} |`;
+  const head = `| ${cols().join(" | ")} |`;
+  const sep = `| ${cols().map(() => "---").join(" | ")} |`;
   const body = toRows(items).map((r) => `| ${r.join(" | ")} |`);
   return [head, sep, ...body].join("\n");
 }
@@ -49,6 +57,7 @@ function uid(items: QaItem[]): string {
 
 export function QaProposal({ session }: { session: ImplementSession }) {
   const issue = session.issue;
+  const t = useT();
   const { on: annotating } = useAnnotationMode();
   const [items, setItems] = React.useState<QaItem[] | null>(null);
   const [copied, setCopied] = React.useState<"tsv" | "md" | null>(null);
@@ -84,7 +93,7 @@ export function QaProposal({ session }: { session: ImplementSession }) {
   if (items === null) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        QA を読み込み中…
+        {t("qa.loadingQa")}
       </div>
     );
   }
@@ -109,15 +118,15 @@ export function QaProposal({ session }: { session: ImplementSession }) {
     <div className="flex h-full flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <span className="text-[11px] text-muted-foreground">
-          受入基準から（提案）・
+          {t("qa.fromAcceptanceCriteria")}
           <span className="tabular-nums text-foreground">
             {passCount}/{items.length}
           </span>{" "}
           PASS
         </span>
         <div className="ml-auto flex items-center gap-1.5">
-          <CopyBtn label="TSVコピー" hint="スプレッドシートに貼れる" done={copied === "tsv"} onClick={() => void copy("tsv")} />
-          <CopyBtn label="MDコピー" hint="PR / ドキュメント用" done={copied === "md"} onClick={() => void copy("md")} />
+          <CopyBtn label={t("qa.copyTsv")} hint={t("qa.copyTsvHint")} done={copied === "tsv"} onClick={() => void copy("tsv")} />
+          <CopyBtn label={t("qa.copyMd")} hint={t("qa.copyMdHint")} done={copied === "md"} onClick={() => void copy("md")} />
         </div>
       </div>
 
@@ -126,12 +135,12 @@ export function QaProposal({ session }: { session: ImplementSession }) {
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 bg-background">
             <tr className="border-b text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              <th className="w-10 px-2 py-2 text-center">状態</th>
-              <th className="w-12 px-2 py-2">優先</th>
-              <th className="w-28 px-2 py-2">範囲</th>
-              <th className="px-2 py-2">ケース</th>
-              <th className="px-2 py-2">期待結果</th>
-              <th className="w-40 px-2 py-2">根拠</th>
+              <th className="w-10 px-2 py-2 text-center">{t("qa.col.status")}</th>
+              <th className="w-12 px-2 py-2">{t("qa.col.priority")}</th>
+              <th className="w-28 px-2 py-2">{t("qa.col.area")}</th>
+              <th className="px-2 py-2">{t("qa.col.case")}</th>
+              <th className="px-2 py-2">{t("qa.col.expected")}</th>
+              <th className="w-40 px-2 py-2">{t("qa.col.basis")}</th>
               <th className="w-7 px-1 py-2" />
             </tr>
           </thead>
@@ -142,7 +151,7 @@ export function QaProposal({ session }: { session: ImplementSession }) {
                   <button
                     type="button"
                     onClick={() => patch(it.id, { status: STATUS_NEXT[it.status] })}
-                    title="状態を切替（○→✓→✗）"
+                    title={t("qa.toggleStatus")}
                     className={statusCls(it.status)}
                   >
                     {STATUS_GLYPH[it.status]}
@@ -152,21 +161,21 @@ export function QaProposal({ session }: { session: ImplementSession }) {
                   <button
                     type="button"
                     onClick={() => patch(it.id, { priority: PRIO_NEXT[it.priority] })}
-                    title="優先度を切替"
+                    title={t("qa.togglePriority")}
                     className={prioCls(it.priority)}
                   >
                     {it.priority}
                   </button>
                 </td>
                 <Cell value={it.area} mono onChange={(v) => patch(it.id, { area: v })} placeholder="/route" />
-                <Cell value={it.scenario} onChange={(v) => patch(it.id, { scenario: v })} placeholder="確認すること" />
-                <Cell value={it.expected} onChange={(v) => patch(it.id, { expected: v })} placeholder="期待結果" />
-                <Cell value={it.note} muted onChange={(v) => patch(it.id, { note: v })} placeholder="根拠 / ファイル" />
+                <Cell value={it.scenario} onChange={(v) => patch(it.id, { scenario: v })} placeholder={t("qa.placeholderScenario")} />
+                <Cell value={it.expected} onChange={(v) => patch(it.id, { expected: v })} placeholder={t("qa.placeholderExpected")} />
+                <Cell value={it.note} muted onChange={(v) => patch(it.id, { note: v })} placeholder={t("qa.placeholderNote")} />
                 <td className="px-1 py-1">
                   <button
                     type="button"
                     onClick={() => setItems((xs) => (xs ?? []).filter((x) => x.id !== it.id))}
-                    aria-label="削除"
+                    aria-label={t("common.delete")}
                     className="hidden size-5 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground group-hover/row:flex"
                   >
                     <X className="size-3" />
@@ -187,7 +196,7 @@ export function QaProposal({ session }: { session: ImplementSession }) {
           }
           className="m-2 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         >
-          <Plus className="size-3.5" /> 行を追加
+          <Plus className="size-3.5" /> {t("qa.addRow")}
         </button>
         </div>
         {annotating && (
@@ -199,6 +208,7 @@ export function QaProposal({ session }: { session: ImplementSession }) {
 }
 
 function CopyBtn({ label, hint, done, onClick }: { label: string; hint: string; done: boolean; onClick: () => void }) {
+  const t = useT();
   return (
     <button
       type="button"
@@ -207,7 +217,7 @@ function CopyBtn({ label, hint, done, onClick }: { label: string; hint: string; 
       className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
       {done ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-      {done ? "コピー済み" : label}
+      {done ? t("qa.copied") : label}
     </button>
   );
 }

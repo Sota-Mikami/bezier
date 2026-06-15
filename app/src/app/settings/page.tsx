@@ -121,18 +121,18 @@ export default function SettingsPage() {
         </Section>
 
         {/* Agent */}
-        <Section title="エージェント" desc="新しい Issue を実装するときに既定で選ばれる AI エージェント。">
-          <Field label="既定のエージェント">
+        <Section title={t("settings.agent.title")} desc={t("settings.agent.desc")}>
+          <Field label={t("settings.agent.label")}>
             <select
               value={settings.defaultAgentId}
               onChange={(e) => update({ defaultAgentId: e.target.value })}
               className="h-8 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <option value="">自動（最初に見つかったもの）</option>
+              <option value="">{t("settings.agent.auto")}</option>
               {agents.map((a) => (
                 <option key={a.id} value={a.id} disabled={!a.available}>
                   {a.name}
-                  {a.available ? "" : "（未インストール）"}
+                  {a.available ? "" : t("settings.agent.notInstalled")}
                 </option>
               ))}
             </select>
@@ -141,16 +141,16 @@ export default function SettingsPage() {
 
         {/* Bezier slash-command pack (DEC-076 + marketplace UI) */}
         <Section
-          title="Bezier コマンド（claude スラッシュコマンド）"
-          desc="Bezier の定型プロンプトを claude の /bezier:* スラッシュコマンドとして ~/.claude に入れます。入れると Bezier の中でも、あなたの素のターミナルでも使えます。ここで編集・追加・削除でき、勝手には入れません。"
+          title={t("settings.commands.title")}
+          desc={t("settings.commands.desc")}
         >
           <BezierCommandsManager />
         </Section>
 
         {/* Publish accounts (DEC-098) */}
         <Section
-          title="公開アカウント（共有）"
-          desc="「共有」で Vercel に公開するときのアカウント。複数登録すると、リポジトリごとに使い分けられます（クライアントワークの取り違え防止）。秘密鍵は Bezier を通りません — サーバ env は Vercel のプロジェクト設定に。"
+          title={t("settings.publish.title")}
+          desc={t("settings.publish.desc")}
         >
           <PublishConnectionsManager />
         </Section>
@@ -186,44 +186,44 @@ export default function SettingsPage() {
         </Section>
 
         {/* Preview */}
-        <Section title="プレビュー" desc="デザインプレビューの dev サーバーは Issue を離れても保持されます（DEC-040）。その上限と自動停止の設定です。">
-          <Field label="同時に保持する数">
+        <Section title={t("settings.previews.title")} desc={t("settings.previews.desc")}>
+          <Field label={t("settings.previews.maxLabel")}>
             <NumberInput
               value={settings.maxPreviews}
               min={1}
               max={8}
               onChange={(n) => update({ maxPreviews: n })}
-              suffix="個"
+              suffix={t("settings.previews.maxSuffix")}
             />
           </Field>
-          <Field label="自動停止までの未閲覧時間">
+          <Field label={t("settings.previews.idleLabel")}>
             <NumberInput
               value={settings.previewIdleMinutes}
               min={1}
               max={120}
               onChange={(n) => update({ previewIdleMinutes: n })}
-              suffix="分"
+              suffix={t("settings.previews.idleSuffix")}
             />
           </Field>
         </Section>
 
         {/* Trash */}
-        <Section title="ゴミ箱" desc="削除した Issue をゴミ箱に保持し、この日数を過ぎると自動で完全削除します（DEC-020）。">
-          <Field label="自動削除までの日数">
+        <Section title={t("settings.trash.title")} desc={t("settings.trash.desc")}>
+          <Field label={t("settings.trash.ttlLabel")}>
             <NumberInput
               value={settings.trashTtlDays}
               min={1}
               max={365}
               onChange={(n) => update({ trashTtlDays: n })}
-              suffix="日"
+              suffix={t("settings.trash.ttlSuffix")}
             />
           </Field>
         </Section>
 
         {/* Spec template */}
         <Section
-          title="Spec テンプレート"
-          desc="新しい Issue を作成したときに spec.md に書き込まれる雛形。{{title}} と {{id}} は作成時に置き換えられます。"
+          title={t("settings.specTemplate.title")}
+          desc={t("settings.specTemplate.desc")}
         >
           <div className="space-y-2">
             <textarea
@@ -241,12 +241,12 @@ export default function SettingsPage() {
                 className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
               >
                 <RotateCcw className="size-3.5" />
-                既定のテンプレートに戻す
+                {t("settings.specTemplate.resetToDefault")}
               </button>
               {settings.specTemplate === DEFAULT_SPEC_TEMPLATE && (
                 <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                   <Check className="size-3" />
-                  既定
+                  {t("settings.specTemplate.default")}
                 </span>
               )}
             </div>

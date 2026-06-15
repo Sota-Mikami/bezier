@@ -24,13 +24,7 @@ import { removePath, confirmDialog } from "@/lib/ipc";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { SlotEditor } from "./slot-editor";
 import { UnderlineTab } from "@/components/ui/underline-tab";
-
-const ADD_TEMPLATES: { type: string; label: string }[] = [
-  { type: "decision", label: "決定" },
-  { type: "qa", label: "QA" },
-  { type: "handoff", label: "共有" },
-  { type: "note", label: "空のメモ" },
-];
+import { useT } from "@/lib/i18n";
 
 const docFile = (d: IssueDoc) => d.file;
 
@@ -42,6 +36,13 @@ export function IssueDocs({
   /** Forwarded to the SlotEditor: pulse/auto-switch the tab on agent rewrites. */
   onExternalChange?: () => void;
 }) {
+  const t = useT();
+  const addTemplates: { type: string; label: string }[] = [
+    { type: "decision", label: t("docs.tplDecision") },
+    { type: "qa", label: t("docs.tplQa") },
+    { type: "handoff", label: t("docs.tplHandoff") },
+    { type: "note", label: t("docs.tplNote") },
+  ];
   const [docs, setDocs] = React.useState<IssueDoc[]>([]);
   const [selected, setSelected] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
@@ -106,10 +107,10 @@ export function IssueDocs({
 
   const remove = async (d: IssueDoc) => {
     if (d.type === "spec") return; // the Spec spine is not deletable here.
-    const ok = await confirmDialog(`「${d.label}」を削除しますか？`, {
-      title: "ドキュメントの削除",
-      okLabel: "削除",
-      cancelLabel: "やめる",
+    const ok = await confirmDialog(t("docs.deleteDocConfirm", { label: d.label }), {
+      title: t("docs.deleteDocTitle"),
+      okLabel: t("common.delete"),
+      cancelLabel: t("docs.deleteCancel"),
     });
     if (!ok) return;
     try {
@@ -123,7 +124,7 @@ export function IssueDocs({
   if (ordered.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-        ドキュメントを準備中…
+        {t("docs.preparing")}
       </div>
     );
   }
@@ -152,8 +153,8 @@ export function IssueDocs({
                     e.stopPropagation();
                     void remove(d);
                   }}
-                  title="削除"
-                  aria-label={`${d.label} を削除`}
+                  title={t("common.delete")}
+                  aria-label={t("docs.removeDocAria", { label: d.label })}
                   className="-mr-1 hidden size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground group-hover/tab:flex"
                 >
                   <X className="size-3" />
@@ -165,22 +166,22 @@ export function IssueDocs({
             <button
               type="button"
               onClick={() => setAdding((v) => !v)}
-              title="ドキュメントを追加（通常は会話で agent が作成）"
-              aria-label="ドキュメントを追加"
+              title={t("docs.addDocTooltip")}
+              aria-label={t("docs.addDocAria")}
               className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Plus className="size-3.5" />
             </button>
             {adding && (
               <div className="absolute top-8 left-0 z-20 w-32 overflow-hidden rounded-md border bg-background py-1 shadow-lg">
-                {ADD_TEMPLATES.map((t) => (
+                {addTemplates.map((tpl) => (
                   <button
-                    key={t.type}
+                    key={tpl.type}
                     type="button"
-                    onClick={() => void add(t.type)}
+                    onClick={() => void add(tpl.type)}
                     className="block w-full px-2.5 py-1 text-left text-xs hover:bg-muted"
                   >
-                    {t.label}
+                    {tpl.label}
                   </button>
                 ))}
               </div>

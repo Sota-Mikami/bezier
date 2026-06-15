@@ -819,7 +819,10 @@ function RepoGroup({
                     )}
                     title={
                       agent
-                        ? `${issue.title || t("common.untitled")}（${t(`sidebar.agentState.${agent}`)}）`
+                        ? t("sidebar.issueTitleWithState", {
+                            title: issue.title || t("common.untitled"),
+                            state: t(`sidebar.agentState.${agent}`),
+                          })
                         : issue.title || t("common.untitled")
                     }
                   >

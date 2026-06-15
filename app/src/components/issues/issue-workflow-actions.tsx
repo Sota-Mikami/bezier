@@ -32,6 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useT } from "@/lib/i18n";
 import { messageDialog } from "@/lib/ipc";
 import { moveIssueToRepo, type Issue } from "@/lib/issues";
 import { useSettings } from "@/lib/settings";
@@ -52,6 +53,7 @@ export function IssueMenu({
   onToggleHistory: () => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   const {
     ref,
     gitRepo,
@@ -67,8 +69,8 @@ export function IssueMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Issue メニュー"
-        title="活動ログ / エージェント / 破棄 / 削除"
+        aria-label={t("ship.issueMenuAriaLabel")}
+        title={t("ship.issueMenuTitle")}
         className="flex size-6 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted"
       >
         <ChevronDown className="size-4" />
@@ -79,14 +81,14 @@ export function IssueMenu({
           onClick={onToggleHistory}
         >
           <History className="size-3.5" />
-          活動ログ{historyOpen ? "を閉じる" : ""}
+          {historyOpen ? t("ship.activityLogClose") : t("ship.activityLog")}
         </DropdownMenuItem>
         <DropdownMenuItem
           className="cursor-pointer gap-2 text-xs"
           onClick={() => openShortcuts()}
         >
           <Keyboard className="size-3.5" />
-          キーボードショートカット
+          {t("ship.keyboardShortcuts")}
           <Kbd className="ml-auto">?</Kbd>
         </DropdownMenuItem>
 
@@ -98,7 +100,7 @@ export function IssueMenu({
               onValueChange={(v) => setSelectedAgentId(v)}
             >
               <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-                実装エージェント
+                {t("ship.implementAgent")}
               </DropdownMenuLabel>
               {agents.map((a) => (
                 <DropdownMenuRadioItem
@@ -109,9 +111,9 @@ export function IssueMenu({
                 >
                   {a.name}
                   {a.comingSoon
-                    ? "（coming soon）"
+                    ? t("ship.comingSoonSuffix")
                     : !a.available
-                      ? "（not found）"
+                      ? t("ship.notFoundSuffix")
                       : ""}
                 </DropdownMenuRadioItem>
               ))}
@@ -128,7 +130,7 @@ export function IssueMenu({
               onClick={() => void handleRerun()}
             >
               <RotateCcw className="size-3.5" />
-              編集後の Spec で再 Implement
+              {t("ship.reImplement")}
             </DropdownMenuItem>
             <DropdownMenuItem
               className="cursor-pointer gap-2 text-xs text-destructive focus:text-destructive"
@@ -136,7 +138,7 @@ export function IssueMenu({
               onClick={() => void handleDiscard()}
             >
               <Trash2 className="size-3.5" />
-              変更を破棄（Discard）
+              {t("ship.discardChanges")}
             </DropdownMenuItem>
             <DropdownMenuGroup>
               <DropdownMenuLabel
@@ -155,14 +157,14 @@ export function IssueMenu({
           onClick={onDelete}
         >
           <Trash2 className="size-3.5" />
-          Issue をゴミ箱へ移動
+          {t("ship.moveIssueToTrash")}
         </DropdownMenuItem>
 
         {gitRepo === false && (
           <DropdownMenuGroup>
             <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-amber-600 dark:text-amber-400">
               <TriangleAlert className="size-3" />
-              git リポジトリではありません
+              {t("ship.notGitRepo")}
             </DropdownMenuLabel>
           </DropdownMenuGroup>
         )}
@@ -183,6 +185,7 @@ export function IssueRepoChip({
   setIssue: React.Dispatch<React.SetStateAction<Issue | null>>;
   locked: boolean;
 }) {
+  const t = useT();
   const { recents, switchTo } = useWorkspaceRoot();
   const [busy, setBusy] = React.useState(false);
   const name = React.useMemo(() => {
@@ -199,8 +202,10 @@ export function IssueRepoChip({
       switchTo(toRoot);
     } catch (e) {
       await messageDialog(
-        `リポジトリの変更に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-        { title: "変更エラー" },
+        t("ship.moveRepoFailed", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+        { title: t("ship.moveRepoErrorTitle") },
       );
     } finally {
       setBusy(false);
@@ -210,7 +215,7 @@ export function IssueRepoChip({
   if (locked) {
     return (
       <span
-        title="作業を開始したため、このIssueのリポジトリは固定されています"
+        title={t("ship.repoLockedTooltip")}
         className="flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground"
       >
         <FolderGit2 className="size-3.5 shrink-0" />
@@ -222,7 +227,7 @@ export function IssueRepoChip({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        title="このIssueのリポジトリ（クリックで変更・作業開始前まで）"
+        title={t("ship.repoChipTooltip")}
         className="group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:border-foreground/25 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:border-foreground/25 data-[popup-open]:bg-muted data-[popup-open]:text-foreground"
       >
         {busy ? (
@@ -236,7 +241,7 @@ export function IssueRepoChip({
       <DropdownMenuContent align="start" className="min-w-60">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-            このIssueを置くリポジトリ
+            {t("ship.repoChipMenuLabel")}
           </DropdownMenuLabel>
           {recents.map((r) => (
             <DropdownMenuItem
@@ -270,6 +275,7 @@ export function IssueRepoChip({
 
 // The single "Ship ▾" finalize button in the top bar (DEC-058, CEO pick).
 export function IssueShip({ session }: { session: ImplementSession }) {
+  const t = useT();
   const {
     ref,
     action,
@@ -295,8 +301,8 @@ export function IssueShip({ session }: { session: ImplementSession }) {
     <div className="flex items-center gap-1.5">
       <DropdownMenu>
         <DropdownMenuTrigger
-          aria-label="Ship（finalize）"
-          title="main へ反映 / PR を作成（未コミット分は自動でまとめます）"
+          aria-label={t("ship.shipAriaLabel")}
+          title={t("ship.shipTitle")}
           className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground outline-none transition hover:bg-primary/90"
         >
           {action ? (
@@ -313,18 +319,18 @@ export function IssueShip({ session }: { session: ImplementSession }) {
               {behind === null ? (
                 <>
                   <Loader2 className="size-3 animate-spin" />
-                  {baseBranch} との差分を確認中…
+                  {t("ship.checkingDiff", { baseBranch })}
                 </>
               ) : behind === 0 ? (
                 <>
                   <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
-                  {baseBranch} と同期済
+                  {t("ship.inSyncWith", { baseBranch })}
                   {ahead != null && ahead > 0 ? ` · ${ahead} ahead` : ""}
                 </>
               ) : (
                 <>
                   <TriangleAlert className="size-3 text-amber-600 dark:text-amber-400" />
-                  {baseBranch} より {behind} commits 遅れ
+                  {t("ship.commitsBehind", { baseBranch, behind })}
                   {ahead != null && ahead > 0 ? ` · ${ahead} ahead` : ""}
                 </>
               )}
@@ -346,14 +352,14 @@ export function IssueShip({ session }: { session: ImplementSession }) {
                 onClick={() => void openPR()}
               >
                 <GitPullRequest className="size-3.5" />
-                Open PR（push して PR 作成）
+                {t("ship.openPrPush")}
               </DropdownMenuItem>
             )}
 
             {protectMain ? (
               <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-muted-foreground">
                 <Lock className="size-3" />
-                {baseBranch} は保護中 — PR から反映してください
+                {t("ship.baseBranchProtected", { baseBranch })}
               </DropdownMenuLabel>
             ) : (
               <DropdownMenuItem
@@ -363,7 +369,7 @@ export function IssueShip({ session }: { session: ImplementSession }) {
               >
                 <GitMerge className="size-3.5" />
                 Merge to {baseBranch}
-                {canOpenPR ? "（solo）" : ""}
+                {canOpenPR ? t("ship.soloSuffix") : ""}
               </DropdownMenuItem>
             )}
           </DropdownMenuGroup>
@@ -378,7 +384,7 @@ export function IssueShip({ session }: { session: ImplementSession }) {
                 }
               >
                 <ExternalLink className="size-3.5" />
-                PR を開く
+                {t("ship.openPrLink")}
               </DropdownMenuItem>
             </>
           )}
@@ -389,7 +395,7 @@ export function IssueShip({ session }: { session: ImplementSession }) {
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-destructive">
                   <TriangleAlert className="size-3" />
-                  衝突 {syncConflicts.length} ファイル
+                  {t("ship.conflictFiles", { count: syncConflicts.length })}
                 </DropdownMenuLabel>
                 {selectedAgent?.available && (
                   <DropdownMenuItem
@@ -398,7 +404,7 @@ export function IssueShip({ session }: { session: ImplementSession }) {
                     onClick={() => resolveConflictsWithAI()}
                   >
                     <Sparkles className="size-3.5" />
-                    AI に解決を依頼
+                    {t("ship.askAiResolve")}
                   </DropdownMenuItem>
                 )}
               </DropdownMenuGroup>

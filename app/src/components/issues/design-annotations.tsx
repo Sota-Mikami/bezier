@@ -37,6 +37,7 @@ import {
   type Annotation,
 } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
+import { useT, tt } from "@/lib/i18n";
 import type { ImplementSession } from "./implement-session-types";
 
 // Comment is now Figma-style — click = point pin, drag = area rect (DEC-068), so
@@ -86,6 +87,7 @@ export function AnnotationLayer({
   surface: AnnotationSurface;
 }) {
   const { root, issue, agentState } = session;
+  const t = useT();
 
   const layerRef = React.useRef<HTMLDivElement | null>(null);
   const [tool, setTool] = React.useState<Tool>("comment");
@@ -325,7 +327,9 @@ export function AnnotationLayer({
     async (batch: Annotation[], note?: string) => {
       if (batch.length === 0) return;
       if (!surface.canSend) {
-        await messageDialog(surface.cannotSendMessage, { title: "送信できません" });
+        await messageDialog(surface.cannotSendMessage, {
+          title: tt("annotations.sendErrorTitle"),
+        });
         return;
       }
       setBusy(true);
@@ -336,7 +340,10 @@ export function AnnotationLayer({
           ? [`（全体の指示）${note.trim()}`, "", ...marks]
           : marks;
         const promptText = surface.buildPrompt(lines, shot);
-        await surface.send(promptText, `${batch.length} 件の注釈`);
+        await surface.send(
+          promptText,
+          tt("annotations.annotationCount", { count: batch.length }),
+        );
         setBatchNote("");
         sentTurnRef.current = true;
         sawRunningRef.current = false;
@@ -353,7 +360,7 @@ export function AnnotationLayer({
         setActiveId(null);
       } catch (e) {
         await messageDialog(e instanceof Error ? e.message : String(e), {
-          title: "送信エラー",
+          title: tt("annotations.sendFailedTitle"),
         });
       } finally {
         setBusy(false);
@@ -502,7 +509,7 @@ export function AnnotationLayer({
               style={{ pointerEvents: "auto" }}
             >
               <span className="shrink-0 px-1 text-xs whitespace-nowrap text-muted-foreground">
-                未送信 {drafts.length}
+                {t("annotations.unsentCount", { count: drafts.length })}
               </span>
               <input
                 value={batchNote}
@@ -513,12 +520,12 @@ export function AnnotationLayer({
                     void send(drafts, batchNote);
                   }
                 }}
-                placeholder="まとめて指示（任意・Enter で送信）"
+                placeholder={t("annotations.batchNotePlaceholder")}
                 className="h-7 w-44 min-w-0 rounded-md border bg-background px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring sm:w-56"
               />
               <button
                 type="button"
-                title="元に戻す"
+                title={t("annotations.undo")}
                 disabled={!hasDraftMark}
                 onClick={undoLast}
                 className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
@@ -527,7 +534,7 @@ export function AnnotationLayer({
               </button>
               <button
                 type="button"
-                title="やり直し"
+                title={t("annotations.redo")}
                 disabled={!redoStack.length}
                 onClick={redoLast}
                 className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
@@ -536,7 +543,7 @@ export function AnnotationLayer({
               </button>
               <button
                 type="button"
-                title="すべてクリア"
+                title={t("annotations.clearAll")}
                 disabled={!hasDraftMark}
                 onClick={clearDrafts}
                 className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive disabled:opacity-40"
@@ -550,7 +557,7 @@ export function AnnotationLayer({
                 className="flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                送信
+                {t("annotations.send")}
               </button>
             </div>
           )}
@@ -631,13 +638,14 @@ function Toolbar({
   tool: Tool;
   setTool: (t: Tool) => void;
 }) {
+  const t = useT();
   return (
     <div
       className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-lg backdrop-blur"
       style={{ pointerEvents: "auto" }}
     >
-      <ToolButton t="comment" current={tool} setTool={setTool} icon={<MessageSquarePlus className="size-4" />} label="コメント（クリック＝点 / ドラッグ＝範囲）" />
-      <ToolButton t="pen" current={tool} setTool={setTool} icon={<Pencil className="size-4" />} label="ペン（何度でも描いてまとめて送信）" />
+      <ToolButton t="comment" current={tool} setTool={setTool} icon={<MessageSquarePlus className="size-4" />} label={t("annotations.toolComment")} />
+      <ToolButton t="pen" current={tool} setTool={setTool} icon={<Pencil className="size-4" />} label={t("annotations.toolPen")} />
     </div>
   );
 }
@@ -659,6 +667,7 @@ function PinBadge({
   active: boolean;
   onClick: () => void;
 }) {
+  const t = useT();
   return (
     <button
       type="button"
@@ -675,7 +684,7 @@ function PinBadge({
         active && "ring-2 ring-ring ring-offset-1",
       )}
       style={{ left: `${x * 100}%`, top: `${y * 100}%`, pointerEvents: "auto" }}
-      title={`注釈 ${n}（${kind}）`}
+      title={t("annotations.pinTitle", { n, kind })}
     >
       {status === "done" ? <Check className="size-3.5" /> : n}
     </button>
@@ -683,6 +692,7 @@ function PinBadge({
 }
 
 function ShotViewer({ before, after }: { before?: string; after?: string }) {
+  const t = useT();
   const [side, setSide] = React.useState<"before" | "after">(after ? "after" : "before");
   // Track which path the loaded URL belongs to, so `src` can be DERIVED (no
   // synchronous setState-in-effect on path change).
@@ -715,7 +725,7 @@ function ShotViewer({ before, after }: { before?: string; after?: string }) {
             !before && "opacity-40",
           )}
         >
-          Before
+          {t("annotations.before")}
         </button>
         <button
           type="button"
@@ -727,7 +737,7 @@ function ShotViewer({ before, after }: { before?: string; after?: string }) {
             !after && "opacity-40",
           )}
         >
-          After
+          {t("annotations.after")}
         </button>
       </div>
       <div className="overflow-hidden rounded border bg-muted/30">
@@ -761,6 +771,7 @@ function Composer({
   onClose: () => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   const done = annotation.status === "done";
   const runningState = annotation.status === "running";
   const editable = !done && !runningState;
@@ -780,15 +791,15 @@ function Composer({
         <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-semibold text-primary-foreground">
           {n}
         </span>
-        {KIND_LABEL[annotation.kind]}
+        {kindLabel(annotation.kind)}
         {runningState && (
           <span className="ml-auto flex items-center gap-1 text-amber-600">
-            <Loader2 className="size-3 animate-spin" /> 実行中
+            <Loader2 className="size-3 animate-spin" /> {t("annotations.running")}
           </span>
         )}
         {done && (
           <span className="ml-auto flex items-center gap-1 text-emerald-600">
-            <Check className="size-3" /> 対応済み
+            <Check className="size-3" /> {t("annotations.addressed")}
           </span>
         )}
       </div>
@@ -814,12 +825,12 @@ function Composer({
             }
           }}
           rows={3}
-          placeholder="この箇所への修正指示を書く…  (⌘Enter で送信)"
+          placeholder={t("annotations.composerPlaceholder")}
           className="w-full resize-none rounded border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       ) : (
         <p className="whitespace-pre-wrap rounded bg-muted/50 px-2 py-1.5 text-xs">
-          {annotation.text || "(指示なし)"}
+          {annotation.text || t("annotations.noInstruction")}
         </p>
       )}
 
@@ -834,7 +845,7 @@ function Composer({
             className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />}
-            送信
+            {t("annotations.send")}
           </button>
         )}
         <button
@@ -842,12 +853,12 @@ function Composer({
           onClick={onClose}
           className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
         >
-          {editable ? "下書き" : "閉じる"}
+          {editable ? t("annotations.draft") : t("common.close")}
         </button>
         <button
           type="button"
-          title="削除"
-          aria-label="削除"
+          title={t("common.delete")}
+          aria-label={t("common.delete")}
           onClick={onDelete}
           className="ml-auto rounded-md p-1 text-muted-foreground hover:text-destructive"
         >
@@ -858,11 +869,17 @@ function Composer({
   );
 }
 
-const KIND_LABEL: Record<Annotation["kind"], string> = {
-  pin: "コメント（点）",
-  pen: "ペン注釈",
-  rect: "コメント（範囲）",
-  element: "要素",
-};
+function kindLabel(kind: Annotation["kind"]): string {
+  switch (kind) {
+    case "pin":
+      return tt("annotations.kind.pin");
+    case "pen":
+      return tt("annotations.kind.pen");
+    case "rect":
+      return tt("annotations.kind.rect");
+    case "element":
+      return tt("annotations.kind.element");
+  }
+}
 
 export default AnnotationLayer;

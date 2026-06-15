@@ -18,6 +18,7 @@ import dynamic from "next/dynamic";
 import { FileText, Loader2, Check, RefreshCw } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useT, tt } from "@/lib/i18n";
 import { readFile } from "@/lib/ipc";
 import { readDoc, type OpenDoc } from "@/lib/workspace";
 import type {
@@ -33,7 +34,7 @@ const MarkdownEditor = dynamic(
     loading: () => (
       <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
-        Loading editor…
+        {tt("slotEditor.loadingEditor")}
       </div>
     ),
   },
@@ -164,11 +165,12 @@ function SpecToc({
   activeLine: number | null;
   onJump: (line: number) => void;
 }) {
+  const t = useT();
   const minLevel = Math.min(...headings.map((h) => h.level));
   return (
     <nav className="hidden w-56 shrink-0 overflow-y-auto border-r bg-muted/30 px-2 py-3 lg:block">
       <div className="px-2 pb-2 text-xs font-semibold tracking-wide text-muted-foreground">
-        目次
+        {t("slotEditor.tableOfContents")}
       </div>
       <ul className="space-y-px">
         {headings.map((h, i) => {
@@ -239,6 +241,7 @@ function SlotEditorInner({
   label?: string;
   onExternalChange?: () => void;
 }) {
+  const t = useT();
   const [doc, setDoc] = React.useState<OpenDoc | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -491,7 +494,7 @@ function SlotEditorInner({
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center gap-2 border-b px-4 py-2">
         <FileText className="size-4 shrink-0 text-muted-foreground" />
-        <span className="truncate text-sm font-medium">{label ?? "Artifact"}</span>
+        <span className="truncate text-sm font-medium">{label ?? t("slotEditor.artifact")}</span>
         <span
           className="truncate font-mono text-[11px] text-muted-foreground"
           title={path}
@@ -502,14 +505,14 @@ function SlotEditorInner({
           {saving ? (
             <span className="flex items-center gap-1 text-muted-foreground">
               <Loader2 className="size-3 animate-spin" />
-              保存中…
+              {t("slotEditor.saving")}
             </span>
           ) : dirty ? (
-            <span className="text-amber-600 dark:text-amber-500">未保存…</span>
+            <span className="text-amber-600 dark:text-amber-500">{t("slotEditor.unsaved")}</span>
           ) : (
             <span className="flex items-center gap-1 text-muted-foreground">
               <Check className="size-3" />
-              保存済み
+              {t("slotEditor.saved")}
             </span>
           )}
         </div>
@@ -520,20 +523,20 @@ function SlotEditorInner({
       {conflict && (
         <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-[11px] text-amber-700 dark:text-amber-400">
           <RefreshCw className="size-3.5 shrink-0" />
-          <span className="flex-1">外部で更新されました（エージェントが spec.md を編集）。</span>
+          <span className="flex-1">{t("slotEditor.externalChangeBanner")}</span>
           <button
             type="button"
             onClick={() => discardAndReload()}
             className="rounded border border-amber-500/50 px-1.5 py-0.5 font-medium hover:bg-amber-500/20"
           >
-            リロード（外部を採用）
+            {t("slotEditor.reloadAdoptExternal")}
           </button>
           <button
             type="button"
             onClick={() => void keepMine()}
             className="rounded border border-amber-500/50 px-1.5 py-0.5 font-medium hover:bg-amber-500/20"
           >
-            自分の変更を保持
+            {t("slotEditor.keepMine")}
           </button>
         </div>
       )}
@@ -550,7 +553,7 @@ function SlotEditorInner({
         )}
         <div className="min-h-0 flex-1 overflow-hidden">
           {loading && (
-            <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+            <p className="p-4 text-sm text-muted-foreground">{t("common.loading")}</p>
           )}
           {error && <p className={cn("p-4 text-sm text-destructive")}>{error}</p>}
           {doc && !loading && (

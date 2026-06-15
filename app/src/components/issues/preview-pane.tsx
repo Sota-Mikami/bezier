@@ -33,19 +33,27 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { openExternal } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { useT, tt } from "@/lib/i18n";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
 import { useAnnotationMode } from "./annotation-mode";
 
-const STATUS_LABEL: Record<PreviewStatus, string> = {
-  idle: "未起動",
-  starting: "起動中…",
-  ready: "稼働中",
-  error: "エラー",
-  stopped: "停止",
-};
+function statusLabel(status: PreviewStatus): string {
+  switch (status) {
+    case "idle":
+      return tt("preview.statusIdle");
+    case "starting":
+      return tt("preview.statusStarting");
+    case "ready":
+      return tt("preview.statusReady");
+    case "error":
+      return tt("preview.statusError");
+    case "stopped":
+      return tt("preview.statusStopped");
+  }
+}
 
 // The "build" annotation surface (DEC-056): pins on the live preview become fix
 // requests against the worktree CODE. Element-pick is available (cooperating
@@ -54,8 +62,7 @@ function buildAnnotationSurface(session: ImplementSession): AnnotationSurface {
   return {
     key: "build",
     canSend: !!session.ref,
-    cannotSendMessage:
-      "先に右パネルの「Implement」で worktree を作成してください。",
+    cannotSendMessage: tt("preview.cannotSendNoWorktree"),
     buildPrompt: (lines, shot) =>
       [
         "## デザインフィードバック",
@@ -84,7 +91,7 @@ function StatusBadge({ status }: { status: PreviewStatus }) {
           (status === "idle" || status === "stopped") && "bg-muted-foreground",
         )}
       />
-      {STATUS_LABEL[status]}
+      {statusLabel(status)}
     </Badge>
   );
 }
@@ -99,6 +106,7 @@ function RunningBadge({
   status: PreviewStatus;
   onStop: () => void;
 }) {
+  const t = useT();
   if (status !== "ready" && status !== "starting") {
     return <StatusBadge status={status} />;
   }
@@ -106,7 +114,7 @@ function RunningBadge({
     <button
       type="button"
       onClick={onStop}
-      title="クリックで停止"
+      title={t("preview.clickToStop")}
       className="group/stop inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-normal text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
     >
       <span
@@ -116,8 +124,8 @@ function RunningBadge({
         )}
       />
       <Square className="hidden size-3 fill-current group-hover/stop:inline" />
-      <span className="group-hover/stop:hidden">{STATUS_LABEL[status]}</span>
-      <span className="hidden group-hover/stop:inline">停止</span>
+      <span className="group-hover/stop:hidden">{statusLabel(status)}</span>
+      <span className="hidden group-hover/stop:inline">{t("common.stop")}</span>
     </button>
   );
 }
@@ -128,17 +136,31 @@ function RunningBadge({
 type DeviceId = "fluid" | "desktop" | "tablet" | "mobile" | "custom";
 const DEVICES: {
   id: DeviceId;
-  label: string;
   icon: typeof Monitor;
   w?: number;
   h?: number;
 }[] = [
-  { id: "fluid", label: "フィット（全幅）", icon: Maximize2 },
-  { id: "desktop", label: "デスクトップ", icon: Monitor, w: 1280, h: 800 },
-  { id: "tablet", label: "タブレット", icon: Tablet, w: 768, h: 1024 },
-  { id: "mobile", label: "モバイル", icon: Smartphone, w: 390, h: 844 },
-  { id: "custom", label: "カスタム幅", icon: Ruler },
+  { id: "fluid", icon: Maximize2 },
+  { id: "desktop", icon: Monitor, w: 1280, h: 800 },
+  { id: "tablet", icon: Tablet, w: 768, h: 1024 },
+  { id: "mobile", icon: Smartphone, w: 390, h: 844 },
+  { id: "custom", icon: Ruler },
 ];
+
+function deviceLabel(id: DeviceId): string {
+  switch (id) {
+    case "fluid":
+      return tt("preview.deviceFluid");
+    case "desktop":
+      return tt("preview.deviceDesktop");
+    case "tablet":
+      return tt("preview.deviceTablet");
+    case "mobile":
+      return tt("preview.deviceMobile");
+    case "custom":
+      return tt("preview.deviceCustom");
+  }
+}
 
 export function PreviewPane({
   server,
@@ -150,6 +172,7 @@ export function PreviewPane({
   /** When present (web runner), enables the design-feedback overlay (DEC-045). */
   session?: ImplementSession;
 }) {
+  const t = useT();
   const { status, config, scriptsDev, log, error, url, configLoaded } = server;
   const { on: annotating } = useAnnotationMode();
 
@@ -211,8 +234,8 @@ export function PreviewPane({
     return (
       <EmptyState
         icon={<MonitorPlay className="size-6 text-muted-foreground" />}
-        title="まだ実装がありません"
-        detail="「Implement with AI」で worktree を作成すると、ここに実物のプレビューが表示されます。"
+        title={t("preview.noImplTitle")}
+        detail={t("preview.noImplDetail")}
       />
     );
   }
@@ -231,7 +254,7 @@ export function PreviewPane({
           <RunningBadge status={status} onStop={() => void server.stop()} />
           {config && (
             <code className="hidden truncate font-mono text-[11px] text-muted-foreground lg:inline">
-              {config.devCommand || "(dev コマンド未設定)"}
+              {config.devCommand || t("preview.devCommandUnset")}
               {config.packageDir && ` @${config.packageDir}/`} · :{config.port}
             </code>
           )}
@@ -248,7 +271,7 @@ export function PreviewPane({
                   <button
                     key={d.id}
                     type="button"
-                    title={d.label + (d.w ? ` · ${d.w}×${d.h}` : "")}
+                    title={deviceLabel(d.id) + (d.w ? ` · ${d.w}×${d.h}` : "")}
                     onClick={() => setDeviceId(d.id)}
                     className={cn(
                       "flex size-6 items-center justify-center rounded transition-colors",
@@ -269,7 +292,7 @@ export function PreviewPane({
                   value={customW}
                   min={160}
                   onChange={(e) => setCustomW(Number(e.target.value) || 0)}
-                  title="幅 (px)"
+                  title={t("preview.widthPx")}
                   className="h-6 w-14 rounded-md border bg-transparent px-1.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
                 <span>×</span>
@@ -278,7 +301,7 @@ export function PreviewPane({
                   value={customH}
                   min={160}
                   onChange={(e) => setCustomH(Number(e.target.value) || 0)}
-                  title="高さ (px)"
+                  title={t("preview.heightPx")}
                   className="h-6 w-14 rounded-md border bg-transparent px-1.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
@@ -286,7 +309,7 @@ export function PreviewPane({
               <>
                 <button
                   type="button"
-                  title="向きを回転（縦 ⇄ 横）"
+                  title={t("preview.rotateOrientation")}
                   onClick={() => setPortrait((p) => !p)}
                   className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
@@ -310,7 +333,7 @@ export function PreviewPane({
                 onChange={(e) => setPathDraft(e.target.value)}
                 spellCheck={false}
                 placeholder="/"
-                title="表示するパス（Enter で移動）"
+                title={t("preview.pathToShow")}
                 className="h-6 w-28 bg-transparent font-mono text-[11px] outline-none placeholder:text-muted-foreground"
               />
             </form>
@@ -318,7 +341,7 @@ export function PreviewPane({
             <button
               type="button"
               onClick={() => setReloadNonce((n) => n + 1)}
-              title="再読み込み"
+              title={t("preview.reload")}
               className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <RotateCw className="size-3.5" />
@@ -328,7 +351,7 @@ export function PreviewPane({
               type="button"
               onClick={() => src && void openExternal(src).catch(() => {})}
               disabled={!src}
-              title="外部ブラウザで開く"
+              title={t("preview.openInBrowser")}
               className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
             >
               <ExternalLink className="size-3.5" />
@@ -346,7 +369,7 @@ export function PreviewPane({
               onClick={() => void server.start()}
             >
               <Play className="size-3.5" />
-              Start
+              {t("preview.start")}
             </Button>
           )}
           <Button
@@ -354,10 +377,10 @@ export function PreviewPane({
             variant={showSettings ? "secondary" : "ghost"}
             className="h-7 gap-1.5"
             onClick={() => setShowSettings((v) => !v)}
-            title="dev コマンド / ポート設定"
+            title={t("preview.devCommandPortSettings")}
           >
             <Settings2 className="size-3.5" />
-            設定
+            {t("preview.settings")}
           </Button>
         </div>
       </div>
@@ -440,21 +463,21 @@ export function PreviewPane({
         ) : status === "starting" ? (
           <StartingOrError
             spinner
-            title="dev server を起動しています…"
+            title={t("preview.startingDevServer")}
             detail={url ?? undefined}
             log={log}
           />
         ) : status === "error" ? (
           <StartingOrError
-            title={error ?? "起動に失敗しました。"}
+            title={error ?? t("preview.startFailed")}
             log={log}
             tone="error"
           />
         ) : (
           <EmptyState
             icon={<MonitorPlay className="size-6 text-muted-foreground" />}
-            title="プレビュー未起動"
-            detail="「Start」で worktree の dev server を起動し、実物を表示します。"
+            title={t("preview.previewNotStarted")}
+            detail={t("preview.previewNotStartedDetail")}
           />
         )}
       </div>
@@ -463,13 +486,11 @@ export function PreviewPane({
 }
 
 /** Status labels for the tauri runner (a separate window, not an iframe). */
-const TAURI_STATUS_LABEL: Record<PreviewStatus, string> = {
-  idle: "未起動",
-  starting: "起動中…",
-  ready: "起動済み（別ウィンドウ）",
-  error: "エラー",
-  stopped: "停止",
-};
+function tauriStatusLabel(status: PreviewStatus): string {
+  return status === "ready"
+    ? tt("preview.tauriStatusReady")
+    : statusLabel(status);
+}
 
 /**
  * The Design pane for a TAURI target. The worktree's app opens in a SEPARATE
@@ -478,6 +499,7 @@ const TAURI_STATUS_LABEL: Record<PreviewStatus, string> = {
  * that window. No iframe, no dev-command form.
  */
 function TauriRunnerPane({ server }: { server: PreviewServer }) {
+  const t = useT();
   const { status, log, error, tauriPort, config, configLoaded } = server;
   const running = status === "starting" || status === "ready";
 
@@ -496,7 +518,7 @@ function TauriRunnerPane({ server }: { server: PreviewServer }) {
                 "bg-muted-foreground",
             )}
           />
-          {TAURI_STATUS_LABEL[status]}
+          {tauriStatusLabel(status)}
         </Badge>
         <code className="truncate font-mono text-[11px] text-muted-foreground">
           Tauri{config?.packageDir ? ` @${config.packageDir}/` : ""}
@@ -511,7 +533,7 @@ function TauriRunnerPane({ server }: { server: PreviewServer }) {
               onClick={() => void server.stop()}
             >
               <Square className="size-3.5" />
-              Stop
+              {t("common.stop")}
             </Button>
           ) : (
             <Button
@@ -521,7 +543,7 @@ function TauriRunnerPane({ server }: { server: PreviewServer }) {
               onClick={() => void server.start()}
             >
               <AppWindow className="size-3.5" />
-              アプリを起動
+              {t("preview.launchApp")}
             </Button>
           )}
         </div>
@@ -530,9 +552,7 @@ function TauriRunnerPane({ server }: { server: PreviewServer }) {
       {/* Note: separate window + native works there. */}
       <div className="flex shrink-0 items-start gap-2 border-b bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
         <AppWindow className="mt-0.5 size-3.5 shrink-0" />
-        <span>
-          ネイティブアプリは Web プレビューできないため、実アプリを起動して確認します（別ウィンドウ。将来は iOS / Android シミュレーター等にも対応）。フォルダを開く等のネイティブ操作もそのまま動作します。初回は起動まで時間がかかることがあります。
-        </span>
+        <span>{t("preview.tauriNote")}</span>
       </div>
 
       {/* Body: status header + the build/dev log (the bulk). */}
@@ -540,27 +560,27 @@ function TauriRunnerPane({ server }: { server: PreviewServer }) {
         {status === "starting" ? (
           <StartingOrError
             spinner
-            title="アプリを起動しています…"
+            title={t("preview.launchingApp")}
             detail={tauriPort ? `http://localhost:${tauriPort}` : undefined}
             log={log}
           />
         ) : status === "ready" ? (
           <StartingOrError
-            title="別ウィンドウで起動中です。ウィンドウが見当たらない場合はログを確認してください。"
+            title={t("preview.tauriRunningNote")}
             detail={tauriPort ? `http://localhost:${tauriPort}` : undefined}
             log={log}
           />
         ) : status === "error" ? (
           <StartingOrError
-            title={error ?? "起動に失敗しました。"}
+            title={error ?? t("preview.startFailed")}
             log={log}
             tone="error"
           />
         ) : (
           <EmptyState
             icon={<AppWindow className="size-6 text-muted-foreground" />}
-            title="アプリ 未起動"
-            detail="「アプリを起動」で worktree を実アプリとして起動し、ネイティブ動作を確認します。"
+            title={t("preview.appNotStarted")}
+            detail={t("preview.appNotStartedDetail")}
           />
         )}
       </div>
@@ -577,6 +597,7 @@ function SettingsForm({
   scriptsDev: string | null;
   onSubmit: (cfg: PreviewConfig, alsoStart: boolean) => Promise<void>;
 }) {
+  const t = useT();
   // Mounted fresh per config (key at call site), so init from props.
   const [draftCmd, setDraftCmd] = React.useState(config.devCommand);
   const [draftPort, setDraftPort] = React.useState(String(config.port));
@@ -600,7 +621,7 @@ function SettingsForm({
       <div className="grid gap-2 sm:grid-cols-[1fr_8rem]">
         <label className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground">
-            dev コマンド
+            {t("preview.devCommandLabel")}
           </span>
           <Input
             value={draftCmd}
@@ -611,7 +632,7 @@ function SettingsForm({
         </label>
         <label className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground">
-            ポート
+            {t("preview.portLabel")}
           </span>
           <Input
             value={draftPort}
@@ -624,7 +645,7 @@ function SettingsForm({
       </div>
       <label className="block space-y-1">
         <span className="text-xs font-medium text-muted-foreground">
-          パッケージディレクトリ（worktree 相対・空欄＝ルート）
+          {t("preview.packageDirLabel")}
         </span>
         <Input
           value={draftPkgDir}
@@ -642,7 +663,7 @@ function SettingsForm({
       )}
       <div className="flex items-center gap-2">
         <Button size="sm" className="h-7" onClick={() => submit(false)}>
-          保存
+          {t("common.save")}
         </Button>
         <Button
           size="sm"
@@ -651,7 +672,7 @@ function SettingsForm({
           onClick={() => submit(true)}
         >
           <Play className="size-3.5" />
-          保存して起動
+          {t("preview.saveAndStart")}
         </Button>
       </div>
     </div>
@@ -671,6 +692,7 @@ function StartingOrError({
   spinner?: boolean;
   tone?: "info" | "error";
 }) {
+  const t = useT();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-start gap-2 px-4 py-3">
@@ -703,7 +725,7 @@ function StartingOrError({
       <div className="min-h-0 flex-1 border-t bg-[#0a0a0a]">
         <ScrollArea className="h-full">
           <pre className="px-3 py-2 font-mono text-[11px] leading-[1.5] whitespace-pre-wrap break-all text-zinc-300">
-            {log || "（ログ出力を待っています…）"}
+            {log || t("preview.waitingForLog")}
           </pre>
         </ScrollArea>
       </div>

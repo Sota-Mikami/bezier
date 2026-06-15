@@ -18,6 +18,7 @@ import { Loader2, Plus, Sparkles, ArrowRightCircle, Check, X } from "lucide-reac
 
 import { Button } from "@/components/ui/button";
 import { UnderlineTab } from "@/components/ui/underline-tab";
+import { useT, tt } from "@/lib/i18n";
 import { removePath } from "@/lib/ipc";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
 import {
@@ -49,6 +50,7 @@ export function DesignVariants({
    *  tab keyboard shortcuts so they don't fire from other tabs). */
   active?: boolean;
 }) {
+  const t = useT();
   const {
     issue,
     action,
@@ -213,12 +215,12 @@ export function DesignVariants({
                     void onDelete(v);
                   }
                 }}
-                title={v.title || v.slug || `案 ${v.id}`}
+                title={v.title || v.slug || t("designVariants.variantLabel", { id: v.id })}
                 className="max-w-[180px]"
                 dragProps={dragProps(v.file)}
               >
                 <span className="min-w-0 flex-1 truncate">
-                  {v.title || v.slug || `案 ${v.id}`}
+                  {v.title || v.slug || t("designVariants.variantLabel", { id: v.id })}
                 </span>
                 {adopted === v.id && (
                   <Check className="size-3 shrink-0 text-emerald-500" />
@@ -236,8 +238,8 @@ export function DesignVariants({
                     e.stopPropagation();
                     void onDelete(v);
                   }}
-                  title="閉じる"
-                  aria-label={`案 ${v.id} を閉じる`}
+                  title={t("common.close")}
+                  aria-label={t("designVariants.closeVariantAria", { id: v.id })}
                   className="-mr-1 hidden size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground group-hover/tab:flex"
                 >
                   <X className="size-3" />
@@ -249,8 +251,8 @@ export function DesignVariants({
             type="button"
             onClick={onAdd}
             disabled={!canGenerateVariant}
-            title="別案を追加（エージェントが新しい方向を1つ）"
-            aria-label="別案を追加"
+            title={t("designVariants.addVariantTitle")}
+            aria-label={t("designVariants.addVariant")}
             className="my-auto ml-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
           >
             {action === "variant" ? (
@@ -269,14 +271,14 @@ export function DesignVariants({
               className="h-6 gap-1.5 px-2.5 text-[11px]"
               disabled={!!action}
               onClick={() => void handlePickVariant(shown.id)}
-              title={`案 ${shown.id} を採用して Implement（実物の DS で実装）へ`}
+              title={t("designVariants.adoptTitle", { id: shown.id })}
             >
               {action === "variant" ? (
                 <Loader2 className="size-3 animate-spin" />
               ) : (
                 <ArrowRightCircle className="size-3" />
               )}
-              {adopted === shown.id ? "再 Implement" : "この案で確定"}
+              {adopted === shown.id ? t("designVariants.reImplement") : t("designVariants.adoptButton")}
             </Button>
           </div>
         )}
@@ -294,7 +296,7 @@ export function DesignVariants({
               ref={iframeRef}
               sandbox=""
               srcDoc={html[shown.id] ?? ""}
-              title={`案 ${shown.id}`}
+              title={t("designVariants.variantLabel", { id: shown.id })}
               className="size-full bg-white"
             />
             {/* "AI just made this" flourish (DEC-057): one light sweep + a fading
@@ -308,7 +310,7 @@ export function DesignVariants({
                 <div className="bz-dz-sweep absolute inset-0" />
                 <div className="bz-dz-chip absolute right-3 top-3 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm" style={{ background: "var(--ai)" }}>
                   <Sparkles className="size-3" />
-                  Bezier が生成
+                  {t("designVariants.generatedByBezier")}
                 </div>
               </div>
             )}
@@ -371,7 +373,7 @@ export function designSurface(
   return {
     key: `design:${pattern.id}`,
     canSend: agentAvailable,
-    cannotSendMessage: "利用可能なエージェント (claude / codex) が見つかりません。",
+    cannotSendMessage: tt("designVariants.noAgent"),
     buildPrompt: (lines, shot) =>
       [
         `## デザイン別案の改訂 — 案 ${pattern.id}`,
@@ -385,7 +387,7 @@ export function designSurface(
         "",
         "改訂したらチャットで一言だけ要約してください。",
       ].join("\n"),
-    send: (p, n) => revise(p, `案 ${pattern.id} を改訂（${n}）`),
+    send: (p, n) => revise(p, tt("designVariants.reviseNote", { id: pattern.id, note: n })),
   };
 }
 
@@ -396,22 +398,27 @@ function EmptyDesign({
   canAdd: boolean;
   onAdd: () => void;
 }) {
+  const t = useT();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="flex size-10 items-center justify-center rounded-full border border-border bg-muted">
         <Sparkles className="size-4 text-muted-foreground" />
       </div>
-      <div className="text-sm font-medium text-foreground">まだ別案がありません</div>
+      <div className="text-sm font-medium text-foreground">{t("designVariants.empty.title")}</div>
       <p className="max-w-sm text-xs text-muted-foreground">
-        「<span className="font-medium">+ 追加</span>」で別方向のワイヤー（グレースケール・スタック非依存）を1つずつ増やせます。左の主チャットで「
-        <span className="font-medium">デザイン案を3つ</span>」とまとめて頼むことも可能。各案には
-        <span className="font-medium"> 注釈（コメント/ペン/矩形）</span>
-        で直接指示でき、良い方向を「
-        <span className="font-medium">この案で確定 → Implement</span>」で実装に進めます。
+        {t("designVariants.empty.p1")}
+        <span className="font-medium">{t("designVariants.empty.addBtn")}</span>
+        {t("designVariants.empty.p2")}
+        <span className="font-medium">{t("designVariants.empty.threeIdeas")}</span>
+        {t("designVariants.empty.p3")}
+        <span className="font-medium">{t("designVariants.empty.annotate")}</span>
+        {t("designVariants.empty.p4")}
+        <span className="font-medium">{t("designVariants.empty.adopt")}</span>
+        {t("designVariants.empty.p5")}
       </p>
       <Button size="sm" className="gap-1.5" disabled={!canAdd} onClick={onAdd}>
         <Plus className="size-3.5" />
-        別案を追加
+        {t("designVariants.addVariant")}
       </Button>
     </div>
   );
