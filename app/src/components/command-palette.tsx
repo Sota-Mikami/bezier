@@ -21,7 +21,11 @@ import {
 import { useWorkspaceRoot, repoLabel } from "@/lib/workspace-root";
 import { listIssues, type Issue } from "@/lib/issues";
 import { openShortcuts } from "@/components/shortcuts-dialog";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+
+/** Stable group keys (used for grouping + comparison); headers render via t(). */
+type PaletteGroup = "action" | "repo" | "issue";
 
 const OPEN_EVENT = "bezier:open-command-palette";
 
@@ -32,7 +36,7 @@ export function openCommandPalette() {
 
 interface PaletteItem {
   key: string;
-  group: string;
+  group: PaletteGroup;
   label: string;
   hint?: string;
   icon: React.ReactNode;
@@ -48,6 +52,7 @@ interface RepoIssue {
 
 export function CommandPalette() {
   const router = useRouter();
+  const t = useT();
   const { root, recents, switchTo, openRoot } = useWorkspaceRoot();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -135,36 +140,36 @@ export function CommandPalette() {
     const out: PaletteItem[] = [
       {
         key: "act:new",
-        group: "アクション",
-        label: "新しい Issue",
+        group: "action",
+        label: t("palette.newIssue"),
         icon: <Plus className="size-3.5" />,
         run: () => window.dispatchEvent(new Event("bezier:new-issue")),
       },
       {
         key: "act:open",
-        group: "アクション",
-        label: "フォルダを開く…",
+        group: "action",
+        label: t("palette.openFolder"),
         icon: <FolderOpen className="size-3.5" />,
         run: () => void openRoot(),
       },
       {
         key: "act:ia",
-        group: "アクション",
-        label: "IA 体験版（mock・検討用）",
+        group: "action",
+        label: t("palette.iaDemo"),
         icon: <FileText className="size-3.5" />,
         run: () => router.push("/ia"),
       },
       {
         key: "act:settings",
-        group: "アクション",
-        label: "設定",
+        group: "action",
+        label: t("palette.settings"),
         icon: <Settings className="size-3.5" />,
         run: () => router.push("/settings"),
       },
       {
         key: "act:shortcuts",
-        group: "アクション",
-        label: "キーボードショートカット",
+        group: "action",
+        label: t("palette.shortcuts"),
         icon: <Keyboard className="size-3.5" />,
         run: () => openShortcuts(),
       },
@@ -173,7 +178,7 @@ export function CommandPalette() {
       if (r.path === root) continue;
       out.push({
         key: `repo:${r.path}`,
-        group: "リポジトリ",
+        group: "repo",
         label: repoLabel(r),
         hint: r.path,
         icon: <GitBranch className="size-3.5" />,
@@ -186,8 +191,8 @@ export function CommandPalette() {
     for (const { issue, repoPath, repoName } of issues) {
       out.push({
         key: `issue:${repoPath}:${issue.id}`,
-        group: "Issue",
-        label: issue.title || "(無題)",
+        group: "issue",
+        label: issue.title || t("common.untitled"),
         hint: repoName,
         icon: <FileText className="size-3.5" />,
         run: () => {
@@ -197,7 +202,7 @@ export function CommandPalette() {
       });
     }
     return out;
-  }, [root, recents, issues, switchTo, openRoot, router]);
+  }, [root, recents, issues, switchTo, openRoot, router, t]);
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -229,7 +234,7 @@ export function CommandPalette() {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="コマンドパレット"
+      aria-label={t("palette.ariaLabel")}
       className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-[12vh]"
     >
       <div
@@ -247,7 +252,7 @@ export function CommandPalette() {
               setActive(0);
             }}
             onKeyDown={onInputKey}
-            placeholder="Issue・リポジトリ・アクションを検索…"
+            placeholder={t("palette.searchPlaceholder")}
             className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           <span className="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
@@ -257,12 +262,13 @@ export function CommandPalette() {
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {filtered.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-              該当なし
+              {t("palette.noResults")}
             </div>
           ) : (
             filtered.map((it, i) => {
               const prev = filtered[i - 1];
-              const header = !prev || prev.group !== it.group ? it.group : null;
+              const header =
+                !prev || prev.group !== it.group ? t(`palette.group.${it.group}`) : null;
               return (
                 <React.Fragment key={it.key}>
                   {header && (
@@ -283,7 +289,7 @@ export function CommandPalette() {
                   >
                     <span className="shrink-0 text-muted-foreground">{it.icon}</span>
                     <span className="min-w-0 flex-1 truncate">{it.label}</span>
-                    {it.group !== "アクション" && it.hint && (
+                    {it.group !== "action" && it.hint && (
                       <span className="hidden min-w-0 max-w-[45%] truncate text-[10px] text-muted-foreground sm:inline">
                         {it.hint}
                       </span>

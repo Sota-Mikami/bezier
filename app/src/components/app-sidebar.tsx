@@ -70,6 +70,7 @@ import {
   type AgentState,
 } from "@/lib/pty";
 import { cn, IS_DEV } from "@/lib/utils";
+import { useT, tt } from "@/lib/i18n";
 
 /** How many issues a repo toggle shows before "もっと見る". */
 const PAGE = 5;
@@ -87,6 +88,7 @@ export function AppSidebar() {
   const selectedTrashId = sp.get("trash");
   const { root, recents, switchTo, openRoot, removeRepo, setRepoDisplayName } =
     useWorkspaceRoot();
+  const t = useT();
 
   const [query, setQuery] = React.useState("");
   const [showTrash, setShowTrash] = React.useState(false);
@@ -233,14 +235,14 @@ export function AppSidebar() {
         router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
       } catch (e) {
         await messageDialog(
-          `作成に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-          { title: "作成エラー" },
+          t("sidebar.createFailed", { msg: e instanceof Error ? e.message : String(e) }),
+          { title: t("sidebar.createErrorTitle") },
         );
       } finally {
         setCreating(false);
       }
     },
-    [creating, root, switchTo, loadIssues, router],
+    [creating, root, switchTo, loadIssues, router, t],
   );
 
   // New issue (⌘N / top "New" / ⌘K): create in the ACTIVE repo (opening a folder
@@ -264,8 +266,12 @@ export function AppSidebar() {
       const issue = (issuesByRepo[repoPath] ?? []).find((i) => i.id === id);
       if (!issue) return;
       const ok = await confirmDialog(
-        `Issue「${issue.title || "(無題)"}」をゴミ箱に移動しますか？（${trashTtlDays()}日後に完全削除）`,
-        { title: "ゴミ箱へ移動", okLabel: "ゴミ箱へ移動", cancelLabel: "キャンセル" },
+        t("sidebar.deleteConfirm", { title: issue.title || t("common.untitled"), days: trashTtlDays() }),
+        {
+          title: t("sidebar.deleteConfirmTitle"),
+          okLabel: t("sidebar.deleteConfirmTitle"),
+          cancelLabel: t("common.cancel"),
+        },
       );
       if (!ok) return;
       try {
@@ -274,11 +280,11 @@ export function AppSidebar() {
         if (selectedId === id) router.push("/issues");
       } catch (e) {
         await messageDialog(e instanceof Error ? e.message : String(e), {
-          title: "削除エラー",
+          title: t("sidebar.deleteErrorTitle"),
         });
       }
     },
-    [issuesByRepo, loadIssues, loadTrash, selectedId, router],
+    [issuesByRepo, loadIssues, loadTrash, selectedId, router, t],
   );
 
   // Quick-new shortcut: ⌘N (mac) / Ctrl+N. The modifier means it never fires by
@@ -310,8 +316,8 @@ export function AppSidebar() {
       await revealInFinder(path);
     } catch (e) {
       await messageDialog(
-        `Finder で開けませんでした: ${e instanceof Error ? e.message : String(e)}`,
-        { title: "エラー" },
+        tt("sidebar.revealFailed", { msg: e instanceof Error ? e.message : String(e) }),
+        { title: tt("sidebar.errorTitle") },
       );
     }
   }, []);
@@ -321,7 +327,7 @@ export function AppSidebar() {
       await openInEditor(path);
     } catch (e) {
       await messageDialog(e instanceof Error ? e.message : String(e), {
-        title: "IDE で開けませんでした",
+        title: tt("sidebar.openIdeFailedTitle"),
       });
     }
   }, []);
@@ -333,8 +339,8 @@ export function AppSidebar() {
         await Promise.all([loadTrash(repoPath), loadIssues(repoPath)]);
       } catch (e) {
         await messageDialog(
-          `復元に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-          { title: "復元エラー" },
+          tt("sidebar.restoreFailed", { msg: e instanceof Error ? e.message : String(e) }),
+          { title: tt("sidebar.restoreErrorTitle") },
         );
       }
     },
@@ -344,8 +350,12 @@ export function AppSidebar() {
   const handlePurge = React.useCallback(
     async (repoPath: string, meta: TrashMeta) => {
       const ok = await confirmDialog(
-        `「${meta.title || "(無題)"}」を完全に削除します。worktree / branch も削除され、元に戻せません。`,
-        { title: "完全に削除", okLabel: "完全に削除", cancelLabel: "キャンセル" },
+        tt("sidebar.purgeConfirm", { title: meta.title || tt("common.untitled") }),
+        {
+          title: tt("sidebar.purgeConfirmTitle"),
+          okLabel: tt("sidebar.purgeConfirmTitle"),
+          cancelLabel: tt("common.cancel"),
+        },
       );
       if (!ok) return;
       try {
@@ -353,8 +363,8 @@ export function AppSidebar() {
         await loadTrash(repoPath);
       } catch (e) {
         await messageDialog(
-          `完全削除に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-          { title: "完全削除エラー" },
+          tt("sidebar.purgeFailed", { msg: e instanceof Error ? e.message : String(e) }),
+          { title: tt("sidebar.purgeErrorTitle") },
         );
       }
     },
@@ -483,7 +493,7 @@ export function AppSidebar() {
               ) : (
                 <FolderOpen className="size-4" />
               )}
-              {root ? "New" : "フォルダを開く"}
+              {root ? t("sidebar.new") : t("sidebar.openFolder")}
               {root && (
                 <kbd className="ml-1 rounded bg-primary-foreground/15 px-1 py-0.5 text-[10px] font-medium leading-none">
                   ⌘N
@@ -496,7 +506,7 @@ export function AppSidebar() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Issue を検索…"
+                placeholder={t("sidebar.searchPlaceholder")}
                 className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
@@ -510,7 +520,7 @@ export function AppSidebar() {
             className="flex items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             <ChevronLeft className="size-4" />
-            Issues に戻る
+            {t("sidebar.backToIssues")}
           </button>
         )}
       </SidebarHeader>
@@ -537,7 +547,7 @@ export function AppSidebar() {
             )}
             {recents.length === 0 ? (
               <p className="px-3 py-6 text-xs text-muted-foreground">
-                リポジトリがありません。下の「フォルダを開く」から追加してください。
+                {t("sidebar.noRepos")}
               </p>
             ) : (
               recents.map((r) => (
@@ -583,7 +593,7 @@ export function AppSidebar() {
           )}
         >
           <Trash2 className="size-4" />
-          ゴミ箱
+          {t("sidebar.trash")}
           {trashCount > 0 && (
             <span className="ml-auto text-[10px]">{trashCount}</span>
           )}
@@ -594,7 +604,7 @@ export function AppSidebar() {
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <FolderOpen className="size-4" />
-          フォルダを開く…
+          {t("sidebar.openFolderFooter")}
         </button>
         <button
           type="button"
@@ -602,7 +612,7 @@ export function AppSidebar() {
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <SettingsIcon className="size-4" />
-          設定
+          {t("sidebar.settings")}
         </button>
       </SidebarFooter>
     </Sidebar>
@@ -654,6 +664,7 @@ function RepoGroup({
   onReveal: () => void;
   onOpenEditor: () => void;
 }) {
+  const t = useT();
   const all = issues ?? [];
   const filtered = query ? all.filter(matches) : all;
 
@@ -734,8 +745,8 @@ function RepoGroup({
         <div className="absolute right-1 top-1 flex items-center gap-0.5 opacity-0 transition group-hover/repo:opacity-100 group-focus-within/repo:opacity-100">
           <DropdownMenu>
             <DropdownMenuTrigger
-              title="その他"
-              aria-label="リポジトリの操作"
+              title={t("common.more")}
+              aria-label={t("sidebar.repoActions")}
               className="flex size-5 items-center justify-center rounded text-muted-foreground outline-none transition hover:bg-sidebar-accent hover:text-foreground data-[popup-open]:opacity-100"
             >
               <MoreHorizontal className="size-3.5" />
@@ -746,35 +757,35 @@ function RepoGroup({
                 className="cursor-pointer gap-2 text-xs"
               >
                 <Plus className="size-3.5" />
-                新規 Issue
+                {t("sidebar.newIssue")}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={onReveal}
                 className="cursor-pointer gap-2 text-xs"
               >
                 <FolderOpen className="size-3.5" />
-                Finder で開く
+                {t("sidebar.revealFinder")}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={onOpenEditor}
                 className="cursor-pointer gap-2 text-xs"
               >
                 <Code2 className="size-3.5" />
-                IDE で開く
+                {t("sidebar.openIde")}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={startRename}
                 className="cursor-pointer gap-2 text-xs"
               >
                 <Pencil className="size-3.5" />
-                表示名を変更
+                {t("sidebar.rename")}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={onRemove}
                 className="cursor-pointer gap-2 text-xs"
               >
                 <Unplug className="size-3.5" />
-                接続を解除
+                {t("sidebar.disconnect")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -785,11 +796,11 @@ function RepoGroup({
         <div className="ml-3 border-l pl-2">
           {!issues ? (
             <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" /> 読み込み中…
+              <Loader2 className="size-3 animate-spin" /> {t("common.loading")}
             </div>
           ) : filtered.length === 0 ? (
             <p className="px-2 py-1.5 text-xs text-muted-foreground">
-              {query ? "一致なし" : "Issue なし"}
+              {query ? t("sidebar.noMatches") : t("sidebar.noIssues")}
             </p>
           ) : (
             <>
@@ -808,8 +819,8 @@ function RepoGroup({
                     )}
                     title={
                       agent
-                        ? `${issue.title || "(無題)"}（${AGENT_STATE_LABEL[agent]}）`
-                        : issue.title || "(無題)"
+                        ? `${issue.title || t("common.untitled")}（${t(`sidebar.agentState.${agent}`)}）`
+                        : issue.title || t("common.untitled")
                     }
                   >
                     {agent ? (
@@ -829,18 +840,18 @@ function RepoGroup({
                     {previewKeys.has(issue.id) && (
                       <MonitorPlay
                         className="size-3 shrink-0 text-emerald-600/70 dark:text-emerald-400/70"
-                        aria-label="プレビュー起動中"
+                        aria-label={t("sidebar.previewRunning")}
                       />
                     )}
-                    <span className="truncate">{issue.title || "(無題)"}</span>
+                    <span className="truncate">{issue.title || t("common.untitled")}</span>
                   </button>
                   {/* Per-issue hover "…" menu (DEC-089): single-issue actions
                       (delete → trash) from the sidebar. */}
                   <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center opacity-0 transition group-hover/issue:opacity-100 group-focus-within/issue:opacity-100">
                     <DropdownMenu>
                       <DropdownMenuTrigger
-                        title="その他"
-                        aria-label="Issue の操作"
+                        title={t("common.more")}
+                        aria-label={t("sidebar.issueActions")}
                         className="flex size-5 items-center justify-center rounded text-muted-foreground outline-none transition hover:bg-sidebar-accent hover:text-foreground data-[popup-open]:opacity-100"
                       >
                         <MoreHorizontal className="size-3.5" />
@@ -852,7 +863,7 @@ function RepoGroup({
                           className="cursor-pointer gap-2 text-xs"
                         >
                           <Trash2 className="size-3.5" />
-                          削除（ゴミ箱へ）
+                          {t("sidebar.deleteToTrash")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -866,7 +877,7 @@ function RepoGroup({
                   onClick={onShowAll}
                   className="px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
                 >
-                  もっと見る（あと {more}）
+                  {t("sidebar.showMore", { n: more })}
                 </button>
               )}
             </>
@@ -878,13 +889,6 @@ function RepoGroup({
 }
 
 // --- Agent Inbox (DEC-028) -------------------------------------------------
-
-const AGENT_STATE_LABEL: Record<AgentState, string> = {
-  running: "実行中",
-  waiting: "応答待ち",
-  done: "完了",
-  error: "エラー",
-};
 
 // The small status dot used in issue rows + inbox: a pulsing ring for live
 // states (running green / waiting amber), a check for done, an x for error.
@@ -929,11 +933,12 @@ function AgentInbox({
   onSelect: (key: string) => void;
   onDismiss: (key: string) => void;
 }) {
+  const t = useT();
   return (
     <div className="mb-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-1">
       <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px] font-semibold text-muted-foreground">
         <Bell className="size-3.5 text-amber-500" />
-        要対応のエージェント
+        {t("sidebar.inboxTitle")}
         <span className="ml-auto">{rows.length}</span>
       </div>
       {rows.map((s) => {
@@ -953,16 +958,16 @@ function AgentInbox({
               title={meta?.title || s.key}
             >
               <AgentDot state={s.state} />
-              <span className="truncate">{meta?.title || "(無題)"}</span>
+              <span className="truncate">{meta?.title || t("common.untitled")}</span>
               <span className="shrink-0 text-[10px] text-muted-foreground">
-                {AGENT_STATE_LABEL[s.state]}
+                {t(`sidebar.agentState.${s.state}`)}
               </span>
             </button>
             {(s.state === "done" || s.state === "error") && (
               <button
                 type="button"
-                title="閉じる"
-                aria-label="閉じる"
+                title={t("common.close")}
+                aria-label={t("common.close")}
                 onClick={() => onDismiss(s.key)}
                 className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:text-foreground group-hover/inbox:opacity-100"
               >
@@ -983,10 +988,10 @@ function notifyAttention(s: AgentStatus): void {
     if (typeof Notification === "undefined") return;
     const body =
       s.state === "waiting"
-        ? "エージェントが応答待ちです"
+        ? tt("sidebar.notifyWaiting")
         : s.state === "error"
-          ? "エージェントがエラーで停止しました"
-          : "エージェントが完了しました";
+          ? tt("sidebar.notifyError")
+          : tt("sidebar.notifyDone");
     const fire = () => {
       try {
         new Notification("Bezier", { body });
@@ -1019,14 +1024,15 @@ function GlobalTrash({
   onRestore: (repoPath: string, m: TrashMeta) => void;
   onPurge: (repoPath: string, m: TrashMeta) => void;
 }) {
+  const t = useT();
   return (
     <div className="px-1">
       <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-        削除した Issue は {trashTtlDays()} 日後に自動で完全削除されます。クリックで中身を確認できます。
+        {t("sidebar.trashHint", { days: trashTtlDays() })}
       </div>
       {rows.length === 0 ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-          ゴミ箱は空です
+          {t("sidebar.trashEmpty")}
         </p>
       ) : (
         rows.map(({ repoPath, meta }) => (
@@ -1042,14 +1048,14 @@ function GlobalTrash({
                 type="button"
                 onClick={() => onSelect(repoPath, meta.id)}
                 className="min-w-0 flex-1 truncate text-left text-xs"
-                title={meta.title || "(無題)"}
+                title={meta.title || t("common.untitled")}
               >
-                {meta.title || "(無題)"}
+                {meta.title || t("common.untitled")}
               </button>
               <button
                 type="button"
-                title="復元"
-                aria-label="復元"
+                title={t("sidebar.restore")}
+                aria-label={t("sidebar.restore")}
                 onClick={() => onRestore(repoPath, meta)}
                 className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover/trash:opacity-100"
               >
@@ -1057,8 +1063,8 @@ function GlobalTrash({
               </button>
               <button
                 type="button"
-                title="完全に削除"
-                aria-label="完全に削除"
+                title={t("sidebar.deletePermanently")}
+                aria-label={t("sidebar.deletePermanently")}
                 onClick={() => onPurge(repoPath, meta)}
                 className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:text-destructive group-hover/trash:opacity-100"
               >
@@ -1068,7 +1074,7 @@ function GlobalTrash({
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <span className="truncate">{repoName(repoPath)}</span>
               <span>·</span>
-              <span className="shrink-0">あと {daysLeft(meta.deletedAt)} 日</span>
+              <span className="shrink-0">{t("sidebar.daysLeft", { days: daysLeft(meta.deletedAt) })}</span>
             </div>
           </div>
         ))
