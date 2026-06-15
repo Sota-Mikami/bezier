@@ -14,6 +14,7 @@ import {
   Plus,
   Search,
   ChevronRight,
+  MonitorPlay,
   ChevronLeft,
   FolderOpen,
   CircleDot,
@@ -43,6 +44,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { useWorkspaceRoot, repoName, repoLabel } from "@/lib/workspace-root";
+import { runningPreviewKeys } from "@/components/issues/use-preview-server";
 import {
   listIssues,
   listTrash,
@@ -106,6 +108,9 @@ export function AppSidebar() {
   // Last seen "needs attention?" per key, to fire a notification only on the
   // transition INTO needs-attention (not every poll).
   const prevAttentionRef = React.useRef<Map<string, boolean>>(new Map());
+  // Issue ids with a live preview dev-server (the N-max rule, DEC-040) — shown
+  // as a static "live" indicator on the issue row so you know what's running.
+  const [previewKeys, setPreviewKeys] = React.useState<Set<string>>(new Set());
 
   // Poll every agent's status (running / waiting / done / error) — the Agent
   // Inbox + the per-issue dots. Agents survive navigation (DEC-026), so this is
@@ -121,6 +126,7 @@ export function AppSidebar() {
       const list = all.filter((s) => !s.key.startsWith("preview:"));
       const map = new Map(list.map((s) => [s.key, s]));
       setStatusByKey(map);
+      setPreviewKeys(new Set(runningPreviewKeys()));
 
       const prev = prevAttentionRef.current;
       const next = new Map<string, boolean>();
@@ -548,6 +554,7 @@ export function AppSidebar() {
                   showAll={showAll.has(r.path)}
                   selectedId={selectedId}
                   statusByKey={statusByKey}
+                  previewKeys={previewKeys}
                   onToggle={() => toggleRepo(r.path)}
                   onSelectIssue={(id) => selectIssue(r.path, id)}
                   onDeleteIssue={(id) => void handleDeleteIssueRow(r.path, id)}
@@ -614,6 +621,7 @@ function RepoGroup({
   showAll,
   selectedId,
   statusByKey,
+  previewKeys,
   onToggle,
   onSelectIssue,
   onDeleteIssue,
@@ -635,6 +643,7 @@ function RepoGroup({
   showAll: boolean;
   selectedId: string | null;
   statusByKey: Map<string, AgentStatus>;
+  previewKeys: Set<string>;
   onToggle: () => void;
   onSelectIssue: (id: string) => void;
   onDeleteIssue: (id: string) => void;
@@ -694,14 +703,14 @@ function RepoGroup({
           type="button"
           onClick={onToggle}
           className={cn(
-            "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors hover:bg-sidebar-accent",
+            "flex w-full items-center gap-2 rounded-md px-2 py-2 text-xs font-semibold transition-colors hover:bg-sidebar-accent",
             active ? "text-foreground" : "text-muted-foreground",
           )}
           title={path}
         >
           <ChevronRight
             className={cn(
-              "size-3.5 shrink-0 transition-transform",
+              "size-4 shrink-0 transition-transform",
               open && "rotate-90",
             )}
           />
@@ -817,6 +826,12 @@ function RepoGroup({
                         )}
                       />
                     )}
+                    {previewKeys.has(issue.id) && (
+                      <MonitorPlay
+                        className="size-3 shrink-0 text-emerald-600/70 dark:text-emerald-400/70"
+                        aria-label="プレビュー起動中"
+                      />
+                    )}
                     <span className="truncate">{issue.title || "(無題)"}</span>
                   </button>
                   {/* Per-issue hover "…" menu (DEC-089): single-issue actions
@@ -885,7 +900,7 @@ function AgentDot({ state }: { state: AgentState }) {
     <span className="relative flex size-3 shrink-0 items-center justify-center">
       <span
         className={cn(
-          "absolute inline-flex size-2 animate-ping rounded-full",
+          "absolute inline-flex size-2 animate-ping rounded-full motion-reduce:animate-none",
           color === "amber" ? "bg-amber-500/70" : "bg-emerald-500/70",
         )}
       />

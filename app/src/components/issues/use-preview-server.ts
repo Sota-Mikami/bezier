@@ -80,6 +80,13 @@ function previewPtyKey(key: string): string {
   return `${PREVIEW_PTY_PREFIX}${key}`;
 }
 
+/** Issue ids whose preview dev-server is currently running — for the sidebar's
+ * "live preview" indicator (the N-max rule means knowing what's up matters).
+ * Module-level + shared, so a poll reads it live. */
+export function runningPreviewKeys(): string[] {
+  return [...previewRegistry.keys()];
+}
+
 /** Mark a preview as viewed (keeps it out of the idle sweep). */
 function touchPreview(key: string): void {
   const e = previewRegistry.get(key);

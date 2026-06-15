@@ -14,7 +14,6 @@ import {
   FolderOpen,
   ArrowLeft,
   Loader2,
-  Check,
   FileText,
   LayoutGrid,
   MonitorPlay,
@@ -30,7 +29,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { cn } from "@/lib/utils";
 import { confirmDialog, messageDialog } from "@/lib/ipc";
 import { useWorkspaceRoot } from "@/lib/workspace-root";
 import {
@@ -39,21 +37,17 @@ import {
   updateIssueMeta,
   trashIssue,
   trashTtlDays,
-  deriveState,
-  DERIVED_STATE_META,
   readTrashDetail,
   restoreFromTrash,
   type Issue,
   type IssueStatus,
-  type DerivedState,
   type ThreadEvent,
   type ThreadEventType,
   type TrashDetail,
 } from "@/lib/issues";
 import { purgeTrashed } from "@/lib/issue-actions";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
-import { DesignVariants } from "@/components/issues/design-variants";
-import { IssueDocs } from "@/components/issues/issue-docs";
+import { IssueDesign } from "@/components/issues/issue-design";
 import { BuildReview } from "@/components/issues/build-review";
 import { IssueShare } from "@/components/issues/issue-share";
 import {
@@ -412,7 +406,7 @@ function Header({
 
 // DEC-051: the center is now a 3-stage workbench — Spec (md) → Design (throwaway
 // HTML 別案 / 考える層) → Implement (the real repo: preview ⇆ diff ⇆ verify).
-type DetailTab = "spec" | "design" | "build";
+type DetailTab = "design" | "prototype";
 
 function IssueDetail({ root, id }: { root: string; id: string }) {
   const [issue, setIssue] = React.useState<Issue | null>(null);
@@ -510,7 +504,7 @@ function IssueWorkbench({
   setIssue: React.Dispatch<React.SetStateAction<Issue | null>>;
 }) {
   const router = useRouter();
-  const [tab, setTab] = React.useState<DetailTab>("spec");
+  const [tab, setTab] = React.useState<DetailTab>("design");
   const [creatingSpec, setCreatingSpec] = React.useState(false);
   // History drawer (DEC-033): the activity log is no longer a column — it's a
   // toggled right-side drawer so the main view is just chat | canvas.
@@ -561,20 +555,17 @@ function IssueWorkbench({
   // few seconds (then: pulse only, don't steal their view). Switching only toggles
   // a `hidden` class; it never calls .focus(), so the terminal keeps keyboard
   // focus while the user is typing there.
-  const [specPulse, setSpecPulse] = React.useState(false);
   const [designPulse, setDesignPulse] = React.useState(false);
-  const [buildPulse, setBuildPulse] = React.useState(false);
+  const [prototypePulse, setPrototypePulse] = React.useState(false);
   const lastManualSwitchAt = React.useRef(0);
   const pulseTimers = React.useRef<{
-    spec?: number;
     design?: number;
-    build?: number;
+    prototype?: number;
   }>({});
   // useState setters are stable across renders, so resolving them per-tab inside
   // the callbacks needs no ref.
   const pulseSetter = React.useCallback(
-    (t: DetailTab) =>
-      t === "spec" ? setSpecPulse : t === "design" ? setDesignPulse : setBuildPulse,
+    (t: DetailTab) => (t === "design" ? setDesignPulse : setPrototypePulse),
     [],
   );
 
@@ -607,9 +598,8 @@ function IssueWorkbench({
   React.useEffect(() => {
     const timers = pulseTimers.current;
     return () => {
-      window.clearTimeout(timers.spec);
       window.clearTimeout(timers.design);
-      window.clearTimeout(timers.build);
+      window.clearTimeout(timers.prototype);
     };
   }, []);
 
@@ -617,7 +607,7 @@ function IssueWorkbench({
   // arrows) so it never collides with the Design tab's ⌘1–9 / ⌘⌥← → shortcuts;
   // matched via e.code so Shift's "{ }" remapping is irrelevant.
   React.useEffect(() => {
-    const order: DetailTab[] = ["spec", "design", "build"];
+    const order: DetailTab[] = ["design", "prototype"];
     const onKey = (e: KeyboardEvent) => {
       if (
         e.metaKey &&
@@ -635,19 +625,6 @@ function IssueWorkbench({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, handleManualTab]);
-
-  // Pulse the Design tab when a NEW variant file appears (the agent wrote one).
-  // The first callback only establishes the baseline (no false-fire on load).
-  const lastVariantCount = React.useRef<number | null>(null);
-  const handleVariants = React.useCallback(
-    (list: { id: string }[]) => {
-      const n = list.length;
-      const prev = lastVariantCount.current;
-      lastVariantCount.current = n;
-      if (prev !== null && n > prev) signalChange("design");
-    },
-    [signalChange],
-  );
 
   const patchMeta = React.useCallback(
     async (patch: { title?: string }) => {
@@ -783,7 +760,7 @@ function IssueWorkbench({
       }
       if (status !== last) {
         last = status;
-        signalChange("build");
+        signalChange("prototype");
       }
     };
     const h = window.setInterval(() => void tick(), CODE_WATCH_MS);
@@ -814,14 +791,6 @@ function IssueWorkbench({
             onToggleHistory={() => setShowHistory((v) => !v)}
             onDelete={() => void handleDeleteIssue()}
           />
-          <StateBadge
-            state={deriveState({
-              status: issue.status,
-              running: session.running,
-              hasPr: !!session.ref?.prUrl,
-              hasWorktree: !!session.ref,
-            })}
-          />
           <IssueRepoChip
             root={root}
             issue={issue}
@@ -839,25 +808,18 @@ function IssueWorkbench({
               ariaLabel="Spec / Design / Implement"
               options={[
                 {
-                  value: "spec",
-                  icon: <FileText className="size-3.5" />,
-                  label: "Docs",
-                  trailing: specPulse ? <UpdatingPulse /> : undefined,
-                  title: "ドキュメント（Spec・決定・QA…） ・ ⌘⇧[ / ⌘⇧] で切替",
-                },
-                {
                   value: "design",
                   icon: <LayoutGrid className="size-3.5" />,
                   label: "Design",
                   trailing: designPulse ? <UpdatingPulse /> : undefined,
-                  title: "HTML の別案を見比べる ・ ⌘⇧[ / ⌘⇧] で切替",
+                  title: "Design — ドキュメント＋デザイン案（考える・形にする） ・ ⌘⇧[ / ⌘⇧] で切替",
                 },
                 {
-                  value: "build",
+                  value: "prototype",
                   icon: <MonitorPlay className="size-3.5" />,
-                  label: "Implement",
-                  trailing: buildPulse ? <UpdatingPulse /> : undefined,
-                  title: "実 repo のプレビュー（実物の DS で動く） ・ ⌘⇧[ / ⌘⇧] で切替",
+                  label: "Prototype",
+                  trailing: prototypePulse ? <UpdatingPulse /> : undefined,
+                  title: "Prototype — Preview / Map / QA（実物の DS で動く） ・ ⌘⇧[ / ⌘⇧] で切替",
                 },
               ]}
             />
@@ -879,9 +841,8 @@ function IssueWorkbench({
           onChange={handleManualTab}
           ariaLabel="Spec / Design / Implement"
           options={[
-            { value: "spec", icon: <FileText className="size-3.5" />, label: "Docs", trailing: specPulse ? <UpdatingPulse /> : undefined },
             { value: "design", icon: <LayoutGrid className="size-3.5" />, label: "Design", trailing: designPulse ? <UpdatingPulse /> : undefined },
-            { value: "build", icon: <MonitorPlay className="size-3.5" />, label: "Implement", trailing: buildPulse ? <UpdatingPulse /> : undefined },
+            { value: "prototype", icon: <MonitorPlay className="size-3.5" />, label: "Prototype", trailing: prototypePulse ? <UpdatingPulse /> : undefined },
           ]}
         />
       </div>
@@ -917,20 +878,13 @@ function IssueWorkbench({
             switcher lives in the top bar now (DEC-058), so no header here. */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
-            {tab === "spec" && (
-              <IssueDocs
-                issue={issue}
-                onExternalChange={() => signalChange("spec")}
-              />
-            )}
             {tab === "design" && (
-              <DesignVariants
+              <IssueDesign
                 session={session}
-                onVariants={handleVariants}
-                active
+                onChange={() => signalChange("design")}
               />
             )}
-            {tab === "build" && <BuildReview session={session} active />}
+            {tab === "prototype" && <BuildReview session={session} active />}
           </div>
         </section>
 
@@ -1003,7 +957,7 @@ function UpdatingPulse() {
       title="更新中"
       aria-hidden="true"
     >
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60 motion-reduce:animate-none" />
       <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
     </span>
   );
@@ -1076,42 +1030,3 @@ function TitleEditor({
   );
 }
 
-// Read-only derived state badge (DEC-027): computed from facts (status / running
-// / PR), never set by hand.
-function StateBadge({ state }: { state: DerivedState }) {
-  const meta = DERIVED_STATE_META[state];
-  return (
-    <span
-      className={cn(
-        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
-        meta.tone === "muted" && "text-muted-foreground",
-        meta.tone === "running" &&
-          "border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
-        meta.tone === "draft" && "text-foreground/80",
-        meta.tone === "review" &&
-          "border-sky-500/30 text-sky-600 dark:text-sky-400",
-        meta.tone === "done" &&
-          "border-foreground/20 text-foreground",
-      )}
-    >
-      {state === "running" ? (
-        <span className="relative flex size-2 items-center justify-center">
-          <span className="absolute inline-flex size-2 animate-ping rounded-full bg-emerald-500/70" />
-          <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-        </span>
-      ) : state === "done" ? (
-        <Check className="size-3.5" />
-      ) : (
-        <span
-          className={cn(
-            "size-2 rounded-full",
-            meta.tone === "muted" && "bg-muted-foreground",
-            meta.tone === "draft" && "bg-primary",
-            meta.tone === "review" && "bg-sky-500",
-          )}
-        />
-      )}
-      {meta.label}
-    </span>
-  );
-}

@@ -2,17 +2,17 @@
 
 // Docs view (Document View, Phase 1). The issue center tab "Docs" — internally
 // still the "spec" tab value, so the tab state machine / auto-switch / pulse are
-// untouched. LEFT: the issue's documents — the Spec spine plus everything the
-// agent dropped under docs/ (auto-discovered, presence-driven). RIGHT: the
-// selected document in the shared CodeMirror SlotEditor.
+// untouched. LEFT-as-tabs: the issue's documents — the Spec spine plus everything
+// the agent dropped under docs/ (auto-discovered, presence-driven). The selected
+// document renders below in the shared CodeMirror SlotEditor.
 //
 // Creation is chat-driven (the agent writes docs, like Design 別案); the "+追加"
-// is a secondary quick-start. Navigation mirrors the Design tab: ⌘1–9 selects a
-// document, ⌘⌥←/→ cycles. This component is only mounted while the Docs tab is
-// active, so those bindings never collide with the Design tab's identical ones.
+// is a secondary quick-start. Documents are referenced by NAME (Spec/QA/決定…),
+// not a number — the ⌘1–9 jump is just a keyboard hint (shown in the tooltip),
+// not an identity, so it stays consistent with manual reordering (drag a tab).
 
 import * as React from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 
 import {
   listDocuments,
@@ -20,6 +20,8 @@ import {
   type Issue,
   type IssueDoc,
 } from "@/lib/issues";
+import { removePath, confirmDialog } from "@/lib/ipc";
+import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { SlotEditor } from "./slot-editor";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 
@@ -29,6 +31,8 @@ const ADD_TEMPLATES: { type: string; label: string }[] = [
   { type: "handoff", label: "共有" },
   { type: "note", label: "空のメモ" },
 ];
+
+const docFile = (d: IssueDoc) => d.file;
 
 export function IssueDocs({
   issue,
@@ -44,62 +48,79 @@ export function IssueDocs({
 
   // Auto-discover: re-list on mount + poll, so agent/convention-created files
   // under docs/ appear without any user action (mirrors DesignVariants).
-  React.useEffect(() => {
-    let cancelled = false;
-    const tick = () => {
-      void listDocuments(issue).then((list) => {
-        if (!cancelled) setDocs(list);
-      });
-    };
-    tick();
-    const h = window.setInterval(tick, 2500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(h);
-    };
+  const refresh = React.useCallback(() => {
+    void listDocuments(issue).then(setDocs);
   }, [issue]);
+  React.useEffect(() => {
+    refresh();
+    const h = window.setInterval(refresh, 2500);
+    return () => window.clearInterval(h);
+  }, [refresh]);
 
-  // Valid selection (default = first doc = Spec). Derived, never stored-via-effect.
+  // User-curated order (persisted), layered on the discovered list.
+  const { ordered, setOrder } = useOrdered(
+    `bezier:order:docs:${issue.id}`,
+    docs,
+    docFile,
+  );
+  const dragProps = useDragReorder(ordered.map(docFile), setOrder);
+
+  // Valid selection (default = first doc). Derived, never stored-via-effect.
   const selectedPath =
-    docs.find((d) => d.path === selected)?.path ?? docs[0]?.path ?? null;
-  const selectedDoc = docs.find((d) => d.path === selectedPath) ?? null;
+    ordered.find((d) => d.path === selected)?.path ?? ordered[0]?.path ?? null;
+  const selectedDoc = ordered.find((d) => d.path === selectedPath) ?? null;
 
-  // Design-style shortcuts: ⌘1–9 selects, ⌘⌥←/→ cycles.
+  // ⌘1–9 selects the Nth document in the CURRENT order; ⌘⌥←/→ cycles.
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
       if (!e.altKey && e.key >= "1" && e.key <= "9") {
         const i = Number(e.key) - 1;
-        if (i < docs.length) {
+        if (i < ordered.length) {
           e.preventDefault();
-          setSelected(docs[i].path);
+          setSelected(ordered[i].path);
         }
       } else if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-        const cur = docs.findIndex((d) => d.path === selectedPath);
+        const cur = ordered.findIndex((d) => d.path === selectedPath);
         if (cur < 0) return;
         e.preventDefault();
         const next = e.key === "ArrowLeft" ? cur - 1 : cur + 1;
-        const clamped = Math.max(0, Math.min(docs.length - 1, next));
-        setSelected(docs[clamped].path);
+        const clamped = Math.max(0, Math.min(ordered.length - 1, next));
+        setSelected(ordered[clamped].path);
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [docs, selectedPath]);
+  }, [ordered, selectedPath]);
 
   const add = async (type: string) => {
     setAdding(false);
     try {
       const path = await createDocument(issue, type);
-      const list = await listDocuments(issue);
-      setDocs(list);
+      await listDocuments(issue).then(setDocs);
       setSelected(path);
     } catch {
       // best-effort; the poll reconciles.
     }
   };
 
-  if (docs.length === 0) {
+  const remove = async (d: IssueDoc) => {
+    if (d.type === "spec") return; // the Spec spine is not deletable here.
+    const ok = await confirmDialog(`「${d.label}」を削除しますか？`, {
+      title: "ドキュメントの削除",
+      okLabel: "削除",
+      cancelLabel: "やめる",
+    });
+    if (!ok) return;
+    try {
+      await removePath(d.path);
+    } catch {
+      // ignore; the poll reconciles.
+    }
+    refresh();
+  };
+
+  if (ordered.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
         ドキュメントを準備中…
@@ -109,24 +130,35 @@ export function IssueDocs({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Horizontal document tabs — same strip as the Design / Implement tabs.
-          Move with the same shortcuts (⌘1–9 / ⌘⌥←→). */}
-      <div className="flex shrink-0 items-stretch border-b">
+      {/* Horizontal document tabs — same strip as Design / Implement. Drag to
+          reorder; reference by name (not number). */}
+      <div className="flex h-10 shrink-0 items-stretch border-b">
         <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1.5">
-          {docs.map((d, i) => (
+          {ordered.map((d, i) => (
             <UnderlineTab
               key={d.path}
               active={d.path === selectedPath}
               onClick={() => setSelected(d.path)}
-              title={d.file}
+              title={i < 9 ? `${d.file} ・ ⌘${i + 1}` : d.file}
               className="max-w-[180px]"
+              dragProps={dragProps(d.file)}
             >
-              {i < 9 && (
-                <span className="font-mono text-xs text-muted-foreground/80">
-                  {i + 1}
-                </span>
-              )}
               <span className="min-w-0 flex-1 truncate">{d.label}</span>
+              {d.type !== "spec" && (
+                <button
+                  type="button"
+                  draggable={false}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void remove(d);
+                  }}
+                  title="削除"
+                  aria-label={`${d.label} を削除`}
+                  className="-mr-1 hidden size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/20 hover:text-foreground group-hover/tab:flex"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
             </UnderlineTab>
           ))}
           <div className="relative my-auto ml-0.5 shrink-0">

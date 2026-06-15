@@ -33,6 +33,9 @@ import {
   type AnnotationSurface,
 } from "./design-annotations";
 import type { ImplementSession } from "./implement-session-types";
+import { useOrdered, useDragReorder } from "@/lib/use-ordered";
+
+const variantFile = (v: Variant) => v.file;
 
 export function DesignVariants({
   session,
@@ -173,9 +176,18 @@ export function DesignVariants({
 
   // Chrome-style tab nav (only while the Design tab is visible, DEC-058/066).
   const shownId = shown?.id ?? null;
+
+  // User-curated order (persisted) + drag-to-reorder, layered on discovery.
+  const { ordered: orderedVariants, setOrder } = useOrdered(
+    `bezier:order:design:${issue.id}`,
+    variants,
+    variantFile,
+  );
+  const dragProps = useDragReorder(orderedVariants.map(variantFile), setOrder);
+
   useTabShortcuts({
     active,
-    ids: variants.map((v) => v.id),
+    ids: orderedVariants.map((v) => v.id),
     currentId: shownId,
     onSelect: setActiveId,
   });
@@ -188,7 +200,7 @@ export function DesignVariants({
           the adopt action lives at the right end. */}
       <div className="flex shrink-0 items-stretch border-b">
         <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1.5">
-          {variants.map((v) => {
+          {orderedVariants.map((v) => {
             const isActive = shown?.id === v.id;
             return (
               <UnderlineTab
@@ -203,12 +215,10 @@ export function DesignVariants({
                 }}
                 title={v.title || v.slug || `案 ${v.id}`}
                 className="max-w-[180px]"
+                dragProps={dragProps(v.file)}
               >
-                <span className="font-mono text-xs text-muted-foreground/80">
-                  {v.id}
-                </span>
                 <span className="min-w-0 flex-1 truncate">
-                  {v.title || v.slug || "無題"}
+                  {v.title || v.slug || `案 ${v.id}`}
                 </span>
                 {adopted === v.id && (
                   <Check className="size-3 shrink-0 text-emerald-500" />
@@ -352,7 +362,7 @@ function DesignFlairStyle() {
 // The "design" annotation surface (DEC-056): pins on a wireframe become a revise
 // request for THAT design/NN.html — never code, never another file. element-pick
 // is off (static srcdoc, no cooperating inspector).
-function designSurface(
+export function designSurface(
   session: ImplementSession,
   pattern: Variant,
   agentAvailable: boolean,

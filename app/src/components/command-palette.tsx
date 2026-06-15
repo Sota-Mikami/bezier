@@ -148,6 +148,13 @@ export function CommandPalette() {
         run: () => void openRoot(),
       },
       {
+        key: "act:ia",
+        group: "アクション",
+        label: "IA 体験版（mock・検討用）",
+        icon: <FileText className="size-3.5" />,
+        run: () => router.push("/ia"),
+      },
+      {
         key: "act:settings",
         group: "アクション",
         label: "設定",

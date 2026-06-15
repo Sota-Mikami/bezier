@@ -18,6 +18,7 @@ export function UnderlineTab({
   title,
   className,
   children,
+  dragProps,
 }: {
   active: boolean;
   onClick?: () => void;
@@ -25,6 +26,11 @@ export function UnderlineTab({
   title?: string;
   className?: string;
   children: React.ReactNode;
+  /** Optional drag-to-reorder props (from useDragReorder), spread on the root. */
+  dragProps?: React.HTMLAttributes<HTMLDivElement> & {
+    draggable?: boolean;
+    "data-dragging"?: string;
+  };
 }) {
   return (
     <div
@@ -40,8 +46,9 @@ export function UnderlineTab({
           onClick?.();
         }
       }}
+      {...dragProps}
       className={cn(
-        "group/tab relative flex h-10 shrink-0 cursor-pointer items-center px-0.5 outline-none select-none",
+        "group/tab relative flex h-10 shrink-0 cursor-pointer items-center px-0.5 outline-none select-none data-[dragging]:opacity-40",
         className,
       )}
     >

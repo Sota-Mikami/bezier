@@ -219,12 +219,11 @@ export function IssueRepoChip({
   if (locked) {
     return (
       <span
-        title="作業を開始したため、このIssueのリポジトリは変更できません"
-        className="flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded-md border border-dashed border-border/70 px-2 text-xs text-muted-foreground"
+        title="作業を開始したため、このIssueのリポジトリは固定されています"
+        className="flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground"
       >
         <FolderGit2 className="size-3.5 shrink-0" />
         <span className="max-w-[10rem] truncate">{name}</span>
-        <Lock className="size-3 shrink-0 opacity-60" />
       </span>
     );
   }
