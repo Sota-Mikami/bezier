@@ -26,6 +26,7 @@ import {
 import { copyText } from "@/lib/clipboard";
 import { openExternal } from "@/lib/ipc";
 import { useSettings } from "@/lib/settings";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 import type { ImplementSession } from "./implement-session-types";
@@ -38,6 +39,7 @@ import type { ImplementSession } from "./implement-session-types";
 export function IssueShare({ session }: { session: ImplementSession }) {
   const { ref, publish, journey } = session;
   const { settings, update } = useSettings();
+  const t = useT();
   const layers = settings.journeyLayers;
   // Password protection (DEC-102). Ephemeral — kept in component state (persists
   // while you're on the issue) but NEVER written to disk; you re-enter it if you
@@ -95,8 +97,8 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="共有"
-        title="共有する内容を選んで共有"
+        aria-label={t("topbar.share")}
+        title={t("topbar.shareTitle")}
         className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium outline-none transition hover:bg-muted"
       >
         {busy ? (
@@ -104,7 +106,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         ) : (
           <Share2 className="size-3.5" />
         )}
-        共有
+        {t("topbar.share")}
         <ChevronDown className="size-3.5 opacity-70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-72 p-2">

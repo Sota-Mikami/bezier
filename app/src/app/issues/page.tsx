@@ -58,6 +58,7 @@ import {
 } from "@/components/issues/issue-workflow-actions";
 import { useImplementSession } from "@/components/issues/use-implement-session";
 import type { ImplementSession } from "@/components/issues/implement-session-types";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { gitStatus } from "@/lib/git";
 import { collectEvidence, syncVerifyBlock } from "@/lib/verify";
@@ -920,6 +921,7 @@ function HistoryDrawer({
   session: ImplementSession;
   onClose: () => void;
 }) {
+  const t = useT();
   const { thread, checkpoints, rollbackTo, action } = session;
   const busy = action === "checkpoint" || action === "rollback";
   return (
@@ -932,11 +934,11 @@ function HistoryDrawer({
       <aside className="absolute inset-y-0 right-0 z-30 flex w-[300px] max-w-[85%] flex-col border-l bg-background shadow-lg">
         <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
           <History className="size-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">履歴</span>
+          <span className="text-xs font-medium">{t("history.title")}</span>
           <button
             type="button"
             onClick={onClose}
-            aria-label="閉じる"
+            aria-label={t("common.close")}
             className="ml-auto rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <X className="size-4" />
@@ -956,14 +958,14 @@ function HistoryDrawer({
             {thread.length > 0 && (
               <div className="space-y-2">
                 <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-                  活動の記録
+                  {t("history.activitySection")}
                 </div>
                 <ThreadTimeline events={thread} />
               </div>
             )}
             <div className="flex items-center gap-2 border-t pt-3 text-[11px] text-muted-foreground">
               <span className="size-1.5 rounded-full bg-foreground/40" />
-              起票 · {fmtDate(created)}
+              {t("history.createdAt", { date: fmtDate(created) })}
             </div>
           </div>
         </ScrollArea>
@@ -984,14 +986,21 @@ function RestoreList({
   busy: boolean;
   onRestore: (sha: string) => void;
 }) {
+  const t = useT();
   return (
     <div className="space-y-2">
       <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-        戻す（巻き戻し）
+        {t("history.restoreSection")}
       </div>
       <ul className="space-y-1.5">
         {checkpoints.map((c, i) => {
           const current = i === 0;
+          // user-meaningful distance, not a SHA: "current" / "1 state ago" / "N…"
+          const label = current
+            ? t("history.currentState")
+            : i === 1
+              ? t("history.oneStateAgo")
+              : t("history.nStatesAgo", { n: i });
           return (
             <li
               key={c.sha}
@@ -1004,14 +1013,12 @@ function RestoreList({
                 )}
               />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-foreground/90">
-                  {current ? "いまの状態" : restoreLabel(i)}
-                </span>
+                <span className="truncate text-foreground/90">{label}</span>
                 <span className="text-[10px] text-muted-foreground">{fmtDateTime(c.iso)}</span>
               </span>
               {current ? (
                 <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  最新
+                  {t("history.latest")}
                 </span>
               ) : (
                 <button
@@ -1021,7 +1028,7 @@ function RestoreList({
                   className="flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                 >
                   {busy ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
-                  ここに戻す
+                  {t("history.restoreHere")}
                 </button>
               )}
             </li>
@@ -1030,11 +1037,6 @@ function RestoreList({
       </ul>
     </div>
   );
-}
-
-// "1つ前 / 2つ前 …" — the user-meaningful distance, not a SHA.
-function restoreLabel(i: number): string {
-  return i === 1 ? "1つ前の状態" : `${i}つ前の状態`;
 }
 
 // A gentle "● 更新中" notify dot for a center tab whose artifact just changed

@@ -9,6 +9,7 @@
 
 import * as React from "react";
 import { Pencil } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface AnnotationMode {
@@ -49,12 +50,13 @@ export function useAnnotationMode(): AnnotationMode {
 /** Header toggle for the global annotation mode. */
 export function AnnotationToggle() {
   const { on, toggle } = useAnnotationMode();
+  const t = useT();
   return (
     <button
       type="button"
       onClick={toggle}
       aria-pressed={on}
-      title="注釈モード ・ ⌘⇧A（Pin / Area / Pen で agent へ修正依頼）"
+      title={t("topbar.annotateTitle")}
       className={cn(
         "flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors",
         on
@@ -63,7 +65,7 @@ export function AnnotationToggle() {
       )}
     >
       <Pencil className="size-3.5" />
-      注釈
+      {t("topbar.annotate")}
     </button>
   );
 }

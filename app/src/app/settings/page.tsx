@@ -15,21 +15,19 @@ import {
   DEFAULT_SPEC_TEMPLATE,
   type ThemePref,
 } from "@/lib/settings";
+import { useT, LOCALES } from "@/lib/i18n";
 import { detectAgents, type AgentTool } from "@/lib/agents";
 import { confirmDialog } from "@/lib/ipc";
 import { BezierCommandsManager } from "@/components/settings/bezier-commands-manager";
 import { PublishConnectionsManager } from "@/components/settings/publish-connections-manager";
 import { cn } from "@/lib/utils";
 
-const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
-  { value: "light", label: "ライト" },
-  { value: "dark", label: "ダーク" },
-  { value: "system", label: "システム" },
-];
+const THEME_VALUES: ThemePref[] = ["light", "dark", "system"];
 
 export default function SettingsPage() {
   const router = useRouter();
   const { settings, update, reset } = useSettings();
+  const t = useT();
   const [agents, setAgents] = React.useState<AgentTool[]>([]);
 
   React.useEffect(() => {
@@ -53,17 +51,17 @@ export default function SettingsPage() {
           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          戻る
+          {t("settings.back")}
         </button>
-        <h1 className="text-sm font-semibold">設定</h1>
+        <h1 className="text-sm font-semibold">{t("settings.title")}</h1>
         <button
           type="button"
           onClick={async () => {
             if (
-              await confirmDialog("すべての設定を初期値に戻しますか？", {
-                title: "初期化の確認",
-                okLabel: "戻す",
-                cancelLabel: "やめる",
+              await confirmDialog(t("settings.resetConfirm"), {
+                title: t("settings.resetConfirmTitle"),
+                okLabel: t("settings.resetConfirmOk"),
+                cancelLabel: t("common.cancel"),
               })
             )
               reset();
@@ -71,28 +69,51 @@ export default function SettingsPage() {
           className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <RotateCcw className="size-3.5" />
-          初期値に戻す
+          {t("settings.reset")}
         </button>
       </header>
 
       <div className="mx-auto w-full max-w-2xl flex-1 space-y-8 overflow-auto px-6 py-8">
-        {/* Appearance */}
-        <Section title="外観" desc="アプリ全体のテーマ。ターミナルやエディタの配色も追従します。">
-          <Field label="テーマ">
+        {/* Language (⑥ / DEC-107) */}
+        <Section title={t("settings.language.title")} desc={t("settings.language.desc")}>
+          <Field label={t("settings.language.label")}>
             <div className="inline-flex rounded-md border p-0.5">
-              {THEME_OPTIONS.map((opt) => (
+              {LOCALES.map((l) => (
                 <button
-                  key={opt.value}
+                  key={l.code}
                   type="button"
-                  onClick={() => update({ theme: opt.value })}
+                  onClick={() => update({ locale: l.code })}
                   className={cn(
                     "rounded px-3 py-1 text-xs font-medium transition-colors",
-                    settings.theme === opt.value
+                    settings.locale === l.code
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {opt.label}
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </Section>
+
+        {/* Appearance */}
+        <Section title={t("settings.appearance.title")} desc={t("settings.appearance.desc")}>
+          <Field label={t("settings.appearance.label")}>
+            <div className="inline-flex rounded-md border p-0.5">
+              {THEME_VALUES.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => update({ theme: value })}
+                  className={cn(
+                    "rounded px-3 py-1 text-xs font-medium transition-colors",
+                    settings.theme === value
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t(`settings.appearance.${value}`)}
                 </button>
               ))}
             </div>
@@ -136,59 +157,31 @@ export default function SettingsPage() {
 
         {/* Checkpoints (DEC-087/090) */}
         <Section
-          title="チェックポイント"
-          desc="エージェントの各ターンの前に、worktree の状態を自動でチェックポイント（コミット）します。オフにすると、必要なときに手動で「いまを保存」だけになります。"
+          title={t("settings.checkpoints.title")}
+          desc={t("settings.checkpoints.desc")}
         >
-          <Field label="ターン前に自動で保存">
-            <div className="inline-flex rounded-md border p-0.5">
-              {[
-                { v: true, label: "オン" },
-                { v: false, label: "オフ" },
-              ].map((opt) => (
-                <button
-                  key={String(opt.v)}
-                  type="button"
-                  onClick={() => update({ autoCheckpoint: opt.v })}
-                  className={cn(
-                    "rounded px-3 py-1 text-xs font-medium transition-colors",
-                    settings.autoCheckpoint === opt.v
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+          <Field label={t("settings.checkpoints.autoLabel")}>
+            <OnOffToggle
+              value={settings.autoCheckpoint}
+              onChange={(v) => update({ autoCheckpoint: v })}
+              onLabel={t("common.on")}
+              offLabel={t("common.off")}
+            />
           </Field>
         </Section>
 
         {/* Protect main (DEC-099) */}
         <Section
-          title="main の保護"
-          desc="オンにすると Ship の「Merge to main」を隠し、反映は PR 経由のみにします（GitHub のブランチ保護と同じ考え方）。チームで main を直接触らせたくないときに。オフでも、マージ前には必ず確認ダイアログが出ます。"
+          title={t("settings.protectMain.title")}
+          desc={t("settings.protectMain.desc")}
         >
-          <Field label="main への直接マージを禁止">
-            <div className="inline-flex rounded-md border p-0.5">
-              {[
-                { v: true, label: "オン" },
-                { v: false, label: "オフ" },
-              ].map((opt) => (
-                <button
-                  key={String(opt.v)}
-                  type="button"
-                  onClick={() => update({ protectMain: opt.v })}
-                  className={cn(
-                    "rounded px-3 py-1 text-xs font-medium transition-colors",
-                    settings.protectMain === opt.v
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+          <Field label={t("settings.protectMain.label")}>
+            <OnOffToggle
+              value={settings.protectMain}
+              onChange={(v) => update({ protectMain: v })}
+              onLabel={t("common.on")}
+              offLabel={t("common.off")}
+            />
           </Field>
         </Section>
 
@@ -295,6 +288,43 @@ function Field({
     <div className="flex items-center justify-between gap-4">
       <span className="text-xs text-foreground/80">{label}</span>
       {children}
+    </div>
+  );
+}
+
+// A two-state on/off segmented toggle (the shared shape behind the boolean
+// settings). Labels are passed in already-translated.
+function OnOffToggle({
+  value,
+  onChange,
+  onLabel,
+  offLabel,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+  onLabel: string;
+  offLabel: string;
+}) {
+  return (
+    <div className="inline-flex rounded-md border p-0.5">
+      {[
+        { v: true, label: onLabel },
+        { v: false, label: offLabel },
+      ].map((opt) => (
+        <button
+          key={String(opt.v)}
+          type="button"
+          onClick={() => onChange(opt.v)}
+          className={cn(
+            "rounded px-3 py-1 text-xs font-medium transition-colors",
+            value === opt.v
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }

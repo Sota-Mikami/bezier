@@ -13,6 +13,8 @@
 
 import * as React from "react";
 
+import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/i18n/locales";
+
 /** The Spec slot template (DEC-042/043/050). `{{title}}` / `{{id}}` are
  * substituted at issue-creation time. Kept here so the settings page can reset
  * to it.
@@ -81,6 +83,8 @@ export const DEFAULT_JOURNEY_LAYERS: JourneyLayers = {
 };
 
 export interface Settings {
+  /** UI display language (⑥ / DEC-107). Default en; ja ships alongside. */
+  locale: Locale;
   /** Spec slot template with {{title}} / {{id}} placeholders. */
   specTemplate: string;
   /** App theme: light / dark / follow OS. */
@@ -117,6 +121,7 @@ export const DEFAULT_CONNECTIONS: PublishConnection[] = [
 ];
 
 export const DEFAULT_SETTINGS: Settings = {
+  locale: DEFAULT_LOCALE,
   specTemplate: DEFAULT_SPEC_TEMPLATE,
   theme: "system",
   maxPreviews: 3,
@@ -150,6 +155,7 @@ function coerce(raw: unknown): Settings {
       ? o.theme
       : DEFAULT_SETTINGS.theme;
   return {
+    locale: isLocale(o.locale) ? o.locale : DEFAULT_LOCALE,
     specTemplate:
       typeof o.specTemplate === "string" && o.specTemplate.trim()
         ? o.specTemplate
