@@ -172,9 +172,9 @@ export const en = {
     },
     specTemplate: {
       title: "Spec template",
-      desc: "The scaffold written to spec.md when you create a new issue. {{title}} and {{id}} are replaced at creation time.",
+      desc: "The scaffold written to spec.md when you create a new issue. {{title}} and {{id}} are replaced at creation time. Unless you edit it, it follows the display language.",
       resetToDefault: "Reset to default template",
-      default: "Default",
+      default: "Following the display language",
     },
   },
 

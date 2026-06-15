@@ -171,9 +171,9 @@ export const ja: Messages = {
     },
     specTemplate: {
       title: "Spec テンプレート",
-      desc: "新しい Issue を作成したときに spec.md に書き込まれる雛形。{{title}} と {{id}} は作成時に置き換えられます。",
+      desc: "新しい Issue を作成したときに spec.md に書き込まれる雛形。{{title}} と {{id}} は作成時に置き換えられます。編集しなければ表示言語に追従します。",
       resetToDefault: "既定のテンプレートに戻す",
-      default: "既定",
+      default: "表示言語に追従中",
     },
   },
 

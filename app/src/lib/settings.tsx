@@ -16,15 +16,41 @@ import * as React from "react";
 import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/i18n/locales";
 
 /** The Spec slot template (DEC-042/043/050). `{{title}}` / `{{id}}` are
- * substituted at issue-creation time. Kept here so the settings page can reset
- * to it.
+ * substituted at issue-creation time. There's one per UI locale (DEC-108): an
+ * unset `settings.specTemplate` follows the active locale; a non-empty value is
+ * the user's explicit override (kept across locale switches).
  *
- * DEC-050/071 (evals 層A): 受入基準は「完成の定義（Definition of Done）」として
- * **Implement の前に・観察可能でチェック可能な文で** 書く。Implement 後、Bezier が
- * 証拠（変更スコープ・機微領域など）を Spec に自動収集し、**maker がその証拠を見て
- * 各基準をチェック**する（AI は採点しない）。Clarify（着手時の確認対話）の答えは
- * この「受入基準 / やらないこと」に凝縮される。 */
-export const DEFAULT_SPEC_TEMPLATE = `---
+ * DEC-050/071 (evals 層A): the acceptance criteria are the Definition of Done —
+ * written BEFORE Implement, in observable/checkable statements. After Implement,
+ * Bezier auto-collects evidence (changed scope, sensitive areas) into the Spec,
+ * and the MAKER checks each line against that evidence (Bezier does not score).
+ * The Clarify (kickoff) answers condense into "acceptance criteria / out of scope". */
+export const DEFAULT_SPEC_TEMPLATE_EN = `---
+issue: {{id}}
+---
+# {{title}} — Spec
+
+## Why
+<!-- Background, the problem, why now -->
+
+## What
+<!-- What you're building. 1–3 lines, the core -->
+
+## Acceptance criteria (= definition of done / decide before Implement)
+<!-- Write observable, checkable statements. After Implement, the maker checks each line against the evidence (the Spec tab's "Verify"). -->
+- [ ]
+- [ ]
+
+## Out of scope
+<!-- Boundaries so Implement doesn't sprawl -->
+-
+
+## Open questions
+<!-- Points to settle in Clarify (the kickoff check) -->
+-
+`;
+
+export const DEFAULT_SPEC_TEMPLATE_JA = `---
 issue: {{id}}
 ---
 # {{title}} — Spec
@@ -48,6 +74,15 @@ issue: {{id}}
 <!-- Clarify（着手時の確認）で詰める論点 -->
 -
 `;
+
+/** The built-in Spec template for a locale (the default when not overridden). */
+export function specTemplateFor(locale: Locale): string {
+  return locale === "ja" ? DEFAULT_SPEC_TEMPLATE_JA : DEFAULT_SPEC_TEMPLATE_EN;
+}
+
+/** Every built-in default, used to detect "this is just a default, not a real
+ * override" when migrating older settings. */
+const BUILTIN_SPEC_TEMPLATES = [DEFAULT_SPEC_TEMPLATE_EN, DEFAULT_SPEC_TEMPLATE_JA];
 
 export type ThemePref = "light" | "dark" | "system";
 
@@ -85,7 +120,8 @@ export const DEFAULT_JOURNEY_LAYERS: JourneyLayers = {
 export interface Settings {
   /** UI display language (⑥ / DEC-107). Default en; ja ships alongside. */
   locale: Locale;
-  /** Spec slot template with {{title}} / {{id}} placeholders. */
+  /** Spec slot template override with {{title}} / {{id}} placeholders. Empty =
+   * follow the locale's built-in default (DEC-108); non-empty = explicit override. */
   specTemplate: string;
   /** App theme: light / dark / follow OS. */
   theme: ThemePref;
@@ -122,7 +158,7 @@ export const DEFAULT_CONNECTIONS: PublishConnection[] = [
 
 export const DEFAULT_SETTINGS: Settings = {
   locale: DEFAULT_LOCALE,
-  specTemplate: DEFAULT_SPEC_TEMPLATE,
+  specTemplate: "", // "" = follow the active locale's built-in template (DEC-108)
   theme: "system",
   maxPreviews: 3,
   previewIdleMinutes: 10,
@@ -156,10 +192,14 @@ function coerce(raw: unknown): Settings {
       : DEFAULT_SETTINGS.theme;
   return {
     locale: isLocale(o.locale) ? o.locale : DEFAULT_LOCALE,
+    // Empty = follow the locale default (DEC-108). Migrate older settings that
+    // stored a built-in template verbatim back to "" so they follow the locale.
     specTemplate:
-      typeof o.specTemplate === "string" && o.specTemplate.trim()
+      typeof o.specTemplate === "string" &&
+      o.specTemplate.trim() &&
+      !BUILTIN_SPEC_TEMPLATES.includes(o.specTemplate)
         ? o.specTemplate
-        : DEFAULT_SPEC_TEMPLATE,
+        : "",
     theme,
     maxPreviews: clampInt(o.maxPreviews, 1, 8, DEFAULT_SETTINGS.maxPreviews),
     previewIdleMinutes: clampInt(
@@ -258,6 +298,12 @@ function subscribe(cb: () => void): () => void {
 /** Synchronous snapshot for non-React consumers (issues.ts, preview hook). */
 export function getSettings(): Settings {
   return current;
+}
+
+/** The effective Spec template (DEC-108): the user's override if set, else the
+ * active locale's built-in default. Used at issue creation. */
+export function getSpecTemplate(): string {
+  return current.specTemplate.trim() ? current.specTemplate : specTemplateFor(current.locale);
 }
 
 /** Resolve the theme preference to an effective "dark" boolean (system → OS). */

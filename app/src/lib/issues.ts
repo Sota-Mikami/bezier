@@ -20,7 +20,7 @@ import {
   type FileEntry,
 } from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
-import { getSettings } from "@/lib/settings";
+import { getSettings, getSpecTemplate } from "@/lib/settings";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
 import {
@@ -505,10 +505,10 @@ function renderTemplate(tmpl: string, issue: Pick<Issue, "id" | "title">): strin
 }
 
 // Spec is the only hand-created slot (DEC-011 / DEC-014/A). The template is
-// user-customizable in Settings (DEC-043); getSettings() returns the live value
-// (falling back to DEFAULT_SPEC_TEMPLATE).
+// user-customizable in Settings (DEC-043); getSpecTemplate() returns the user's
+// override, or the active locale's built-in default (DEC-108).
 const SLOT_TEMPLATES: Record<IssueSlot, (issue: Issue) => string> = {
-  spec: (issue) => renderTemplate(getSettings().specTemplate, issue),
+  spec: (issue) => renderTemplate(getSpecTemplate(), issue),
 };
 
 /**

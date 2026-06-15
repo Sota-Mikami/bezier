@@ -12,7 +12,7 @@ import { ArrowLeft, RotateCcw, Check } from "lucide-react";
 
 import {
   useSettings,
-  DEFAULT_SPEC_TEMPLATE,
+  specTemplateFor,
   type ThemePref,
 } from "@/lib/settings";
 import { useT, LOCALES } from "@/lib/i18n";
@@ -226,8 +226,10 @@ export default function SettingsPage() {
           desc={t("settings.specTemplate.desc")}
         >
           <div className="space-y-2">
+            {/* Empty override = follow the locale default; show that text so the
+                user sees what will be used. Editing pins it as an override (DEC-108). */}
             <textarea
-              value={settings.specTemplate}
+              value={settings.specTemplate || specTemplateFor(settings.locale)}
               onChange={(e) => update({ specTemplate: e.target.value })}
               spellCheck={false}
               rows={16}
@@ -236,14 +238,14 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => update({ specTemplate: DEFAULT_SPEC_TEMPLATE })}
-                disabled={settings.specTemplate === DEFAULT_SPEC_TEMPLATE}
+                onClick={() => update({ specTemplate: "" })}
+                disabled={settings.specTemplate === ""}
                 className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
               >
                 <RotateCcw className="size-3.5" />
                 {t("settings.specTemplate.resetToDefault")}
               </button>
-              {settings.specTemplate === DEFAULT_SPEC_TEMPLATE && (
+              {settings.specTemplate === "" && (
                 <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                   <Check className="size-3" />
                   {t("settings.specTemplate.default")}
