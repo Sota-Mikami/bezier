@@ -3,7 +3,6 @@
 import * as React from "react";
 import {
   ArrowDownToLine,
-  Camera,
   Check,
   ChevronDown,
   ExternalLink,
@@ -18,7 +17,6 @@ import {
   Sparkles,
   Trash2,
   TriangleAlert,
-  Undo2,
 } from "lucide-react";
 
 import { Kbd } from "@/components/ui/kbd";
@@ -40,13 +38,6 @@ import { useSettings } from "@/lib/settings";
 import { repoLabel, repoName, useWorkspaceRoot } from "@/lib/workspace-root";
 
 import type { ImplementSession } from "./implement-session-types";
-
-function fmtDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 
 // The Issue title ▾ menu (DEC-058): consolidates occasional, issue-level
 // controls that used to be scattered.
@@ -272,68 +263,10 @@ export function IssueRepoChip({
   );
 }
 
-// Checkpoints (§D / DEC-080): the issue branch's commits as restore points.
-export function IssueCheckpoints({ session }: { session: ImplementSession }) {
-  const { ref, action, checkpoints, makeCheckpoint, rollbackTo } = session;
-  if (!ref) return null;
-  const busy = action === "checkpoint" || action === "rollback";
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="チェックポイント"
-        title="チェックポイント（保存 / 戻す）"
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground"
-      >
-        {busy ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : (
-          <History className="size-3.5" />
-        )}
-        <span className="hidden sm:inline">チェックポイント</span>
-        {checkpoints.length > 0 && (
-          <span className="rounded bg-muted px-1 text-[10px] tabular-nums">
-            {checkpoints.length}
-          </span>
-        )}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-72">
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-xs"
-          disabled={!!action}
-          onClick={() => void makeCheckpoint()}
-        >
-          <Camera className="size-3.5" />
-          いまを保存（チェックポイント）
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-          {checkpoints.length === 0
-            ? "まだチェックポイントがありません"
-            : "戻る先を選ぶ"}
-        </DropdownMenuLabel>
-        <div className="max-h-72 overflow-auto">
-          {checkpoints.map((c, i) => (
-            <DropdownMenuItem
-              key={c.sha}
-              className="cursor-pointer gap-2 text-xs"
-              disabled={!!action || i === 0}
-              onClick={() => void rollbackTo(c.sha)}
-            >
-              <Undo2 className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate">{c.subject || "(無題)"}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {i === 0 ? "最新（現在地）· " : ""}
-                  <span className="font-mono">{c.short}</span> · {fmtDateTime(c.iso)}
-                </span>
-              </span>
-            </DropdownMenuItem>
-          ))}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+// Checkpoints (§D / DEC-080) used to live here as a top-bar dropdown. ⑤ moved the
+// restore-point UI into the History drawer (page.tsx · RestoreList); the manual
+// "いまを保存" was dropped (auto-checkpoint covers every turn). Auto-checkpoint +
+// rollbackTo still live on the session.
 
 // The single "Ship ▾" finalize button in the top bar (DEC-058, CEO pick).
 export function IssueShip({ session }: { session: ImplementSession }) {

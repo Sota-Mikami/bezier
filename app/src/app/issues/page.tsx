@@ -52,12 +52,13 @@ import { BuildReview } from "@/components/issues/build-review";
 import { AnnotationModeProvider, AnnotationToggle } from "@/components/issues/annotation-mode";
 import { IssueShare } from "@/components/issues/issue-share";
 import {
-  IssueCheckpoints,
   IssueMenu,
   IssueRepoChip,
   IssueShip,
 } from "@/components/issues/issue-workflow-actions";
 import { useImplementSession } from "@/components/issues/use-implement-session";
+import type { ImplementSession } from "@/components/issues/implement-session-types";
+import { cn } from "@/lib/utils";
 import { gitStatus } from "@/lib/git";
 import { collectEvidence, syncVerifyBlock } from "@/lib/verify";
 
@@ -830,7 +831,6 @@ function IssueWorkbench({
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <AnnotationToggle />
-          <IssueCheckpoints session={session} />
           <IssueShare session={session} />
           <IssueShip session={session} />
         </div>
@@ -896,7 +896,7 @@ function IssueWorkbench({
         {showHistory && (
           <HistoryDrawer
             created={issue.created}
-            thread={session.thread}
+            session={session}
             onClose={() => setShowHistory(false)}
           />
         )}
@@ -906,17 +906,22 @@ function IssueWorkbench({
   );
 }
 
-// Right-side slide-over with the issue's durable activity log (DEC-033). Newest
-// activity first; 起票 at the bottom. Closed from its header or the backdrop.
+// Right-side slide-over: the issue's durable activity log + restore points
+// (DEC-033 / ⑤ checkpoints relocated here). 巻き戻し (戻す) lives in the drawer now
+// — not the top bar — so the "rescue" affordance is out of the way until needed.
+// Auto-checkpoint (settings, default on) keeps every agent turn restorable; here
+// you pick one and go back. Newest first; 起票 at the bottom.
 function HistoryDrawer({
   created,
-  thread,
+  session,
   onClose,
 }: {
   created: string;
-  thread: ThreadEvent[];
+  session: ImplementSession;
   onClose: () => void;
 }) {
+  const { thread, checkpoints, rollbackTo, action } = session;
+  const busy = action === "checkpoint" || action === "rollback";
   return (
     <>
       <div
@@ -927,7 +932,7 @@ function HistoryDrawer({
       <aside className="absolute inset-y-0 right-0 z-30 flex w-[300px] max-w-[85%] flex-col border-l bg-background shadow-lg">
         <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
           <History className="size-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">活動ログ</span>
+          <span className="text-xs font-medium">履歴</span>
           <button
             type="button"
             onClick={onClose}
@@ -938,8 +943,24 @@ function HistoryDrawer({
           </button>
         </div>
         <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-3 p-4">
-            {thread.length > 0 && <ThreadTimeline events={thread} />}
+          <div className="space-y-4 p-4">
+            {/* 戻す — restore points (checkpoints). Latest = 現在地 (no button). */}
+            {checkpoints.length > 0 && (
+              <RestoreList
+                checkpoints={checkpoints}
+                busy={busy}
+                onRestore={(sha) => void rollbackTo(sha)}
+              />
+            )}
+            {/* 活動の記録 — what happened on this issue. */}
+            {thread.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                  活動の記録
+                </div>
+                <ThreadTimeline events={thread} />
+              </div>
+            )}
             <div className="flex items-center gap-2 border-t pt-3 text-[11px] text-muted-foreground">
               <span className="size-1.5 rounded-full bg-foreground/40" />
               起票 · {fmtDate(created)}
@@ -949,6 +970,71 @@ function HistoryDrawer({
       </aside>
     </>
   );
+}
+
+// The restore points (auto/manual checkpoints) as a friendly "戻す" list. We hide
+// SHAs and jargon: the latest is 現在地, the rest are "◯◯前の状態" with a restore
+// button. rollbackTo already confirms before doing a hard reset.
+function RestoreList({
+  checkpoints,
+  busy,
+  onRestore,
+}: {
+  checkpoints: { sha: string; iso: string; subject: string }[];
+  busy: boolean;
+  onRestore: (sha: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+        戻す（巻き戻し）
+      </div>
+      <ul className="space-y-1.5">
+        {checkpoints.map((c, i) => {
+          const current = i === 0;
+          return (
+            <li
+              key={c.sha}
+              className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11px]"
+            >
+              <span
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  current ? "bg-primary" : "bg-foreground/30",
+                )}
+              />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-foreground/90">
+                  {current ? "いまの状態" : restoreLabel(i)}
+                </span>
+                <span className="text-[10px] text-muted-foreground">{fmtDateTime(c.iso)}</span>
+              </span>
+              {current ? (
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  最新
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onRestore(c.sha)}
+                  className="flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                >
+                  {busy ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
+                  ここに戻す
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// "1つ前 / 2つ前 …" — the user-meaningful distance, not a SHA.
+function restoreLabel(i: number): string {
+  return i === 1 ? "1つ前の状態" : `${i}つ前の状態`;
 }
 
 // A gentle "● 更新中" notify dot for a center tab whose artifact just changed
