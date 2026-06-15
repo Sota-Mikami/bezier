@@ -32,7 +32,7 @@ import {
   AnnotationLayer,
   type AnnotationSurface,
 } from "./design-annotations";
-import type { ImplementSession } from "./use-implement-session";
+import type { ImplementSession } from "./implement-session-types";
 
 export function DesignVariants({
   session,
@@ -59,7 +59,6 @@ export function DesignVariants({
   const [variants, setVariants] = React.useState<Variant[]>([]);
   const [html, setHtml] = React.useState<Record<string, string>>({});
   const [adopted, setAdopted] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(true);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
   // "AI just made / revised this" flourish (DEC-057): ids whose content changed
@@ -108,7 +107,6 @@ export function DesignVariants({
       if (newIds.length) return newIds[newIds.length - 1];
       return cur && ids.includes(cur) ? cur : list[0].id;
     });
-    setLoading(false);
     if (changedIds.length) {
       setFlashIds(new Set(changedIds));
       window.setTimeout(() => setFlashIds(new Set()), 2000);
@@ -117,8 +115,14 @@ export function DesignVariants({
     void syncSpecDesignSection(issue, list, ad).catch(() => {});
   }, [issue]);
 
+  // Initial read: even an empty/missing design/ folder must clear loading.
+  React.useEffect(() => {
+    const t = window.setTimeout(() => void reload(), 0);
+    return () => window.clearTimeout(t);
+  }, [reload]);
+
   // Poll the design/ folder; re-read only when the set of ids changes.
-  const sigRef = React.useRef<string>("");
+  const sigRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -271,12 +275,7 @@ export function DesignVariants({
       {/* Active pattern view + annotation overlay */}
       <div className="relative min-h-0 flex-1 bg-background">
         <DesignFlairStyle />
-        {loading ? (
-          <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            読み込み中…
-          </div>
-        ) : !shown ? (
+        {!shown ? (
           <EmptyDesign canAdd={canGenerateVariant} onAdd={onAdd} />
         ) : (
           <>

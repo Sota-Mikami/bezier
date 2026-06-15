@@ -78,150 +78,27 @@ import {
   type AgentState,
 } from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
-import { usePreviewServer, type PreviewServer } from "./use-preview-server";
-import { usePublish, type PublishController } from "./use-publish";
-import { useJourney, type JourneyController } from "./use-journey";
+import type {
+  ImplementSession,
+  SessionAction,
+  TermSpawn,
+} from "./implement-session-types";
+export type {
+  ImplementSession,
+  SessionAction,
+  TermSpawn,
+} from "./implement-session-types";
+import { usePreviewServer } from "./use-preview-server";
+import { usePublish } from "./use-publish";
+import { useJourney } from "./use-journey";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export type SessionAction =
-  | "implement"
-  | "rerun"
-  | "variant"
-  | "checkpoint"
-  | "rollback"
-  | "accept"
-  | "discard"
-  | "sync"
-  | "merge"
-  | "pr"
-  | null;
-
 /** Fallback base branch when the repo's real integration branch can't be read
  * yet (resolved live via gitBaseBranch — OPEN-001: don't hardcode "main"). */
 const DEFAULT_BASE = "main";
-
-export interface TermSpawn {
-  cmd: string;
-  args?: string[];
-}
-
-export interface ImplementSession {
-  /** The opened repo root + the issue (for design-feedback paths / screenshots). */
-  root: string;
-  issue: Issue;
-  gitRepo: boolean | null;
-  ref: WorktreeRef | null;
-  /** The opened package's path relative to the worktree/repo root ("" when the
-   * opened folder IS the repo toplevel). The Code browser roots its tree at
-   * <worktree>/<subPath> — the folder you actually opened, not the whole
-   * monorepo. */
-  subPath: string;
-  agents: AgentTool[];
-  selectedAgentId: string | null;
-  setSelectedAgentId: (id: string) => void;
-  selectedAgent: AgentTool | null;
-  action: SessionAction;
-  error: string | null;
-  info: string | null;
-
-  diff: string;
-  statusText: string;
-  diffLoading: boolean;
-  refreshDiff: (worktreePath: string) => Promise<void>;
-
-  // Embedded terminal (agent runs here, cwd = worktree).
-  termMounted: boolean;
-  termCwd: string | null;
-  termSpawn: TermSpawn | undefined;
-  termNonce: number;
-  /** Stable key for the persistent agent pty (the issue id). */
-  termKey: string;
-  /** Path to the agent's hook-events file (deterministic waiting, DEC-028). */
-  termEventsPath: string;
-  /** A background agent (pty) is currently running for this issue (DEC-027). */
-  running: boolean;
-  /** Raw agent state (running / waiting / done / error / null), so callers can
-   * detect a TURN ending (running → waiting) vs the process exiting (DEC-045). */
-  agentState: AgentState | null;
-  handleTermReady: (id: string) => void;
-  handleTermExit: (code: number | null) => void;
-
-  // Durable activity thread (chat-first loop): structured events rendered in the
-  // LEFT thread, persisted to .bezier/issues/<id>/thread.json (survives the
-  // volatile pty + Discard).
-  thread: ThreadEvent[];
-
-  // Session resume: when a worktree exists but no live pty is running, relaunch
-  // `claude --continue` to pick the prior conversation back up.
-  canResume: boolean;
-  handleResume: () => Promise<void>;
-
-  // Dev-server preview (iframe), shared with the Design tab.
-  preview: PreviewServer;
-  // Publish (Phase 2): build + deploy the worktree to Vercel → persistent URL.
-  publish: PublishController;
-  // Journey (DEC-094): share Spec → 実装 → App as one generated page.
-  journey: JourneyController;
-
-  // Merge-safety layer (OPEN-001). behind/ahead vs the repo's integration branch
-  // (`baseBranch`), a dry-run conflict verdict that gates Merge-to-main, and the
-  // conflicted-file list from a Sync. `baseBranch` is the repo's REAL base (not a
-  // hardcoded "main"), for UI labels.
-  baseBranch: string;
-  behind: number | null;
-  ahead: number | null;
-  mergeClean: boolean | null;
-  syncConflicts: string[];
-
-  // Checkpoints (§D / DEC-080): the branch's commits as restore points.
-  checkpoints: Checkpoint[];
-  /** Commit the current worktree state as a checkpoint (label → commit subject). */
-  makeCheckpoint: (label?: string) => Promise<void>;
-  /** reset --hard the worktree to a checkpoint commit (discards later work). */
-  rollbackTo: (sha: string) => Promise<void>;
-  syncMain: () => Promise<void>;
-  mergeToMain: () => Promise<void>;
-  resolveConflictsWithAI: () => void;
-
-  // Open-PR finalize (DEC-015). `canOpenPR` = a GitHub remote + `gh` available,
-  // so the team-safe Open-PR path is the primary finalize; `prUrl` is the opened
-  // PR's URL (persisted on the WorktreeRef, so it survives re-opening the issue).
-  canOpenPR: boolean;
-  prUrl: string | null;
-  openPR: () => Promise<void>;
-
-  /**
-   * Send design feedback to the agent (DEC-045). `promptText` is the combined
-   * batch of annotations (numbered, with a screenshot reference); it continues
-   * the issue's conversation as a fix turn. Throws if no worktree / agent.
-   */
-  sendDesignFeedback: (promptText: string, note?: string) => Promise<void>;
-
-  canImplement: boolean;
-  handleImplement: () => Promise<void>;
-  /** Chat-first start: begin a session from a free-text message (DEC-023). */
-  handleStart: (message: string) => Promise<void>;
-  handleRerun: () => Promise<void>;
-  /**
-   * Design "考える層" (DEC-051): generate / adopt throwaway HTML variants via the
-   * live agent. `handleGenerateVariant(nextId, context)` writes the next
-   * design/<id>.html; `handlePickVariant(id)` adopts a direction and asks the
-   * agent to implement it in the real Build. Available once a worktree exists.
-   */
-  canGenerateVariant: boolean;
-  handleGenerateVariant: (ids: string[], context: string) => Promise<void>;
-  handlePickVariant: (id: string) => Promise<void>;
-  /**
-   * Revise a Design wireframe from annotations (DEC-056): the agent edits the
-   * design/NN.html the annotations were drawn on (NOT code). Wired to the shared
-   * AnnotationLayer's "design" surface. The prompt already names the file.
-   */
-  reviseDesignPattern: (promptText: string, note: string) => Promise<void>;
-  handleDiscard: () => Promise<void>;
-}
 
 export function useImplementSession(
   root: string,

@@ -55,6 +55,11 @@ export interface OpenDoc {
   body: string;
 }
 
+/** Grant a filesystem root to Bezier's custom file commands. */
+export function grantPath(path: string): Promise<string> {
+  return invoke<string>("grant_path", { path });
+}
+
 /** List a directory's immediate children. -> invoke("list_dir", { path }) */
 export function listDir(path: string): Promise<FileEntry[]> {
   return invoke<FileEntry[]>("list_dir", { path });
@@ -228,16 +233,20 @@ export async function pickFile(
 ): Promise<string | null> {
   const selected = await open({ directory: false, multiple: false, filters });
   if (selected == null) return null;
-  return Array.isArray(selected) ? (selected[0] ?? null) : selected;
+  const path = Array.isArray(selected) ? (selected[0] ?? null) : selected;
+  if (path) await grantPath(path).catch(() => {});
+  return path;
 }
 
 /** Native save-file dialog. Returns the chosen path, or null if cancelled. Used
  * by command-pack export (DEC-081). */
-export function saveFileDialog(opts?: {
+export async function saveFileDialog(opts?: {
   defaultPath?: string;
   filters?: { name: string; extensions: string[] }[];
 }): Promise<string | null> {
-  return tauriSave(opts);
+  const path = await tauriSave(opts);
+  if (path) await grantPath(parentPath(path)).catch(() => {});
+  return path;
 }
 
 /** Open a native folder picker. Returns the chosen path, or null if cancelled. */
@@ -245,7 +254,9 @@ export async function pickFolder(): Promise<string | null> {
   const selected = await open({ directory: true, multiple: false });
   if (selected == null) return null;
   // With multiple:false the dialog plugin returns a single string path.
-  return Array.isArray(selected) ? (selected[0] ?? null) : selected;
+  const path = Array.isArray(selected) ? (selected[0] ?? null) : selected;
+  if (path) await grantPath(path).catch(() => {});
+  return path;
 }
 
 /** Open a native image-file picker (multi-select). Returns the chosen paths
@@ -262,5 +273,11 @@ export async function pickImageFiles(): Promise<string[]> {
     ],
   });
   if (selected == null) return [];
-  return Array.isArray(selected) ? selected : [selected];
+  const paths = Array.isArray(selected) ? selected : [selected];
+  await Promise.all(paths.map((p) => grantPath(p).catch(() => "")));
+  return paths;
+}
+
+function parentPath(path: string): string {
+  return path.replace(/\/+$/, "").replace(/\/[^/]*$/, "") || "/";
 }

@@ -2,6 +2,7 @@
 // Do NOT redefine FileEntry / OpenDoc / Frontmatter here — import them.
 
 import {
+  grantPath,
   listDir,
   readFile,
   pickFolder,
@@ -26,8 +27,10 @@ export function filterEntries(entries: FileEntry[]): FileEntry[] {
 }
 
 /** Open a native folder picker; returns the chosen root path or null if cancelled. */
-export function openFolder(): Promise<string | null> {
-  return pickFolder();
+export async function openFolder(): Promise<string | null> {
+  const picked = await pickFolder();
+  if (picked) await grantPath(picked);
+  return picked;
 }
 
 /** List one directory level, filtered + sorted for the tree. */

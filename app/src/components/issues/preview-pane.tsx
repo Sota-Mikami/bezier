@@ -35,7 +35,7 @@ import { openExternal } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
-import type { ImplementSession } from "./use-implement-session";
+import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
 
 const STATUS_LABEL: Record<PreviewStatus, string> = {
@@ -412,7 +412,7 @@ export function PreviewPane({
                   src={src}
                   title="worktree preview"
                   className="h-full w-full border-0 bg-white"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                  sandbox="allow-scripts allow-same-origin allow-forms"
                 />
                 {/* Figma-style comment/pen feedback over the live preview
                     (DEC-045/046). The shared AnnotationLayer with a "build"

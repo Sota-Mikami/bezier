@@ -17,65 +17,29 @@ import {
   removePath,
   movePath,
   appDataDir,
+  type FileEntry,
 } from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
 import { getSettings } from "@/lib/settings";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
+import {
+  slugify,
+  issueFolderName,
+  documentLabel,
+  documentRank,
+  type IssueStatus,
+  type IssueSlot,
+  type IssueSlots,
+} from "./issue-domain";
 
-// Persisted lifecycle marker, auto-maintained (no manual editing, DEC-027):
-// open (no work) → in-progress (worktree exists) → merged (landed on main). The
-// user-facing state is DERIVED from this + live facts (see deriveState).
-export type IssueStatus = "open" | "in-progress" | "merged";
+// Re-export the pure issue primitives so `@/lib/issues` stays the single public
+// entry point. They live in a dependency-free module (issue-domain.ts) so they
+// can be unit-tested in isolation (issue-domain.test.ts).
+export * from "./issue-domain";
 
-export const ISSUE_STATUSES: IssueStatus[] = ["open", "in-progress", "merged"];
-
-/**
- * The DERIVED, user-facing state (DEC-027). Computed from facts — never set by
- * hand — so it can't drift: a running agent, an open PR, a merge all show
- * through automatically.
- */
-export type DerivedState = "idea" | "running" | "draft" | "review" | "done";
-
-/** Derive the user-facing state from the persisted status + live facts. */
-export function deriveState(opts: {
-  status: IssueStatus;
-  /** A background agent (pty) is currently running for this issue. */
-  running: boolean;
-  /** A PR has been opened (worktree ref has a prUrl). */
-  hasPr: boolean;
-  /** A worktree exists (work has started) — defaults from status when unknown. */
-  hasWorktree?: boolean;
-}): DerivedState {
-  if (opts.status === "merged") return "done";
-  if (opts.running) return "running";
-  if (opts.hasPr) return "review";
-  const started = opts.hasWorktree ?? opts.status === "in-progress";
-  return started ? "draft" : "idea";
-}
-
-/** JA label + a tone token for each derived state (UI badge / sidebar). */
-export const DERIVED_STATE_META: Record<
-  DerivedState,
-  { label: string; tone: "muted" | "running" | "draft" | "review" | "done" }
-> = {
-  idea: { label: "未着手", tone: "muted" },
-  running: { label: "実行中", tone: "running" },
-  draft: { label: "下書き", tone: "draft" },
-  review: { label: "レビュー中", tone: "review" },
-  done: { label: "完了", tone: "done" },
-};
-
-// DEC-011: the Design slot is removed (design intent lives in the Spec; the
-// output is the PR/code diff itself). DEC-014/A: decision.md is removed too —
-// the durable "why" now lives in the issue's spec + the thread.json activity log
-// (the accept event records the committed paths + branch) + the PR body. Spec is
-// the only artifact slot.
-export type IssueSlot = "spec";
-
-export interface IssueSlots {
-  spec: boolean;
-}
+// IssueStatus / ISSUE_STATUSES / DerivedState / deriveState / DERIVED_STATE_META
+// / IssueSlot / IssueSlots now live in ./issue-domain (re-exported above).
 
 export interface Issue {
   /** ULID (canonical id). Also the prefix of the folder name. */
@@ -116,24 +80,7 @@ function stripTrailingSlash(p: string): string {
   return p.replace(/\/+$/, "");
 }
 
-/** kebab-case ASCII slug; "" when nothing survives (so untitled issues get no
- * "-untitled" noise in their folder/branch — just the ULID, DEC-091). */
-export function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/[\s-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-/** The on-disk / branch identifier for an issue: the ULID, plus `-<slug>` ONLY
- * when there's a real slug (a title was given at creation). Untitled issues are
- * just the ULID — no "-untitled" (DEC-091). Back-compatible: an existing issue
- * carries slug "untitled" (parsed from its old folder), so it keeps its name. */
-export function issueFolderName(id: string, slug: string): string {
-  return slug ? `${id}-${slug}` : id;
-}
+// slugify / issueFolderName now live in ./issue-domain (re-exported above).
 
 // ---------------------------------------------------------------------------
 // Frontmatter (parse via yaml; emit via yaml — preserves id/labels/screens)
@@ -614,6 +561,91 @@ export interface WorktreeRef {
 
 /** branch name convention (DEC-047 G2 / DEC-091): `issue/<ulid>[-<slug>]` — just
  * the ULID for untitled issues (no "-untitled"). */
+// ---------------------------------------------------------------------------
+// Documents (Document View) — the issue's center is a document space, not a
+// single Spec. The Spec spine stays at its legacy root path (back-compat, no
+// migration); durable docs the agent creates per the repo's conventions live
+// under docs/ and are auto-discovered. Creation is chat-driven; createDocument
+// is the secondary, manual quick-start.
+// ---------------------------------------------------------------------------
+
+export interface IssueDoc {
+  /** Absolute path (stable selection key). */
+  path: string;
+  /** Bare filename, e.g. "qa.md". */
+  file: string;
+  /** Filename stem / type, e.g. "qa". */
+  type: string;
+  /** Display label (known types localized, else humanized). */
+  label: string;
+}
+
+/** <issue.dir>/docs — durable per-issue documents (presence-driven). */
+export function documentsDir(issue: Pick<Issue, "dir">): string {
+  return `${issue.dir}/docs`;
+}
+
+/**
+ * List the issue's documents: the Spec spine (kept at its legacy root path) then
+ * everything under docs/, whatever created them (agent, repo conventions, the
+ * "+追加" templates). Spec first; known types before ad-hoc. Presence-driven —
+ * a missing docs/ just yields the spec.
+ */
+export async function listDocuments(issue: Issue): Promise<IssueDoc[]> {
+  const docs: IssueDoc[] = [];
+  const seen = new Set<string>();
+  if (issue.slots.spec) {
+    docs.push({ path: slotPath(issue, "spec"), file: "spec.md", type: "spec", label: "Spec" });
+    seen.add("spec");
+  }
+  let entries: FileEntry[] = [];
+  try {
+    entries = await listDir(documentsDir(issue));
+  } catch {
+    entries = [];
+  }
+  const extra: IssueDoc[] = [];
+  for (const e of entries) {
+    if (e.isDir || !/\.mdx?$/i.test(e.name)) continue;
+    const type = e.name.replace(/\.mdx?$/i, "");
+    if (seen.has(type)) continue;
+    seen.add(type);
+    extra.push({ path: e.path, file: e.name, type, label: documentLabel(type) });
+  }
+  extra.sort(
+    (a, b) => documentRank(a.type) - documentRank(b.type) || a.type.localeCompare(b.type),
+  );
+  return [...docs, ...extra];
+}
+
+const DOC_TEMPLATES: Record<string, string> = {
+  decision: ["# 決定ログ", "", "## 決定", "", "- ", "", "## 未解決の問い", "", "- ", ""].join("\n"),
+  qa: ["# QA", "", "## テストケース", "", "- [ ] ", "", "## 状態", "", "- ", ""].join("\n"),
+  handoff: [
+    "# 共有",
+    "",
+    "- URL: ",
+    "- 変更点: ",
+    "- 検討した決定: ",
+    "- 未解決の問い: ",
+    "- 既知の制約: ",
+    "",
+  ].join("\n"),
+  note: ["# ", "", ""].join("\n"),
+};
+
+/**
+ * Create a document under docs/ from a template — the SECONDARY, manual path
+ * (normally the agent writes docs via chat). Returns the new doc's path. Never
+ * overwrites an existing file.
+ */
+export async function createDocument(issue: Issue, type: string): Promise<string> {
+  const safe = /^[a-z0-9][a-z0-9-]*$/.test(type) ? type : "note";
+  const path = `${documentsDir(issue)}/${safe}.md`;
+  await writeFile(path, DOC_TEMPLATES[safe] ?? DOC_TEMPLATES.note);
+  return path;
+}
+
 export function branchName(issue: Pick<Issue, "id" | "slug">): string {
   return `issue/${issueFolderName(issue.id, issue.slug)}`;
 }
@@ -759,6 +791,11 @@ export function bezierGuide(issue: Issue): string {
     "- **実装の前に必ず spec.md を読み直す**。会話で意図/要件が変わったら **まず spec.md を更新**してから実装し、Spec⇆実装を常に同期する。",
     "- **「受入基準」= 完成の定義（DoD）**。観察可能・チェック可能な文に保つ。**採点はあなたではなく maker** が、Bezier が集めた証拠を見て行う（自己採点はしない）。",
     "",
+    "## ドキュメント（docs/）",
+    `- 永続的なドキュメント（決定ログ・QA/テストケース・共有メモ・調査メモ等）は \`${issue.dir}/docs/\` に Markdown で置く。Bezier の Docs タブが自動で一覧表示する。`,
+    "- この BEZIER.md が docs/ の**索引兼「使い方」**。新しい docs を作ったら、ここに1行追記して何のファイルかを示す。",
+    "- spec.md は軸。それ以外は必要に応じて presence-driven に作る（無ければ作らない・無理に増やさない）。",
+    "",
     "## タイトル",
     "- issue.md の frontmatter `title` が空 or「Untitled」なら、**最優先で**内容を表す簡潔なタイトルに更新する（忘れない）。",
     "",
@@ -774,6 +811,7 @@ export function bezierGuide(issue: Issue): string {
     "- maker が Bezier の設定からインストールしていれば、このプロンプトで次のコマンドを呼べます（未導入なら `/` メニューに出ません。その場合は無視して通常通り進めてください）:",
     "  - `/bezier:verify` — 受入基準の直下に「根拠」を1行ずつ付す（採点はしない）",
     "  - `/bezier:spec` — spec.md を読み直して実装と同期する",
+    "  - `/bezier:states` — 画面のエッジ状態（Empty/Error/Focus…）を洗い出し受入基準に落とす",
     "  - `/bezier:alt3` — デザイン別案を3つ（グレースケールのワイヤー）",
     "  - `/bezier:precommit` — 型・lint・動作を事前チェックして報告する",
     "",

@@ -472,13 +472,17 @@ export function AppSidebar() {
             >
               {creating ? (
                 <Loader2 className="size-4 animate-spin" />
-              ) : (
+              ) : root ? (
                 <Plus className="size-4" />
+              ) : (
+                <FolderOpen className="size-4" />
               )}
-              New
-              <kbd className="ml-1 rounded bg-primary-foreground/15 px-1 py-0.5 text-[10px] font-medium leading-none">
-                ⌘N
-              </kbd>
+              {root ? "New" : "フォルダを開く"}
+              {root && (
+                <kbd className="ml-1 rounded bg-primary-foreground/15 px-1 py-0.5 text-[10px] font-medium leading-none">
+                  ⌘N
+                </kbd>
+              )}
             </button>
 
             <div className="relative">

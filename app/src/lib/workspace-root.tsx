@@ -19,7 +19,7 @@
 import * as React from "react";
 import { openFolder } from "@/lib/workspace";
 import { gitRepoStatus, gitInit } from "@/lib/git";
-import { confirmDialog, messageDialog } from "@/lib/ipc";
+import { confirmDialog, grantPath, messageDialog } from "@/lib/ipc";
 
 const STORAGE_KEY = "bezier:workspace-root";
 const RECENTS_KEY = "bezier:recent-repos";
@@ -271,6 +271,21 @@ export function WorkspaceRootProvider({
     getEmptyRecents,
   );
   const hydrated = React.useSyncExternalStore(subscribe, getTrue, getFalse);
+  const [grantsReady, setGrantsReady] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const paths = new Set<string>();
+      if (root) paths.add(root);
+      for (const r of recents) paths.add(r.path);
+      await Promise.all([...paths].map((p) => grantPath(p).catch(() => "")));
+      if (!cancelled) setGrantsReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [root, recents]);
 
   // Open-folder guardrails (DEC-035 / OPEN-002). Bezier works per git repo,
   // and worktrees are cut off the repo TOPLEVEL. So when you open a folder:
@@ -329,7 +344,7 @@ export function WorkspaceRootProvider({
     [root, rootName, recents, hydrated, openRoot, switchTo, cycle, removeRepo, setRepoDisplayName],
   );
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={value}>{grantsReady ? children : null}</Ctx.Provider>;
 }
 
 export function useWorkspaceRoot(): WorkspaceRootValue {

@@ -3,9 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
+
+mod path_grants;
+use path_grants::{
+    ensure_granted, grant_existing_or_future, grant_root, reject_traversal, PathGrantState,
+};
+
+mod logging;
+use logging::LogState;
 
 /// Mirrors the TS `FileEntry` (src/lib/ipc.ts) EXACTLY.
 /// `rename_all = "camelCase"` makes `is_dir` serialize as `isDir` over IPC.
@@ -40,27 +48,21 @@ fn classify_ext(ext: &str) -> Option<&'static str> {
     }
 }
 
-/// Reject any path that contains a `..` (ParentDir) component. Used to prevent
-/// path traversal before touching the filesystem. For v0.1 the picker only
-/// hands us absolute paths under the opened workspace root; this guard ensures
-/// a caller cannot smuggle a `..` segment to escape it.
-fn reject_traversal(path: &Path) -> Result<(), String> {
-    if path
-        .components()
-        .any(|c| matches!(c, Component::ParentDir))
-    {
-        return Err(format!(
-            "refusing path containing '..' (traversal): {}",
-            path.display()
-        ));
-    }
-    Ok(())
+#[tauri::command]
+fn grant_path(state: tauri::State<'_, PathGrantState>, path: String) -> Result<String, String> {
+    Ok(grant_root(&state, Path::new(&path))?
+        .to_string_lossy()
+        .into_owned())
 }
 
 #[tauri::command]
-fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
+fn list_dir(
+    state: tauri::State<'_, PathGrantState>,
+    path: String,
+) -> Result<Vec<FileEntry>, String> {
     let dir = Path::new(&path);
     reject_traversal(dir)?;
+    ensure_granted(&state, dir)?;
 
     let read = fs::read_dir(dir).map_err(|e| format!("list_dir {path}: {e}"))?;
 
@@ -122,9 +124,13 @@ fn list_dir(path: String) -> Result<Vec<FileEntry>, String> {
 /// docs. Still skips dotfiles/dotdirs + SKIP_DIRS, dirs-first then by name.
 /// Lazy: returns one directory's immediate children (the tree expands on click).
 #[tauri::command]
-fn list_dir_all(path: String) -> Result<Vec<FileEntry>, String> {
+fn list_dir_all(
+    state: tauri::State<'_, PathGrantState>,
+    path: String,
+) -> Result<Vec<FileEntry>, String> {
     let dir = Path::new(&path);
     reject_traversal(dir)?;
+    ensure_granted(&state, dir)?;
 
     let read = fs::read_dir(dir).map_err(|e| format!("list_dir_all {path}: {e}"))?;
 
@@ -202,9 +208,15 @@ pub struct GrepFile {
 /// (0 → 400 default), ≤50 matches/file, line text truncated at 240 chars, so a
 /// big tree can't hang the UI. Iterative walk; files sorted by path.
 #[tauri::command]
-fn grep_files(root: String, query: String, limit: usize) -> Result<Vec<GrepFile>, String> {
+fn grep_files(
+    state: tauri::State<'_, PathGrantState>,
+    root: String,
+    query: String,
+    limit: usize,
+) -> Result<Vec<GrepFile>, String> {
     let base = Path::new(&root);
     reject_traversal(base)?;
+    ensure_granted(&state, base)?;
     let needle = query.to_ascii_lowercase();
     if needle.trim().is_empty() {
         return Ok(Vec::new());
@@ -296,15 +308,21 @@ fn grep_files(root: String, query: String, limit: usize) -> Result<Vec<GrepFile>
 }
 
 #[tauri::command]
-fn read_file(path: String) -> Result<String, String> {
+fn read_file(state: tauri::State<'_, PathGrantState>, path: String) -> Result<String, String> {
     reject_traversal(Path::new(&path))?;
+    ensure_granted(&state, Path::new(&path))?;
     fs::read_to_string(&path).map_err(|e| format!("read_file {path}: {e}"))
 }
 
 #[tauri::command]
-fn write_file(path: String, contents: String) -> Result<(), String> {
+fn write_file(
+    state: tauri::State<'_, PathGrantState>,
+    path: String,
+    contents: String,
+) -> Result<(), String> {
     let target = Path::new(&path);
     reject_traversal(target)?;
+    ensure_granted(&state, target)?;
 
     // The target file may not exist yet (new doc), so canonicalize the PARENT
     // directory and re-attach the file name. Canonicalization resolves symlinks
@@ -340,9 +358,14 @@ fn write_file(path: String, contents: String) -> Result<(), String> {
 /// binary payload (sent from JS as a number array). Used to save image assets
 /// under `<issue.dir>/assets/`.
 #[tauri::command]
-fn write_file_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
+fn write_file_bytes(
+    state: tauri::State<'_, PathGrantState>,
+    path: String,
+    bytes: Vec<u8>,
+) -> Result<(), String> {
     let target = Path::new(&path);
     reject_traversal(target)?;
+    ensure_granted(&state, target)?;
     let parent = target
         .parent()
         .ok_or_else(|| format!("write_file_bytes {path}: path has no parent directory"))?;
@@ -364,8 +387,12 @@ fn write_file_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
 /// Read a file's raw BYTES (DEC-043 — rendering a Spec image as a data: URL in
 /// the live preview). Traversal-guarded like `read_file`.
 #[tauri::command]
-fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
+fn read_file_bytes(
+    state: tauri::State<'_, PathGrantState>,
+    path: String,
+) -> Result<Vec<u8>, String> {
     reject_traversal(Path::new(&path))?;
+    ensure_granted(&state, Path::new(&path))?;
     fs::read(&path).map_err(|e| format!("read_file_bytes {path}: {e}"))
 }
 
@@ -373,8 +400,9 @@ fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
 /// on a directory opens it in Finder; on a file it reveals/opens its app. Path is
 /// traversal-guarded; a spawn failure surfaces a clear Err.
 #[tauri::command]
-fn reveal_in_finder(path: String) -> Result<(), String> {
+fn reveal_in_finder(state: tauri::State<'_, PathGrantState>, path: String) -> Result<(), String> {
     reject_traversal(Path::new(&path))?;
+    ensure_granted(&state, Path::new(&path))?;
     let status = std::process::Command::new("open")
         .arg(&path)
         .status()
@@ -413,6 +441,7 @@ fn open_external(url: String) -> Result<(), String> {
 /// permission (macOS prompts on first use; a denied capture yields a blank/err).
 #[tauri::command]
 fn capture_region(
+    state: tauri::State<'_, PathGrantState>,
     x: f64,
     y: f64,
     width: f64,
@@ -421,10 +450,8 @@ fn capture_region(
 ) -> Result<String, String> {
     let target = Path::new(&out_path);
     reject_traversal(target)?;
-    if !target
-        .components()
-        .any(|c| c.as_os_str() == ".bezier")
-    {
+    ensure_granted(&state, target)?;
+    if !target.components().any(|c| c.as_os_str() == ".bezier") {
         return Err("refusing to write a capture outside a .bezier store".to_string());
     }
     if let Some(parent) = target.parent() {
@@ -452,7 +479,9 @@ fn capture_region(
         ));
     }
     if !target.exists() {
-        return Err("screencapture produced no file (画面収録の許可が必要かもしれません)".to_string());
+        return Err(
+            "screencapture produced no file (画面収録の許可が必要かもしれません)".to_string(),
+        );
     }
     Ok(out_path)
 }
@@ -463,8 +492,9 @@ fn capture_region(
 /// (listing the probed CLIs) when none is installed. PATH is the login-shell PATH
 /// (see fix_path_env), so nvm/Homebrew installs of `code` / `cursor` are seen.
 #[tauri::command]
-fn open_in_editor(path: String) -> Result<String, String> {
+fn open_in_editor(state: tauri::State<'_, PathGrantState>, path: String) -> Result<String, String> {
     reject_traversal(Path::new(&path))?;
+    ensure_granted(&state, Path::new(&path))?;
     const EDITORS: &[(&str, &str)] = &[
         ("cursor", "Cursor"),
         ("code", "VS Code"),
@@ -496,18 +526,17 @@ fn open_in_editor(path: String) -> Result<String, String> {
 /// can only delete Bezier's local issue artifacts — never arbitrary repo
 /// files. No-op (Ok) when the path does not exist.
 #[tauri::command]
-fn remove_path(path: String) -> Result<(), String> {
+fn remove_path(state: tauri::State<'_, PathGrantState>, path: String) -> Result<(), String> {
     let target = Path::new(&path);
     reject_traversal(target)?;
+    ensure_granted(&state, target)?;
     if !target.exists() {
         return Ok(());
     }
     let canonical =
         fs::canonicalize(target).map_err(|e| format!("remove_path {path}: cannot resolve: {e}"))?;
     reject_traversal(&canonical)?;
-    let under_store = canonical
-        .components()
-        .any(|c| c.as_os_str() == ".bezier");
+    let under_store = canonical.components().any(|c| c.as_os_str() == ".bezier");
     if !under_store {
         return Err(format!(
             "refusing to remove path outside a .bezier store: {}",
@@ -526,15 +555,16 @@ fn remove_path(path: String) -> Result<(), String> {
 /// "project linked under a different org" error, DEC-098). Guarded: rejects
 /// `..` and only ever deletes a directory whose final component is `.vercel`.
 #[tauri::command]
-fn remove_vercel_dir(dir: String) -> Result<(), String> {
+fn remove_vercel_dir(state: tauri::State<'_, PathGrantState>, dir: String) -> Result<(), String> {
     let base = Path::new(&dir);
     reject_traversal(base)?;
+    ensure_granted(&state, base)?;
     let target = base.join(".vercel");
     if !target.exists() {
         return Ok(());
     }
-    let canonical = fs::canonicalize(&target)
-        .map_err(|e| format!("remove_vercel_dir: cannot resolve: {e}"))?;
+    let canonical =
+        fs::canonicalize(&target).map_err(|e| format!("remove_vercel_dir: cannot resolve: {e}"))?;
     reject_traversal(&canonical)?;
     if canonical.file_name().and_then(|n| n.to_str()) != Some(".vercel") {
         return Err(format!(
@@ -550,20 +580,23 @@ fn remove_vercel_dir(dir: String) -> Result<(), String> {
 /// `.bezier` working store (so it can only shuffle Bezier's own artifacts,
 /// e.g. into / out of the trash). Creates the destination's parent tree.
 #[tauri::command]
-fn move_path(from: String, to: String) -> Result<(), String> {
+fn move_path(
+    state: tauri::State<'_, PathGrantState>,
+    from: String,
+    to: String,
+) -> Result<(), String> {
     let src = Path::new(&from);
     let dst = Path::new(&to);
     reject_traversal(src)?;
     reject_traversal(dst)?;
+    ensure_granted(&state, src)?;
+    ensure_granted(&state, dst)?;
     if !src.exists() {
         return Err(format!("move_path: source does not exist: {from}"));
     }
     let canon_src =
         fs::canonicalize(src).map_err(|e| format!("move_path resolve from {from}: {e}"))?;
-    if !canon_src
-        .components()
-        .any(|c| c.as_os_str() == ".bezier")
-    {
+    if !canon_src.components().any(|c| c.as_os_str() == ".bezier") {
         return Err(format!(
             "refusing to move from outside a .bezier store: {}",
             canon_src.display()
@@ -592,8 +625,7 @@ fn move_path(from: String, to: String) -> Result<(), String> {
         .ok_or_else(|| format!("move_path: dst has no file name: {to}"))?;
     let mut resolved_dst = canon_dst_parent;
     resolved_dst.push(file_name);
-    fs::rename(&canon_src, &resolved_dst)
-        .map_err(|e| format!("move_path {from} -> {to}: {e}"))
+    fs::rename(&canon_src, &resolved_dst).map_err(|e| format!("move_path {from} -> {to}: {e}"))
 }
 
 // ============================================================================
@@ -857,8 +889,8 @@ fn pty_spawn(
                                     // Invalid byte(s) mid-stream: emit valid prefix
                                     // + U+FFFD, drop the bad bytes, keep scanning.
                                     Some(bad) => {
-                                        let mut chunk = String::from_utf8_lossy(&carry[..valid])
-                                            .into_owned();
+                                        let mut chunk =
+                                            String::from_utf8_lossy(&carry[..valid]).into_owned();
                                         chunk.push('\u{FFFD}');
                                         carry.drain(..valid + bad);
                                         emit_chunk(chunk);
@@ -970,10 +1002,7 @@ fn pty_active_keys(state: tauri::State<'_, PtyState>) -> Result<Vec<String>, Str
         .sessions
         .lock()
         .map_err(|e| format!("pty_active_keys lock: {e}"))?;
-    Ok(sessions
-        .values()
-        .filter_map(|s| s.key.clone())
-        .collect())
+    Ok(sessions.values().filter_map(|s| s.key.clone()).collect())
 }
 
 /// Per-agent status for the Agent Inbox (DEC-028). One entry per keyed session:
@@ -1234,11 +1263,7 @@ fn git_run(args: &[&str]) -> Result<String, String> {
         let stderr = String::from_utf8_lossy(&out.stderr);
         let stdout = String::from_utf8_lossy(&out.stdout);
         let detail = format!("{stderr}{stdout}");
-        return Err(format!(
-            "git {} failed: {}",
-            args.join(" "),
-            detail.trim()
-        ));
+        return Err(format!("git {} failed: {}", args.join(" "), detail.trim()));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -1875,9 +1900,8 @@ fn gh_pr_create(
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     if out.status.success() {
-        return last_url_line(&stdout).ok_or_else(|| {
-            format!("gh pr create succeeded but no URL found: {}", stdout.trim())
-        });
+        return last_url_line(&stdout)
+            .ok_or_else(|| format!("gh pr create succeeded but no URL found: {}", stdout.trim()));
     }
 
     // A PR for this branch may already be open — return its URL instead of error.
@@ -1916,9 +1940,7 @@ fn gh_pr_state(repo_path: String, branch: String) -> Result<String, String> {
         .current_dir(&repo_path)
         .output();
     match out {
-        Ok(o) if o.status.success() => {
-            Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
-        }
+        Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).trim().to_string()),
         _ => Ok(String::new()),
     }
 }
@@ -1964,7 +1986,11 @@ fn http_ping(url: String) -> Result<bool, String> {
         .unwrap_or(&url);
     let slash = rest.find('/').unwrap_or(rest.len());
     let authority = &rest[..slash];
-    let path = if slash < rest.len() { &rest[slash..] } else { "/" };
+    let path = if slash < rest.len() {
+        &rest[slash..]
+    } else {
+        "/"
+    };
     let (host, port) = match authority.rsplit_once(':') {
         Some((h, p)) => match p.parse::<u16>() {
             Ok(port) => (h.to_string(), port),
@@ -2096,7 +2122,10 @@ fn clone_dir(src: String, dst: String) -> Result<(), String> {
 /// the nested copy. An external location gives each worktree a single,
 /// unambiguous root.
 #[tauri::command]
-fn app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
+fn app_data_dir(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, PathGrantState>,
+) -> Result<String, String> {
     let dir = app
         .path()
         .app_data_dir()
@@ -2105,18 +2134,48 @@ fn app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
         fs::create_dir_all(&dir)
             .map_err(|e| format!("app_data_dir create {}: {e}", dir.display()))?;
     }
+    let _ = grant_root(&state, &dir)?;
     Ok(dir.to_string_lossy().into_owned())
+}
+
+/// Append a line to Bezier's local log file (`<app_log_dir>/bezier.log`). Used by
+/// the front-end error boundaries and global error handlers (src/lib/log.ts).
+/// LOCAL ONLY — no data leaves the machine. The path is cached in LogState.
+#[tauri::command]
+fn app_log(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LogState>,
+    level: String,
+    message: String,
+) -> Result<(), String> {
+    let path = {
+        let mut guard = state.file.lock().map_err(|e| format!("log lock: {e}"))?;
+        match guard.as_ref() {
+            Some(p) => p.clone(),
+            None => {
+                let p = logging::resolve_log_file(&app)?;
+                *guard = Some(p.clone());
+                p
+            }
+        }
+    };
+    logging::append_line(&path, &level, &message)
 }
 
 /// The user's home directory. Bezier installs its agent-native slash-command pack
 /// under `~/.claude/commands/bezier/` (DEC-076), which lives OUTSIDE any repo so it
 /// never gets swept into the user's commits (git_commit_all does `add -A`).
 #[tauri::command]
-fn home_dir(app: tauri::AppHandle) -> Result<String, String> {
+fn home_dir(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, PathGrantState>,
+) -> Result<String, String> {
     let dir = app
         .path()
         .home_dir()
         .map_err(|e| format!("home_dir: {e}"))?;
+    let command_dir = dir.join(".claude").join("commands").join("bezier");
+    let _ = grant_existing_or_future(&state, &command_dir)?;
     Ok(dir.to_string_lossy().into_owned())
 }
 
@@ -2203,8 +2262,19 @@ pub fn run() {
     fix_path_env();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(PathGrantState::default())
         .manage(PtyState::default())
+        .manage(LogState::default())
         .setup(|app| {
+            // Local crash log (LOCAL ONLY, no telemetry): resolve the log file,
+            // cache it in LogState, and route Rust panics into it. Best-effort —
+            // a logging failure must never block app startup.
+            if let Ok(file) = logging::resolve_log_file(app.handle()) {
+                if let Ok(mut guard) = app.state::<LogState>().file.lock() {
+                    *guard = Some(file.clone());
+                }
+                logging::install_panic_hook(file);
+            }
             // macOS only: replace the default menu with one that deliberately
             // OMITS "Close Window" — that item owns ⌘W, and we want ⌘W to reach
             // the webview so it closes the active Code tab (DEC-061), not the
@@ -2258,6 +2328,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            grant_path,
             list_dir,
             list_dir_all,
             grep_files,
@@ -2312,6 +2383,7 @@ pub fn run() {
             home_dir,
             uninstall_bezier_commands,
             remove_bezier_command,
+            app_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

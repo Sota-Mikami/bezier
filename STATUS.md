@@ -1,4 +1,4 @@
-<!-- 最終更新: 2026-06-15 / DEC-102 共有失敗修正+3対象+パスワード保護・DEC-101 共有内容UX・DEC-100 共有1動線・DEC-099 Merge確認/main保護 -->
+<!-- 最終更新: 2026-06-15 / DEC-105 Document View・状態=受入基準・Clarify=skillマーケット・Implement=Preview / DEC-104 運用前足回り(vitest/ErrorBoundary/ローカルログ/CI) / DEC-103 セキュリティ硬化 -->
 # Bezier — 現在地
 
 > **新しいチャットへ**: まずこの「オンボーディング・サマリ」(§0〜§5) を読めば、**何のサービスで・何を目指し・今何ができ・次に何を検討しているか**が分かる。詳細な意思決定は `playbook/decisions-log.md`（DEC-###・逆時系列）、憲章は `COMPANY.md`、時系列の作業ログは本ファイルの §6 以降（過去の append ログ）。
@@ -21,7 +21,7 @@
 
 ## §2. 今できること（実装済み・dogfood で動く）
 - **メインループ**: 起票 → **Clarify**（着手前の確認3-5問）→ **Spec**（受入基準=完成の定義 DoD）→ **Design**（スタック非依存の自己完結 HTML 別案を発散）→ **Implement**（worktree でユーザーの agent が実装）→ **Verify**（Bezier が証拠を Spec に集約・採点は maker）→ **Ship**。
-- **中央3タブ** = Spec / Design / Implement（=Preview / Diff / Code）。Code は閲覧+軽編集（CodeMirror・⌘F・実 IDE へ逃がす）。
+- **中央3タブ** = **Docs** / Design / Implement。**Docs** は Spec を軸に `<id>/docs/` を自動一覧（agent生成mdも拾う・横並びタブ・⌘1–9、DEC-105）。**Implement = Preview のみ**（Diff/Code は廃止 → 生diff/コードは PR/IDE へ。DEC-105）。
 - **Annotation**（cursor / comment / pen）でプレビュー上に注釈 → Agent への修正依頼に（Design・Preview 共通）。
 - **チェックポイント**（毎ターン前に自動 commit ＋ 手動「いまを保存」＋ロールバック。merge 時 squash）。
 - **Ship**（Sync / Open PR / Merge）。**Merge to main は確認ダイアログ**、設定「main の保護」ON で PR 強制（DEC-099）。

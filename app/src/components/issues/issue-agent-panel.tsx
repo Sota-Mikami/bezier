@@ -23,7 +23,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
-import type { ImplementSession } from "./use-implement-session";
+import type { ImplementSession } from "./implement-session-types";
 
 // xterm-backed terminal — client-only (DOM + CSS), like /workspace.
 const TerminalPane = dynamic(() => import("@/components/workspace/terminal"), {

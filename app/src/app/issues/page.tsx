@@ -22,52 +22,23 @@ import {
   RotateCcw,
   GitBranch,
   GitPullRequest,
-  GitMerge,
-  ArrowDownToLine,
-  ChevronDown,
-  Share2,
-  Copy,
-  Eye,
-  EyeOff,
-  Keyboard,
-  Sparkles,
   ExternalLink,
-  TriangleAlert,
   History,
-  Camera,
-  Undo2,
-  FolderGit2,
-  Lock,
   X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuGroup,
-  DropdownMenuSeparator,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
-import { confirmDialog, messageDialog, openExternal } from "@/lib/ipc";
-import { copyText } from "@/lib/clipboard";
-import { useSettings } from "@/lib/settings";
-import { useWorkspaceRoot, repoLabel, repoName } from "@/lib/workspace-root";
+import { confirmDialog, messageDialog } from "@/lib/ipc";
+import { useWorkspaceRoot } from "@/lib/workspace-root";
 import {
   readIssue,
-  moveIssueToRepo,
   createSlot,
   updateIssueMeta,
   trashIssue,
   trashTtlDays,
-  slotPath,
   deriveState,
   DERIVED_STATE_META,
   readTrashDetail,
@@ -80,16 +51,18 @@ import {
   type TrashDetail,
 } from "@/lib/issues";
 import { purgeTrashed } from "@/lib/issue-actions";
-import { SlotEditor } from "@/components/issues/slot-editor";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { DesignVariants } from "@/components/issues/design-variants";
+import { IssueDocs } from "@/components/issues/issue-docs";
 import { BuildReview } from "@/components/issues/build-review";
-import { Kbd } from "@/components/ui/kbd";
-import { openShortcuts } from "@/components/shortcuts-dialog";
+import { IssueShare } from "@/components/issues/issue-share";
 import {
-  useImplementSession,
-  type ImplementSession,
-} from "@/components/issues/use-implement-session";
+  IssueCheckpoints,
+  IssueMenu,
+  IssueRepoChip,
+  IssueShip,
+} from "@/components/issues/issue-workflow-actions";
+import { useImplementSession } from "@/components/issues/use-implement-session";
 import { gitStatus } from "@/lib/git";
 import { collectEvidence, syncVerifyBlock } from "@/lib/verify";
 
@@ -524,7 +497,9 @@ function IssueDetail({ root, id }: { root: string; id: string }) {
 // The center Spec/Design/Build panes stay mounted (hidden toggling) so the CM
 // caret + variant/preview iframes survive tab switches; the right terminal —
 // being outside the tabs entirely — never unmounts on a center-tab switch, so
-// the agent session persists.
+// the agent session persists. The center panes are rendered one-at-a-time; this
+// avoids stale off-screen panes visually leaking over the active tab in Tauri's
+// WebView after folder switches / reloads.
 function IssueWorkbench({
   root,
   issue,
@@ -866,9 +841,9 @@ function IssueWorkbench({
                 {
                   value: "spec",
                   icon: <FileText className="size-3.5" />,
-                  label: "Spec",
+                  label: "Docs",
                   trailing: specPulse ? <UpdatingPulse /> : undefined,
-                  title: "意図と受入基準 ・ ⌘⇧[ / ⌘⇧] で切替",
+                  title: "ドキュメント（Spec・決定・QA…） ・ ⌘⇧[ / ⌘⇧] で切替",
                 },
                 {
                   value: "design",
@@ -882,7 +857,7 @@ function IssueWorkbench({
                   icon: <MonitorPlay className="size-3.5" />,
                   label: "Implement",
                   trailing: buildPulse ? <UpdatingPulse /> : undefined,
-                  title: "実 repo のプレビュー / Diff / Verify ・ ⌘⇧[ / ⌘⇧] で切替",
+                  title: "実 repo のプレビュー（実物の DS で動く） ・ ⌘⇧[ / ⌘⇧] で切替",
                 },
               ]}
             />
@@ -904,7 +879,7 @@ function IssueWorkbench({
           onChange={handleManualTab}
           ariaLabel="Spec / Design / Implement"
           options={[
-            { value: "spec", icon: <FileText className="size-3.5" />, label: "Spec", trailing: specPulse ? <UpdatingPulse /> : undefined },
+            { value: "spec", icon: <FileText className="size-3.5" />, label: "Docs", trailing: specPulse ? <UpdatingPulse /> : undefined },
             { value: "design", icon: <LayoutGrid className="size-3.5" />, label: "Design", trailing: designPulse ? <UpdatingPulse /> : undefined },
             { value: "build", icon: <MonitorPlay className="size-3.5" />, label: "Implement", trailing: buildPulse ? <UpdatingPulse /> : undefined },
           ]}
@@ -941,34 +916,21 @@ function IssueWorkbench({
         {/* RIGHT: Spec/Design/Implement canvas — the result you're shaping. The
             switcher lives in the top bar now (DEC-058), so no header here. */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* All panes stay mounted (hidden toggling) so the Spec caret, the
-              Design variant iframes, and the Build preview iframe survive
-              switching tabs. */}
-          <div className="relative min-h-0 flex-1">
-            <div className={cn("absolute inset-0", tab !== "spec" && "hidden")}>
-              {issue.slots.spec ? (
-                <SlotEditor
-                  path={slotPath(issue, "spec")}
-                  label="Spec"
-                  onExternalChange={() => signalChange("spec")}
-                />
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  Spec を準備中…
-                </div>
-              )}
-            </div>
-            <div className={cn("absolute inset-0", tab !== "design" && "hidden")}>
+          <div className="min-h-0 flex-1">
+            {tab === "spec" && (
+              <IssueDocs
+                issue={issue}
+                onExternalChange={() => signalChange("spec")}
+              />
+            )}
+            {tab === "design" && (
               <DesignVariants
                 session={session}
                 onVariants={handleVariants}
-                active={tab === "design"}
+                active
               />
-            </div>
-            <div className={cn("absolute inset-0", tab !== "build" && "hidden")}>
-              <BuildReview session={session} active={tab === "build"} />
-            </div>
+            )}
+            {tab === "build" && <BuildReview session={session} active />}
           </div>
         </section>
 
@@ -1151,705 +1113,5 @@ function StateBadge({ state }: { state: DerivedState }) {
       )}
       {meta.label}
     </span>
-  );
-}
-
-// The Issue title ▾ menu (DEC-058): consolidates the occasional, issue-level
-// controls that used to be scattered (left-panel ⋯, header History/Trash icons) —
-// activity log, the implementation agent picker, re-implement, discard, branch,
-// and move-to-trash. Lovable's project-name dropdown, adapted.
-function IssueMenu({
-  session,
-  historyOpen,
-  onToggleHistory,
-  onDelete,
-}: {
-  session: ImplementSession;
-  historyOpen: boolean;
-  onToggleHistory: () => void;
-  onDelete: () => void;
-}) {
-  const {
-    ref,
-    gitRepo,
-    agents,
-    selectedAgentId,
-    setSelectedAgentId,
-    selectedAgent,
-    action,
-    handleRerun,
-    handleDiscard,
-  } = session;
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="Issue メニュー"
-        title="活動ログ / エージェント / 破棄 / 削除"
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted"
-      >
-        <ChevronDown className="size-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-56">
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-xs"
-          onClick={onToggleHistory}
-        >
-          <History className="size-3.5" />
-          活動ログ{historyOpen ? "を閉じる" : ""}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-xs"
-          onClick={() => openShortcuts()}
-        >
-          <Keyboard className="size-3.5" />
-          キーボードショートカット
-          <Kbd className="ml-auto">?</Kbd>
-        </DropdownMenuItem>
-
-        {agents.length > 0 && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuRadioGroup
-              value={selectedAgentId ?? ""}
-              onValueChange={(v) => setSelectedAgentId(v)}
-            >
-              <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-                実装エージェント
-              </DropdownMenuLabel>
-              {agents.map((a) => (
-                <DropdownMenuRadioItem
-                  key={a.id}
-                  value={a.id}
-                  disabled={!a.available}
-                  className="text-xs"
-                >
-                  {a.name}
-                  {a.comingSoon
-                    ? "（coming soon）"
-                    : !a.available
-                      ? "（not found）"
-                      : ""}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </>
-        )}
-
-        {ref && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="cursor-pointer gap-2 text-xs"
-              disabled={!selectedAgent?.available || !!action}
-              onClick={() => void handleRerun()}
-            >
-              <RotateCcw className="size-3.5" />
-              編集後の Spec で再 Implement
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="cursor-pointer gap-2 text-xs text-destructive focus:text-destructive"
-              disabled={!!action}
-              onClick={() => void handleDiscard()}
-            >
-              <Trash2 className="size-3.5" />
-              変更を破棄（Discard）
-            </DropdownMenuItem>
-            <DropdownMenuGroup>
-              <DropdownMenuLabel
-                className="font-mono text-[10px] font-normal break-all text-muted-foreground"
-                title={ref.path}
-              >
-                {ref.branch}
-              </DropdownMenuLabel>
-            </DropdownMenuGroup>
-          </>
-        )}
-
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-xs text-destructive focus:text-destructive"
-          onClick={onDelete}
-        >
-          <Trash2 className="size-3.5" />
-          Issue をゴミ箱へ移動
-        </DropdownMenuItem>
-
-        {gitRepo === false && (
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-amber-600 dark:text-amber-400">
-              <TriangleAlert className="size-3" />
-              git リポジトリではありません
-            </DropdownMenuLabel>
-          </DropdownMenuGroup>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-// The Issue's repo binding (DEC-084), in the top bar next to the title. BEFORE
-// work starts (no worktree, agent never ran) it's a dropdown to MOVE the Issue to
-// another repo (the small drafts folder is re-homed); AFTER, it's a read-only,
-// locked chip — per-repo state (worktree, thread) is tied to the repo by then.
-function IssueRepoChip({
-  root,
-  issue,
-  setIssue,
-  locked,
-}: {
-  root: string;
-  issue: Issue;
-  setIssue: React.Dispatch<React.SetStateAction<Issue | null>>;
-  locked: boolean;
-}) {
-  const { recents, switchTo } = useWorkspaceRoot();
-  const [busy, setBusy] = React.useState(false);
-  const name = React.useMemo(() => {
-    const e = recents.find((r) => r.path === root);
-    return e ? repoLabel(e) : repoName(root);
-  }, [recents, root]);
-
-  const move = async (toRoot: string) => {
-    if (toRoot === root || busy) return;
-    setBusy(true);
-    try {
-      const moved = await moveIssueToRepo(issue, toRoot);
-      setIssue(moved);
-      switchTo(toRoot); // active repo follows; the route re-reads from toRoot
-    } catch (e) {
-      await messageDialog(
-        `リポジトリの変更に失敗しました: ${e instanceof Error ? e.message : String(e)}`,
-        { title: "変更エラー" },
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (locked) {
-    return (
-      <span
-        title="作業を開始したため、このIssueのリポジトリは変更できません"
-        className="flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded-md border border-dashed border-border/70 px-2 text-xs text-muted-foreground"
-      >
-        <FolderGit2 className="size-3.5 shrink-0" />
-        <span className="max-w-[10rem] truncate">{name}</span>
-        <Lock className="size-3 shrink-0 opacity-60" />
-      </span>
-    );
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        title="このIssueのリポジトリ（クリックで変更・作業開始前まで）"
-        className="group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:border-foreground/25 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:border-foreground/25 data-[popup-open]:bg-muted data-[popup-open]:text-foreground"
-      >
-        {busy ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin" />
-        ) : (
-          <FolderGit2 className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground group-data-[popup-open]:text-foreground" />
-        )}
-        <span className="max-w-[10rem] truncate">{name}</span>
-        <ChevronDown className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[popup-open]:rotate-180" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-60">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-            このIssueを置くリポジトリ
-          </DropdownMenuLabel>
-          {recents.map((r) => (
-            <DropdownMenuItem
-              key={r.path}
-              className="cursor-pointer gap-2 py-1.5 text-sm"
-              disabled={busy}
-              onClick={() => void move(r.path)}
-            >
-              <FolderGit2 className="size-4 shrink-0 text-muted-foreground" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate leading-tight">{repoLabel(r)}</span>
-                <span className="truncate text-[10px] leading-tight text-muted-foreground">
-                  {r.path}
-                </span>
-              </span>
-              {r.path === root && (
-                <Check className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-              )}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-// Checkpoints (§D / DEC-080): the issue branch's commits as restore points, so a
-// turn that made things worse can be undone without Discard (all-or-nothing).
-// "いまを保存" commits the current state; each row rolls the worktree back to that
-// commit (reset --hard, confirmed). Only shown once a worktree exists.
-function IssueCheckpoints({ session }: { session: ImplementSession }) {
-  const { ref, action, checkpoints, makeCheckpoint, rollbackTo } = session;
-  if (!ref) return null;
-  const busy = action === "checkpoint" || action === "rollback";
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="チェックポイント"
-        title="チェックポイント（保存 / 戻す）"
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground outline-none transition hover:bg-muted hover:text-foreground"
-      >
-        {busy ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : (
-          <History className="size-3.5" />
-        )}
-        <span className="hidden sm:inline">チェックポイント</span>
-        {checkpoints.length > 0 && (
-          <span className="rounded bg-muted px-1 text-[10px] tabular-nums">
-            {checkpoints.length}
-          </span>
-        )}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-72">
-        <DropdownMenuItem
-          className="cursor-pointer gap-2 text-xs"
-          disabled={!!action}
-          onClick={() => void makeCheckpoint()}
-        >
-          <Camera className="size-3.5" />
-          いまを保存（チェックポイント）
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
-          {checkpoints.length === 0
-            ? "まだチェックポイントがありません"
-            : "戻る先を選ぶ"}
-        </DropdownMenuLabel>
-        <div className="max-h-72 overflow-auto">
-          {checkpoints.map((c, i) => (
-            <DropdownMenuItem
-              key={c.sha}
-              className="cursor-pointer gap-2 text-xs"
-              // i===0 is the current HEAD — nothing to roll back to.
-              disabled={!!action || i === 0}
-              onClick={() => void rollbackTo(c.sha)}
-            >
-              <Undo2 className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate">{c.subject || "(無題)"}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {i === 0 ? "最新（現在地）· " : ""}
-                  <span className="font-mono">{c.short}</span> · {fmtDateTime(c.iso)}
-                </span>
-              </span>
-            </DropdownMenuItem>
-          ))}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-// "共有 ▾" — one entry point next to Checkpoints/Ship (CEO: it belongs near
-// ship, not in the Design preview controls). The maker picks WHAT to share with
-// toggle pills (アプリ / Spec / デザイン / 実装), hits one button, and gets one
-// shareable URL. Selecting アプリ publishes the live app first, then the page
-// embeds the fresh build (DEC-094/098). No "journey" jargon — just "共有する内容".
-function IssueShare({ session }: { session: ImplementSession }) {
-  const { ref, publish, journey } = session;
-  const { settings, update } = useSettings();
-  const layers = settings.journeyLayers;
-  // Password protection (DEC-102). Ephemeral — kept in component state (persists
-  // while you're on the issue) but NEVER written to disk; you re-enter it if you
-  // leave and come back. Avoids storing a plaintext password.
-  const [pwOn, setPwOn] = React.useState(false);
-  const [pw, setPw] = React.useState("");
-  const [pwReveal, setPwReveal] = React.useState(false);
-  if (!ref) return null;
-
-  const busy = publish.status === "building" || journey.status === "building";
-  // Share targets = Spec / Design / Preview only (CEO, DEC-101). The dev record
-  // (Diff/code/history) is dropped. Labels reuse the app's OWN words (the
-  // Spec/Design/Implement tabs) — renaming would split the vocabulary and
-  // confuse the operator. The fix for "何のことか分からない" is the one-line
-  // description (drawn from the tab tooltips), not a new name.
-  const shareItems: { key: keyof typeof layers; label: string; desc: string }[] =
-    [
-      {
-        key: "app",
-        label: "アプリ",
-        desc: "公開して、受け手がその場で触れる（プレビューの共有）",
-      },
-      { key: "design", label: "デザイン", desc: "採用した画面デザイン" },
-      { key: "spec", label: "Spec", desc: "意図と受入基準（なぜ・何を）" },
-    ];
-  const anySelected = shareItems.some((it) => layers[it.key]);
-
-  // One action: publish the live app (when included) → build + deploy the share
-  // page embedding that fresh URL → one link.
-  const pwMissing = pwOn && !pw.trim();
-  const runShare = async () => {
-    if (busy || !anySelected || pwMissing) return;
-    const appUrl = layers.app ? await publish.publish() : null;
-    await journey.share({ appUrl, password: pwOn ? pw : null });
-  };
-
-  const phase =
-    publish.status === "building"
-      ? "アプリを公開中…"
-      : journey.status === "building"
-        ? "共有ページを作成中…"
-        : publish.status === "error" || journey.status === "error"
-          ? "失敗しました。もう一度お試しください。"
-          : null;
-  const ready = journey.status === "ready" && !!journey.url && !busy;
-  // On failure, surface the actual reason (the last lines of whichever step
-  // errored) so it isn't a dead-end "失敗しました" (CEO hit a silent failure).
-  const errorLog =
-    publish.status === "error"
-      ? publish.log
-      : journey.status === "error"
-        ? journey.log
-        : "";
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="共有"
-        title="共有する内容を選んで共有"
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium outline-none transition hover:bg-muted"
-      >
-        {busy ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : (
-          <Share2 className="size-3.5" />
-        )}
-        共有
-        <ChevronDown className="size-3.5 opacity-70" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-72 p-2">
-        {publish.connections.length > 1 && (
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="px-1 text-[11px] font-normal text-muted-foreground">
-              公開アカウント
-            </DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={publish.connectionId}
-              onValueChange={publish.setConnectionId}
-            >
-              {publish.connections.map((c) => (
-                <DropdownMenuRadioItem key={c.id} value={c.id} className="text-xs">
-                  {c.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-          </DropdownMenuGroup>
-        )}
-
-        <div className="px-1 pb-1 text-[11px] font-medium text-muted-foreground">
-          共有する内容を選ぶ
-        </div>
-        <div className="flex flex-col gap-0.5">
-          {shareItems.map((it) => {
-            const on = layers[it.key];
-            return (
-              <button
-                key={it.key}
-                type="button"
-                aria-pressed={on}
-                onClick={() =>
-                  update({ journeyLayers: { ...layers, [it.key]: !on } })
-                }
-                className={cn(
-                  "flex w-full items-start gap-2 rounded-md px-1.5 py-1.5 text-left transition",
-                  on ? "bg-foreground/[0.06]" : "hover:bg-muted",
-                )}
-              >
-                <span
-                  className={cn(
-                    "mt-px flex size-4 shrink-0 items-center justify-center rounded border transition",
-                    on
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border",
-                  )}
-                >
-                  {on && <Check className="size-3" />}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium leading-tight">
-                    {it.label}
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-                    {it.desc}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <DropdownMenuSeparator />
-        <button
-          type="button"
-          aria-pressed={pwOn}
-          onClick={() => setPwOn((v) => !v)}
-          className={cn(
-            "flex w-full items-start gap-2 rounded-md px-1.5 py-1.5 text-left transition",
-            pwOn ? "bg-foreground/[0.06]" : "hover:bg-muted",
-          )}
-        >
-          <span
-            className={cn(
-              "mt-px flex size-4 shrink-0 items-center justify-center rounded border transition",
-              pwOn
-                ? "border-foreground bg-foreground text-background"
-                : "border-border",
-            )}
-          >
-            {pwOn && <Check className="size-3" />}
-          </span>
-          <span className="min-w-0">
-            <span className="flex items-center gap-1 text-xs font-medium leading-tight">
-              <Lock className="size-3" />
-              パスワードで保護
-            </span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-              合言葉を知っている人だけが開ける
-            </span>
-          </span>
-        </button>
-        {pwOn && (
-          <div className="relative mt-1">
-            <input
-              type={pwReveal ? "text" : "password"}
-              value={pw}
-              autoComplete="new-password"
-              autoFocus
-              onChange={(e) => setPw(e.target.value)}
-              // base-ui Menu captures keystrokes (typeahead) + pointer for its own
-              // navigation, so an input inside the popup can't be typed into. Stop
-              // these from bubbling to the menu so the field works normally.
-              onKeyDown={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              placeholder="合言葉"
-              className="w-full rounded-md border bg-background py-1.5 pr-8 pl-2 text-xs outline-none transition focus:border-foreground"
-            />
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label={pwReveal ? "パスワードを隠す" : "パスワードを表示"}
-              onClick={() => setPwReveal((v) => !v)}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:text-foreground"
-            >
-              {pwReveal ? (
-                <EyeOff className="size-3.5" />
-              ) : (
-                <Eye className="size-3.5" />
-              )}
-            </button>
-          </div>
-        )}
-
-        <button
-          type="button"
-          disabled={busy || !anySelected || pwMissing}
-          onClick={() => void runShare()}
-          className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {busy ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Share2 className="size-3.5" />
-          )}
-          {ready ? "再共有（最新を反映）" : "共有する"}
-        </button>
-
-        {phase && (
-          <div className="px-1 pt-1.5 text-[11px] text-muted-foreground">
-            {phase}
-          </div>
-        )}
-        {errorLog && (
-          <pre className="mt-1 max-h-28 overflow-auto rounded border bg-destructive/5 px-2 py-1 text-[10px] leading-snug whitespace-pre-wrap text-muted-foreground">
-            {errorLog.trim().split("\n").slice(-8).join("\n")}
-          </pre>
-        )}
-
-        {ready && (
-          <div className="mt-2 rounded-md border bg-muted/40 p-1.5">
-            <div
-              className="truncate px-0.5 pb-1 text-[11px] text-muted-foreground"
-              title={journey.url ?? ""}
-            >
-              {journey.url}
-            </div>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => void copyText(journey.url ?? "")}
-                className="inline-flex flex-1 items-center justify-center gap-1 rounded border bg-background px-2 py-1 text-[11px] transition hover:bg-muted"
-              >
-                <Copy className="size-3" />
-                URL をコピー
-              </button>
-              <button
-                type="button"
-                onClick={() => void openExternal(journey.url ?? "").catch(() => {})}
-                className="inline-flex flex-1 items-center justify-center gap-1 rounded border bg-background px-2 py-1 text-[11px] transition hover:bg-muted"
-              >
-                <ExternalLink className="size-3" />
-                開く
-              </button>
-            </div>
-          </div>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-// The single "Ship ▾" finalize button in the top bar (DEC-058, CEO pick): all of
-// Commit (checkpoint) + Sync / Open PR / Merge live in one menu, like Lovable's
-// "Publish". Only shown once a worktree exists. Actions come from the session.
-function IssueShip({ session }: { session: ImplementSession }) {
-  const {
-    ref,
-    action,
-    baseBranch,
-    behind,
-    ahead,
-    mergeClean,
-    canOpenPR,
-    prUrl,
-    syncConflicts,
-    selectedAgent,
-    openPR,
-    mergeToMain,
-    syncMain,
-    resolveConflictsWithAI,
-  } = session;
-  const protectMain = useSettings().settings.protectMain;
-
-  if (!ref) return null;
-  const canMerge = behind === 0 && mergeClean === true && !action;
-
-  return (
-    <div className="flex items-center gap-1.5">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label="Ship（finalize）"
-          title="main へ反映 / PR を作成（未コミット分は自動でまとめます）"
-          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground outline-none transition hover:bg-primary/90"
-        >
-          {action ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <GitPullRequest className="size-3.5" />
-          )}
-          Ship
-          <ChevronDown className="size-3.5 opacity-80" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-60">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-muted-foreground">
-              {behind === null ? (
-                <>
-                  <Loader2 className="size-3 animate-spin" />
-                  {baseBranch} との差分を確認中…
-                </>
-              ) : behind === 0 ? (
-                <>
-                  <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
-                  {baseBranch} と同期済
-                  {ahead != null && ahead > 0 ? ` · ${ahead} ahead` : ""}
-                </>
-              ) : (
-                <>
-                  <TriangleAlert className="size-3 text-amber-600 dark:text-amber-400" />
-                  {baseBranch} より {behind} commits 遅れ
-                  {ahead != null && ahead > 0 ? ` · ${ahead} ahead` : ""}
-                </>
-              )}
-            </DropdownMenuLabel>
-
-            <DropdownMenuItem
-              className="cursor-pointer gap-2 text-xs"
-              disabled={!!action}
-              onClick={() => void syncMain()}
-            >
-              <ArrowDownToLine className="size-3.5" />
-              Sync with {baseBranch}
-            </DropdownMenuItem>
-
-            {canOpenPR && (
-              <DropdownMenuItem
-                className="cursor-pointer gap-2 text-xs"
-                disabled={!!action}
-                onClick={() => void openPR()}
-              >
-                <GitPullRequest className="size-3.5" />
-                Open PR（push して PR 作成）
-              </DropdownMenuItem>
-            )}
-
-            {protectMain ? (
-              <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-muted-foreground">
-                <Lock className="size-3" />
-                {baseBranch} は保護中 — PR から反映してください
-              </DropdownMenuLabel>
-            ) : (
-              <DropdownMenuItem
-                className="cursor-pointer gap-2 text-xs"
-                disabled={!canMerge}
-                onClick={() => void mergeToMain()}
-              >
-                <GitMerge className="size-3.5" />
-                Merge to {baseBranch}{canOpenPR ? "（solo）" : ""}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuGroup>
-
-          {prUrl && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="cursor-pointer gap-2 text-xs"
-                render={
-                  <a href={prUrl} target="_blank" rel="noreferrer noopener" />
-                }
-              >
-                <ExternalLink className="size-3.5" />
-                PR を開く
-              </DropdownMenuItem>
-            </>
-          )}
-
-          {syncConflicts.length > 0 && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-normal text-destructive">
-                  <TriangleAlert className="size-3" />
-                  衝突 {syncConflicts.length} ファイル
-                </DropdownMenuLabel>
-                {selectedAgent?.available && (
-                  <DropdownMenuItem
-                    className="cursor-pointer gap-2 text-xs"
-                    disabled={!!action}
-                    onClick={() => resolveConflictsWithAI()}
-                  >
-                    <Sparkles className="size-3.5" />
-                    AI に解決を依頼
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuGroup>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
   );
 }

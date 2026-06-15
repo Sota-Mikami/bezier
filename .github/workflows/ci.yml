@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# New pushes to the same branch cancel in-flight runs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (type / lint / test / build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build (static export)
+        run: npm run build
+
+      # Fail only on production (shipped) vulnerabilities. Dev-only tooling
+      # advisories (vitest/vite/esbuild) are tracked but do not block CI.
+      - name: Audit production deps
+        run: npm audit --omit=dev --audit-level=high
+
+  rust:
+    name: Rust (fmt / clippy / test)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test

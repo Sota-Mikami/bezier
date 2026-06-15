@@ -40,7 +40,7 @@ import {
   type Annotation,
 } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
-import type { ImplementSession } from "./use-implement-session";
+import type { ImplementSession } from "./implement-session-types";
 
 // Comment is now Figma-style — click = point pin, drag = area rect (DEC-068), so
 // there's no separate "rect" tool. The "rect" annotation KIND still exists (a

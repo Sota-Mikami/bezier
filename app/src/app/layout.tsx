@@ -8,6 +8,7 @@ import { AppTitlebar } from "@/components/app-titlebar";
 import { WorkspaceRootProvider } from "@/lib/workspace-root";
 import { ReloadShortcut } from "@/components/reload-shortcut";
 import { AppCloseGuard } from "@/components/app-close-guard";
+import { ErrorLogger } from "@/components/error-logger";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeKeeper } from "@/lib/settings";
@@ -53,6 +54,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_SYNC }} />
         <TooltipProvider delay={0}>
           <ThemeKeeper />
+          <ErrorLogger />
           <ReloadShortcut />
           <AppCloseGuard />
           <ShortcutsDialog />

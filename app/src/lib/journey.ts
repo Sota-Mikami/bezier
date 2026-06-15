@@ -2,7 +2,8 @@
 // MAKER process behind a change (Spec → 実装の履歴 → the running App), not just
 // the output. Bezier GENERATES this HTML, so it can carry the "Made with Bezier"
 // badge; code is linked to git, never hosted (DEC-094). Markdown is rendered
-// client-side via a CDN `marked` (the page is served online).
+// at generation time to escaped, safe HTML; raw HTML in Spec never executes in
+// the shared page.
 
 import type { Checkpoint } from "./git";
 import type { JourneyLayers } from "./settings";
@@ -63,6 +64,7 @@ export function buildGatePage(title: string, b: EncryptedBlob): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src 'self' https://*.vercel.app; base-uri 'none'; form-action 'none'">
 <title>${safeTitle} — Bezier</title>
 <style>
 :root{--bg:#faf9f7;--fg:#1c1a17;--muted:#6b6660;--line:#e7e3dd;--accent:#1c1a17}
@@ -126,6 +128,71 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function escAttr(s: string): string {
+  return esc(s).replace(/'/g, "&#39;");
+}
+
+function inlineMd(s: string): string {
+  return esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+function renderSafeMarkdown(md: string): string {
+  const lines = (md || "*(spec はまだありません)*").replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let inCode = false;
+  let code: string[] = [];
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      out.push("</ul>");
+      inList = false;
+    }
+  };
+  for (const line of lines) {
+    if (/^```/.test(line)) {
+      if (inCode) {
+        out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+        code = [];
+        inCode = false;
+      } else {
+        closeList();
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      code.push(line);
+      continue;
+    }
+    if (!line.trim()) {
+      closeList();
+      continue;
+    }
+    const h = /^(#{1,3})\s+(.+)$/.exec(line);
+    if (h) {
+      closeList();
+      out.push(`<h${h[1].length}>${inlineMd(h[2])}</h${h[1].length}>`);
+      continue;
+    }
+    const li = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (li) {
+      if (!inList) {
+        out.push("<ul>");
+        inList = true;
+      }
+      out.push(`<li>${inlineMd(li[1])}</li>`);
+      continue;
+    }
+    closeList();
+    out.push(`<p>${inlineMd(line)}</p>`);
+  }
+  closeList();
+  if (inCode) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+  return out.join("\n");
+}
+
 function fmtDate(iso: string): string {
   const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(iso);
   return m ? `${m[1]} ${m[2]}` : esc(iso);
@@ -137,21 +204,11 @@ export function buildJourneyHtml(data: JourneyData): string {
   // constrained to *.vercel.app, but don't trust the caller — block javascript:).
   const appUrl =
     data.appUrl && /^https:\/\//i.test(data.appUrl) ? data.appUrl : null;
-  // The spec is placed in a markdown script block (no HTML execution); a literal
-  // </script> is neutralized so it can't break out. NOTE: it is rendered
-  // client-side by `marked` WITHOUT sanitization — raw HTML in the spec executes
-  // in the viewer's browser. The spec is the user's OWN content shown to people
-  // they chose to share with (same posture as GitHub README rendering); no
-  // third-party injection path. If specs ever accept untrusted input, add
-  // DOMPurify here.
-  const specForScript = (data.specMd || "*(spec はまだありません)*").replace(
-    /<\/script>/gi,
-    "<\\/script>",
-  );
+  const specHtml = renderSafeMarkdown(data.specMd);
 
   const appSection = appUrl
     ? `<a class="cta" href="${esc(appUrl)}" target="_blank" rel="noopener">アプリを開く →</a>
-       <iframe class="frame" src="${esc(appUrl)}" title="app preview" loading="lazy"></iframe>`
+       <iframe class="frame" src="${esc(appUrl)}" title="app preview" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>`
     : `<p class="muted">まだアプリは公開されていません。「共有」で公開すると、ここに表示されます。</p>`;
 
   const history = data.checkpoints.length
@@ -164,7 +221,7 @@ export function buildJourneyHtml(data: JourneyData): string {
     : `<li class="muted">履歴はまだありません。</li>`;
 
   const designSection = data.designHtml
-    ? `<iframe class="design" sandbox="allow-same-origin allow-scripts" title="design" srcdoc="${data.designHtml.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"></iframe>`
+    ? `<iframe class="design" sandbox="" title="design" srcdoc="${escAttr(data.designHtml)}"></iframe>`
     : "";
   const implLink = data.prUrl ?? githubBranchUrl(data.repoUrl, data.branch);
   const implSection = implLink
@@ -182,7 +239,7 @@ export function buildJourneyHtml(data: JourneyData): string {
   };
   const sections = [
     L.app ? `<h2>アプリ</h2>\n  ${appSection}` : "",
-    L.spec ? `<h2>Spec</h2>\n  <div class="spec" id="spec"></div>` : "",
+    L.spec ? `<h2>Spec</h2>\n  <div class="spec" id="spec">${specHtml}</div>` : "",
     L.design && designSection ? `<h2>デザイン</h2>\n  ${designSection}` : "",
     L.impl
       ? `<h2>実装</h2>\n  ${implSection}\n  <ul class="history">${history}</ul>`
@@ -190,26 +247,13 @@ export function buildJourneyHtml(data: JourneyData): string {
   ]
     .filter(Boolean)
     .join("\n\n  ");
-  const specScript = L.spec
-    ? `<script type="text/markdown" id="spec-src">${specForScript}</script>
-<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script>
-(function(){
-  var src=document.getElementById('spec-src').textContent;
-  var el=document.getElementById('spec');
-  if(!el)return;
-  try{ el.innerHTML = (window.marked && window.marked.parse) ? window.marked.parse(src) : src; }
-  catch(e){ el.textContent = src; }
-})();
-</script>`
-    : "";
-
   return `<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; frame-src 'self' https://*.vercel.app; base-uri 'none'; form-action 'none'">
 <title>${safeTitle} — Bezier</title>
 <style>
 :root{--bg:#faf9f7;--fg:#1c1a17;--muted:#6b6660;--line:#e7e3dd;--accent:#1c1a17}
@@ -256,7 +300,6 @@ footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);color:v
     <span>このページは Bezier が生成しました</span>
   </footer>
 </div>
-${specScript}
 </body>
 </html>`;
 }
