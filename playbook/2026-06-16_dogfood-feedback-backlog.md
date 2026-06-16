@@ -5,7 +5,7 @@
 
 凡例: 規模 S=小（即着手）/ M=中 / L=大（提案→合意→着手）。状態 ☐=未着手 ▶=進行 ✅=完了。
 
-**進捗（2026-06-16）**: A 完了（DF-6/1/7/4 ✅）／B 完了（DF-3/11 ✅）／C: DF-8 ✅・DF-2 ✅（adopt 撤去は DF-5 へ繰越）／D: DF-10 ✅（skill 棚卸し: 6中5維持・alt3→design に磨いて DF-2 整合）。**残: DF-5 Share 再設計**（spec ロック済 `playbook/research/2026-06-16_DF-5-share-redesign-spec.md`・次セッション推奨）／DF-9 park。本番反映は全完了＋CEO確認後（[[prod-update-timing-dogfood]]）。
+**進捗（2026-06-16）**: **DF-1〜8,10,11 + DF-2 + DF-5 すべて完了 ✅**（10項目）。DF-9（待ち時間 delight）のみ park。adopt 機構も撤去済。本番反映は CEO 確認後（[[prod-update-timing-dogfood]]）。DF-5 詳細＝DEC-110。
 
 ---
 
