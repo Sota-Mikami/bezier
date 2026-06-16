@@ -559,6 +559,7 @@ export const ja: Messages = {
     inSyncWith: "{baseBranch} と同期済",
     commitsBehind: "{baseBranch} より {behind} commits 遅れ",
     openPrPush: "Open PR（push して PR 作成）",
+    openPrNeedsRemote: "PR を作るには、この repo に GitHub のリモートと gh CLI が必要です。",
     baseBranchProtected: "{baseBranch} は保護中 — PR から反映してください",
     soloSuffix: "（ソロ）",
     openPrLink: "PR を開く",

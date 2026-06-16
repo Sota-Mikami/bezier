@@ -71,6 +71,28 @@ export function issueFolderName(id: string, slug: string): string {
   return slug ? `${id}-${slug}` : id;
 }
 
+/** True when a title is the empty/placeholder default (no real title yet). */
+export function isUntitled(title: string | null | undefined): boolean {
+  const t = (title ?? "").trim();
+  return !t || t.toLowerCase() === "untitled";
+}
+
+/**
+ * Derive a title from a spec.md body: the first `# ` heading, unless it's still
+ * the template placeholder ("Untitled"). Returns null when there's no real title
+ * to use yet. (DEC-057: derive from facts — the spec the agent actually wrote —
+ * instead of waiting on the frontmatter being set perfectly.)
+ */
+export function titleFromSpec(specText: string): string | null {
+  for (const line of specText.split("\n")) {
+    const m = /^#\s+(.+?)\s*$/.exec(line);
+    if (!m) continue;
+    const h = m[1].replace(/\{\{\s*title\s*\}\}/g, "").trim();
+    return isUntitled(h) ? null : h;
+  }
+  return null;
+}
+
 // --- Documents (Document View) ---------------------------------------------
 // Per-issue documents are keyed by their filename stem (spec/qa/decision/…).
 // Known stems get a display label + sort rank; anything else (agent/convention-

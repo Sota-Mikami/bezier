@@ -221,6 +221,29 @@ export default function TerminalPane({
       term.attachCustomKeyEventHandler((ev) => {
         if (ev.type !== "keydown") return true;
         if (ev.isComposing || ev.keyCode === 229) return false;
+
+        // macOS-style line editing (DF-4): xterm sends a plain arrow per press,
+        // so the cursor crawls one char at a time. Map the chords a Mac user
+        // expects to the readline control sequences the embedded agent input
+        // understands — ⌘ = line ends, ⌥ = word steps, + the matching deletes.
+        if (!ev.ctrlKey && (ev.metaKey || ev.altKey)) {
+          let seq: string | null = null;
+          if (ev.metaKey && !ev.altKey) {
+            if (ev.key === "ArrowLeft") seq = "\x01"; // C-a · line start
+            else if (ev.key === "ArrowRight") seq = "\x05"; // C-e · line end
+            else if (ev.key === "Backspace") seq = "\x15"; // C-u · kill to start
+          } else if (ev.altKey && !ev.metaKey) {
+            if (ev.key === "ArrowLeft") seq = "\x1bb"; // M-b · word back
+            else if (ev.key === "ArrowRight") seq = "\x1bf"; // M-f · word forward
+            else if (ev.key === "Backspace") seq = "\x1b\x7f"; // M-DEL · kill word
+          }
+          if (seq) {
+            ev.preventDefault();
+            ptyWrite(pid, seq).catch(() => {});
+            return false;
+          }
+        }
+
         const isEnter = ev.key === "Enter" || ev.keyCode === 13;
         if (isEnter && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
           // preventDefault stops the browser inserting a newline into xterm's

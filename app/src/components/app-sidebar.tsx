@@ -53,6 +53,7 @@ import {
   createIssue,
   trashIssue,
   trashTtlDays,
+  ISSUE_UPDATED_EVENT,
   type Issue,
   type TrashMeta,
 } from "@/lib/issues";
@@ -203,6 +204,18 @@ export function AppSidebar() {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, selectedId]);
+
+  // Live-sync a repo's issues when its detail view changes an issue's title/meta
+  // (DF-1) — so a freshly-derived title replaces "Untitled" here without waiting
+  // for a navigation.
+  React.useEffect(() => {
+    const onUpdated = (e: Event) => {
+      const repoPath = (e as CustomEvent<{ repoPath?: string }>).detail?.repoPath;
+      if (repoPath) void loadIssues(repoPath);
+    };
+    window.addEventListener(ISSUE_UPDATED_EVENT, onUpdated);
+    return () => window.removeEventListener(ISSUE_UPDATED_EVENT, onUpdated);
+  }, [loadIssues]);
 
   const toggleRepo = React.useCallback((path: string) => {
     setExpanded((prev) => {

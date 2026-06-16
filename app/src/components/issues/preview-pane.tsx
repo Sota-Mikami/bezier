@@ -244,12 +244,6 @@ export function PreviewPane({
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <RunningBadge status={status} onStop={() => void server.stop()} />
-          {config && (
-            <code className="hidden truncate font-mono text-[11px] text-muted-foreground lg:inline">
-              {config.devCommand || t("preview.devCommandUnset")}
-              {config.packageDir && ` @${config.packageDir}/`} · :{config.port}
-            </code>
-          )}
         </div>
 
         {/* Center: responsive viewport + navigated path (only once running). */}
@@ -492,7 +486,7 @@ function tauriStatusLabel(status: PreviewStatus): string {
  */
 function TauriRunnerPane({ server }: { server: PreviewServer }) {
   const t = useT();
-  const { status, log, error, tauriPort, config, configLoaded } = server;
+  const { status, log, error, tauriPort, configLoaded } = server;
   const running = status === "starting" || status === "ready";
 
   return (
@@ -512,10 +506,6 @@ function TauriRunnerPane({ server }: { server: PreviewServer }) {
           />
           {tauriStatusLabel(status)}
         </Badge>
-        <code className="truncate font-mono text-[11px] text-muted-foreground">
-          Tauri{config?.packageDir ? ` @${config.packageDir}/` : ""}
-          {tauriPort ? ` · :${tauriPort}` : ""}
-        </code>
         <div className="ml-auto flex items-center gap-1.5">
           {running ? (
             <Button

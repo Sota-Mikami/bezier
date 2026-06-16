@@ -8,6 +8,8 @@ import {
   ISSUE_STATUSES,
   documentLabel,
   documentRank,
+  isUntitled,
+  titleFromSpec,
 } from "./issue-domain.ts";
 
 test("deriveState: merged always wins (done)", () => {
@@ -95,4 +97,22 @@ test("documentRank: spec leads, known types ordered, ad-hoc after", () => {
   assert.equal(documentRank("spec"), 0);
   assert.ok(documentRank("qa") < documentRank("custom"));
   assert.equal(documentRank("whatever"), 100);
+});
+
+test("isUntitled: blank / 'Untitled' (any case) → true", () => {
+  assert.equal(isUntitled(""), true);
+  assert.equal(isUntitled("  "), true);
+  assert.equal(isUntitled(null), true);
+  assert.equal(isUntitled("Untitled"), true);
+  assert.equal(isUntitled("untitled"), true);
+  assert.equal(isUntitled("My feature"), false);
+});
+
+test("titleFromSpec: first real H1 wins; placeholder/none → null", () => {
+  assert.equal(titleFromSpec("# Dark mode toggle\n\nbody"), "Dark mode toggle");
+  assert.equal(titleFromSpec("## sub\n# Real Title\n"), "Real Title");
+  assert.equal(titleFromSpec("# Untitled\n\nstill a draft"), null);
+  assert.equal(titleFromSpec("# {{title}}\n"), null);
+  assert.equal(titleFromSpec("no heading here"), null);
+  assert.equal(titleFromSpec(""), null);
 });

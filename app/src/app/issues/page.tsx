@@ -35,6 +35,8 @@ import {
   readIssue,
   createSlot,
   updateIssueMeta,
+  autoTitleFromSpec,
+  notifyIssueUpdated,
   trashIssue,
   trashTtlDays,
   readTrashDetail,
@@ -631,9 +633,31 @@ function IssueWorkbench({
     async (patch: { title?: string }) => {
       await updateIssueMeta(root, issue, patch);
       setIssue((prev) => (prev ? { ...prev, ...patch } : prev));
+      notifyIssueUpdated(root); // keep the sidebar's title in sync (DF-1)
     },
     [issue, root, setIssue],
   );
+
+  // Fill in a title as soon as the Spec has a real H1 — don't leave it "Untitled"
+  // while the maker just chats (DF-1). Persists to frontmatter + syncs the
+  // sidebar. Runs on open and whenever the agent settles (see below).
+  const tryAutoTitle = React.useCallback(
+    async (target: Pick<Issue, "id" | "dir" | "title" | "status" | "created">) => {
+      const derived = await autoTitleFromSpec(root, target).catch(() => null);
+      if (!derived) return;
+      setIssue((prev) => (prev ? { ...prev, title: derived } : prev));
+      notifyIssueUpdated(root);
+    },
+    [root, setIssue],
+  );
+
+  // On open: if a prior session left a real Spec H1 but the title stuck on
+  // "Untitled", recover it now.
+  React.useEffect(() => {
+    void tryAutoTitle(issue);
+    // once per issue open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issue.id]);
 
   // Create spec.md from the template (the one hand-authored slot).
   const ensureSpec = React.useCallback(async () => {
@@ -687,10 +711,14 @@ function IssueWorkbench({
               ? { ...prev, title: fresh.title, body: fresh.body, slots: fresh.slots }
               : prev,
           );
+          // The agent may have rewritten the title in issue.md — sync the sidebar.
+          notifyIssueUpdated(root);
+          // Still placeholder? Derive one from the spec H1 the agent just wrote.
+          void tryAutoTitle(fresh);
         })
         .catch(() => {});
     }
-  }, [session.agentState, root, issue.id, setIssue]);
+  }, [session.agentState, root, issue.id, setIssue, tryAutoTitle]);
 
   // Verify → Spec (DEC-071/072): when an Implement turn settles, auto-collect the
   // OBJECTIVE machine evidence (change scope + sensitive-area flags, from git —

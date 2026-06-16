@@ -10,6 +10,7 @@ import {
   GitMerge,
   GitPullRequest,
   History,
+  Info,
   Keyboard,
   Loader2,
   Lock,
@@ -345,7 +346,10 @@ export function IssueShip({ session }: { session: ImplementSession }) {
               Sync with {baseBranch}
             </DropdownMenuItem>
 
-            {canOpenPR && (
+            {/* Open PR is ALWAYS shown so the path is discoverable — but disabled
+                with the reason when this repo can't (no GitHub remote / no gh),
+                instead of vanishing (DF-7). */}
+            {canOpenPR ? (
               <DropdownMenuItem
                 className="cursor-pointer gap-2 text-xs"
                 disabled={!!action}
@@ -354,6 +358,21 @@ export function IssueShip({ session }: { session: ImplementSession }) {
                 <GitPullRequest className="size-3.5" />
                 {t("ship.openPrPush")}
               </DropdownMenuItem>
+            ) : (
+              <>
+                <DropdownMenuItem
+                  className="gap-2 text-xs"
+                  disabled
+                  title={t("ship.openPrNeedsRemote")}
+                >
+                  <GitPullRequest className="size-3.5" />
+                  {t("ship.openPrPush")}
+                </DropdownMenuItem>
+                <DropdownMenuLabel className="flex items-start gap-1.5 pt-0 text-[11px] font-normal text-muted-foreground">
+                  <Info className="mt-0.5 size-3 shrink-0" />
+                  {t("ship.openPrNeedsRemote")}
+                </DropdownMenuLabel>
+              </>
             )}
 
             {protectMain ? (
@@ -362,8 +381,11 @@ export function IssueShip({ session }: { session: ImplementSession }) {
                 {t("ship.baseBranchProtected", { baseBranch })}
               </DropdownMenuLabel>
             ) : (
+              // Merge straight to the base branch is the riskiest action (hard to
+              // undo, may be pushed) — styled as a caution + always confirmed
+              // (DEC-099). De-emphasized so it never reads as a casual click (DF-7).
               <DropdownMenuItem
-                className="cursor-pointer gap-2 text-xs"
+                className="cursor-pointer gap-2 text-xs text-amber-700 focus:text-amber-700 dark:text-amber-400 dark:focus:text-amber-400"
                 disabled={!canMerge}
                 onClick={() => void mergeToMain()}
               >

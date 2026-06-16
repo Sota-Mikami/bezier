@@ -560,6 +560,7 @@ export const en = {
     inSyncWith: "In sync with {baseBranch}",
     commitsBehind: "{behind} commits behind {baseBranch}",
     openPrPush: "Open PR (push & create a PR)",
+    openPrNeedsRemote: "To open a PR, this repo needs a GitHub remote and the gh CLI installed.",
     baseBranchProtected: "{baseBranch} is protected — merge via a PR",
     soloSuffix: " (solo)",
     openPrLink: "Open PR",

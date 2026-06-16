@@ -38,6 +38,8 @@ import {
   issueFolderName,
   documentLabel,
   documentRank,
+  isUntitled,
+  titleFromSpec,
   type IssueStatus,
   type IssueSlot,
   type IssueSlots,
@@ -304,6 +306,45 @@ export async function updateIssueMeta(
     created: asString(cur.created) ?? issue.created,
   };
   await writeFile(path, `${serializeIssueFm(meta)}${body}`);
+}
+
+/**
+ * If an issue is still "Untitled", derive a title from its spec.md H1 and persist
+ * it to frontmatter. Returns the new title (so the caller can update local state
+ * + refresh the sidebar), or null if nothing changed. Never overwrites a real
+ * title — only fills in the placeholder.
+ */
+export async function autoTitleFromSpec(
+  root: string,
+  issue: Pick<Issue, "id" | "dir" | "title" | "status" | "created">,
+): Promise<string | null> {
+  if (!isUntitled(issue.title)) return null;
+  let spec: string;
+  try {
+    spec = await readFile(slotPath(issue, "spec"));
+  } catch {
+    return null; // no spec yet
+  }
+  const derived = titleFromSpec(spec);
+  if (!derived) return null;
+  await updateIssueMeta(root, issue, { title: derived });
+  return derived;
+}
+
+/** Window event fired when an issue's metadata (e.g. its title) changes, so the
+ *  sidebar can re-sync that repo's list without waiting for a navigation. */
+export const ISSUE_UPDATED_EVENT = "bezier:issue-updated";
+
+/** Announce that an issue in `repoPath` changed (title/status). No-op off-DOM. */
+export function notifyIssueUpdated(repoPath: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent(ISSUE_UPDATED_EVENT, { detail: { repoPath } }),
+    );
+  } catch {
+    /* CustomEvent unavailable */
+  }
 }
 
 /** <root>/.bezier — the local working store root (drafts + issues + trash). */
