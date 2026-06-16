@@ -46,6 +46,21 @@ export function BuildReview({
     onSelect: (id) => setTab(id as ProtoTab),
   });
 
+  // DF-3: when the dev server comes up (auto-started on a code change, or manual),
+  // surface the Preview sub-tab so the maker lands on the live app instead of
+  // whatever sub-view they last left open.
+  const previewStatus = session.preview.status;
+  const prevStatusRef = React.useRef(previewStatus);
+  React.useEffect(() => {
+    const was = prevStatusRef.current;
+    prevStatusRef.current = previewStatus;
+    const cameUp =
+      (previewStatus === "starting" || previewStatus === "ready") &&
+      was !== "starting" &&
+      was !== "ready";
+    if (cameUp) setTab("preview");
+  }, [previewStatus]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-10 shrink-0 items-stretch border-b px-1.5">

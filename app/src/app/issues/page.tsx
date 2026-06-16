@@ -780,6 +780,9 @@ function IssueWorkbench({
   // Repo is movable only before work starts: no worktree AND the agent never ran
   // (an empty activity thread). After either, per-repo state is bound (DEC-084).
   const repoLocked = !!session.ref || session.thread.length > 0;
+  // DF-3: bump on every detected worktree change so the auto-start effect (below)
+  // can bring the dev server up without the maker pressing Run.
+  const [codeChangeNonce, setCodeChangeNonce] = React.useState(0);
   React.useEffect(() => {
     if (!worktreePath) return;
     let cancelled = false;
@@ -799,6 +802,7 @@ function IssueWorkbench({
       if (status !== last) {
         last = status;
         signalChange("prototype");
+        setCodeChangeNonce((n) => n + 1);
       }
     };
     const h = window.setInterval(() => void tick(), CODE_WATCH_MS);
@@ -807,6 +811,23 @@ function IssueWorkbench({
       window.clearInterval(h);
     };
   }, [worktreePath, signalChange]);
+
+  // DF-3: auto-start the dev server the first time code changes in the worktree,
+  // so a maker never has to find the Run button. Once it's up, the worktree's own
+  // file-watcher (HMR) reflects later edits — so we only (re)start when it's NOT
+  // already running (idle / stopped / crashed). Skipped for repos with no runnable
+  // app (no dev command and not a Tauri runner), to avoid an error pane.
+  React.useEffect(() => {
+    if (codeChangeNonce === 0) return;
+    const p = session.preview;
+    if (!p.configLoaded) return;
+    const runnable = p.runner === "tauri" || !!p.config?.devCommand?.trim();
+    if (!runnable) return;
+    if (p.status === "starting" || p.status === "ready") return;
+    void p.start();
+    // Only react to a fresh code change — reading the latest preview each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codeChangeNonce]);
 
   return (
     <AnnotationModeProvider>
