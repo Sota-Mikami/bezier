@@ -130,6 +130,11 @@ export const ja: Messages = {
     openExternal: "ブラウザで開く",
     stop: "停止",
     newHint: "または左のサイドバーから Issue を選ぶ／New で作成。",
+    installDeps: "依存をインストール (npm install)",
+    installing: "インストール中…",
+    retry: "もう一度起動",
+    logLabel: "出力",
+    depsHint: "すぐ終了した場合、プロジェクトの依存（node_modules）が未インストールの可能性が高いです。",
   },
 
   journey: {

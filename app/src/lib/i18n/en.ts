@@ -131,6 +131,11 @@ export const en = {
     openExternal: "Open in browser",
     stop: "Stop",
     newHint: "Or pick an Issue from the sidebar, or create a New one.",
+    installDeps: "Install dependencies (npm install)",
+    installing: "Installing…",
+    retry: "Run again",
+    logLabel: "Output",
+    depsHint: "If it exited right away, the project's dependencies probably aren't installed.",
   },
 
   journey: {

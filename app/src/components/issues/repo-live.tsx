@@ -8,7 +8,7 @@
 // will add annotate → "これを Issue に" (turn an observation into a new Issue).
 
 import * as React from "react";
-import { Play, Loader2, RotateCcw, ExternalLink, Square, MonitorPlay } from "lucide-react";
+import { Play, Loader2, RotateCcw, ExternalLink, Square, MonitorPlay, Download } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { openExternal } from "@/lib/ipc";
@@ -21,7 +21,7 @@ export function RepoLive({ root }: { root: string }) {
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, start, stop } = live;
+  const { status, url, error, log, installing, start, stop, installDeps } = live;
 
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
@@ -96,26 +96,69 @@ export function RepoLive({ root }: { root: string }) {
             className="size-full border-0"
           />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
-              <MonitorPlay className="size-5 text-muted-foreground" />
-            </div>
-            <p className="max-w-sm text-sm text-muted-foreground">{t("live.desc")}</p>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              disabled={status === "starting"}
-              onClick={() => void start()}
-            >
-              {status === "starting" ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Play className="size-3.5" />
+          <div className="flex h-full flex-col">
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
+                <MonitorPlay className="size-5 text-muted-foreground" />
+              </div>
+              <p className="max-w-sm text-sm text-muted-foreground">{t("live.desc")}</p>
+              <Button
+                size="sm"
+                className="gap-1.5"
+                disabled={status === "starting" || installing}
+                onClick={() => void start()}
+              >
+                {status === "starting" ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Play className="size-3.5" />
+                )}
+                {status === "starting"
+                  ? t("live.starting")
+                  : error
+                    ? t("live.retry")
+                    : t("live.cta")}
+              </Button>
+
+              {/* On failure (commonly missing node_modules) → offer a one-click
+                  install so a maker never needs the terminal (DEC-109). */}
+              {error && (
+                <div className="flex flex-col items-center gap-2">
+                  <p className="max-w-md text-xs text-destructive">{error}</p>
+                  <p className="max-w-md text-[11px] text-muted-foreground/70">{t("live.depsHint")}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    disabled={installing}
+                    onClick={() => void installDeps()}
+                  >
+                    {installing ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Download className="size-3.5" />
+                    )}
+                    {installing ? t("live.installing") : t("live.installDeps")}
+                  </Button>
+                </div>
               )}
-              {status === "starting" ? t("live.starting") : t("live.cta")}
-            </Button>
-            {error && <p className="max-w-md text-xs text-destructive">{error}</p>}
-            <p className="max-w-sm text-[11px] text-muted-foreground/70">{t("live.newHint")}</p>
+
+              {!error && (
+                <p className="max-w-sm text-[11px] text-muted-foreground/70">{t("live.newHint")}</p>
+              )}
+            </div>
+
+            {/* Dev-server / install output — so a failure is never a dead end. */}
+            {(log.trim() || installing) && (
+              <div className="shrink-0 border-t">
+                <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                  {t("live.logLabel")}
+                </div>
+                <pre className="max-h-44 overflow-auto bg-muted/30 px-3 pb-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+                  {log.trim() || "…"}
+                </pre>
+              </div>
+            )}
           </div>
         )}
       </div>

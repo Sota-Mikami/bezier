@@ -170,6 +170,10 @@ export interface PreviewServer {
   start: (override?: PreviewConfig) => Promise<void>;
   /** Kill the dev server and detach listeners. Safe to call repeatedly. */
   stop: () => Promise<void>;
+  /** True while `npm install` is running. */
+  installing: boolean;
+  /** Run `npm install` in the package dir (for repos without node_modules). */
+  installDeps: () => Promise<void>;
 }
 
 export function usePreviewServer(
@@ -187,6 +191,7 @@ export function usePreviewServer(
   const [error, setError] = React.useState<string | null>(null);
   const [url, setUrl] = React.useState<string | null>(null);
   const [configLoaded, setConfigLoaded] = React.useState(false);
+  const [installing, setInstalling] = React.useState(false);
 
   const ptyIdRef = React.useRef<string | null>(null);
   const pollRef = React.useRef<number | null>(null);
@@ -297,6 +302,44 @@ export function usePreviewServer(
     setUrl(null);
     setStatus((s) => (s === "idle" ? "idle" : "stopped"));
   }, [clearTimers, detachListeners, previewKey]);
+
+  // Run `npm install` in the package dir for makers who haven't installed deps —
+  // the dev server can't start without node_modules (DEC-109, the Live view's
+  // common first-run snag). Streams into `log`; flips `installing` until it exits.
+  // A throwaway pty (no key), distinct from the dev server.
+  const installDeps = React.useCallback(async () => {
+    if (!worktreePath || installing) return;
+    const cwd = packageCwd(worktreePath, config?.packageDir ?? "");
+    setInstalling(true);
+    setError(null);
+    setLog((l) => `${l}\n[Bezier] npm install …\n`);
+    try {
+      const id = await ptySpawn({
+        cwd,
+        cmd: "/bin/sh",
+        args: ["-c", "npm install"],
+        cols: 120,
+        rows: 40,
+      });
+      const offData = await onPtyData((p) => {
+        if (p.id !== id) return;
+        setLog((l) => {
+          const next = l + stripAnsi(p.chunk);
+          return next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next;
+        });
+      });
+      const offExit = await onPtyExit((p) => {
+        if (p.id !== id) return;
+        offData();
+        offExit();
+        setInstalling(false);
+        setLog((l) => `${l}\n[Bezier] npm install ${p.code === 0 ? "done." : `exited (${p.code}).`}\n`);
+      });
+    } catch (e) {
+      setInstalling(false);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [worktreePath, installing, config]);
 
   const start = React.useCallback(
     async (override?: PreviewConfig) => {
@@ -556,5 +599,7 @@ export function usePreviewServer(
     saveConfig,
     start,
     stop,
+    installing,
+    installDeps,
   };
 }
