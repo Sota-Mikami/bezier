@@ -21,6 +21,13 @@ import {
 } from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
 import { getSettings, getSpecTemplate } from "@/lib/settings";
+import {
+  designConventionLines,
+  bezierGuideDoc,
+  implementHandoffDoc,
+  variantHandoffDoc,
+  specMissingText,
+} from "@/lib/prompts";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
 import {
@@ -757,19 +764,7 @@ export async function clearWorktreeRef(
  * board-renderable files with no separate prompt.
  */
 export function designConventionBlock(issue: Pick<Issue, "dir">): string[] {
-  const dir = `${issue.dir}/design`;
-  return [
-    "## デザイン別案（Design）— チャットからいつでも作れる",
-    "",
-    "UI の方向を決めたい時や、ユーザーが「デザイン案を出して」「他の方向は？」と言った時は、**実装コードを書く前に** 下記の規約で **ワイヤー（構造スケッチ）** を作ってください。Bezier の Design ボードに自動で並び、ユーザーが見比べられます（別途プロンプトは不要）。",
-    `- **保存先**: \`${dir}/NN-<短いkebab-slug>.html\`（NN=2桁ゼロ埋め連番。既存の最大+1から・**使い回さない＝蓄積**）。例 \`${dir}/01-toolbar-filter.html\`。`,
-    "- **スタックに依存しない・自己完結**: **プレーンなインライン CSS のみ**。Tailwind の class・外部 CSS/JS/CDN・外部画像に依存しない（sandboxed iframe で静的描画されるため）。repo の実装は読まず、Spec から自由に発想する。",
-    "- **グレースケールの構造スケッチ**（色は使わない／方向差は構造で）。複数頼まれたら **各案を別方向** にして一度に複数ファイル書く。",
-    "- 各ファイル先頭に `<title>短い名前</title>` と `<!-- bezier:prompt: 〈方向の一言〉 -->`。",
-    "- 書いたらチャットで「案 NN: 〈方向〉」を1行ずつ報告（コード・commit は不要）。",
-    "- ユーザーが「案 NN で進めて / 実装して」と言ったら、その方向で **実コード（実物の DS）** に実装する。",
-    "",
-  ];
+  return designConventionLines(`${issue.dir}/design`);
 }
 
 /**
@@ -780,42 +775,7 @@ export function designConventionBlock(issue: Pick<Issue, "dir">): string[] {
  * reminder, the Design convention, and the Verify expectation.
  */
 export function bezierGuide(issue: Issue): string {
-  const specPath = slotPath(issue, "spec");
-  return [
-    "# Bezier — この issue での作法（自動生成。毎ターン従う）",
-    "",
-    "Bezier 経由でこの issue を進めています。タスク指示が薄くても、以下の共通ルールに従ってください。",
-    "",
-    "## 生きた Spec",
-    `- 仕様書は \`${specPath}\`（worktree の外。\`--add-dir\` で読み書きできます）。`,
-    "- **実装の前に必ず spec.md を読み直す**。会話で意図/要件が変わったら **まず spec.md を更新**してから実装し、Spec⇆実装を常に同期する。",
-    "- **「受入基準」= 完成の定義（DoD）**。観察可能・チェック可能な文に保つ。**採点はあなたではなく maker** が、Bezier が集めた証拠を見て行う（自己採点はしない）。",
-    "",
-    "## ドキュメント（docs/）",
-    `- 永続的なドキュメント（決定ログ・QA/テストケース・共有メモ・調査メモ等）は \`${issue.dir}/docs/\` に Markdown で置く。Bezier の Docs タブが自動で一覧表示する。`,
-    "- この BEZIER.md が docs/ の**索引兼「使い方」**。新しい docs を作ったら、ここに1行追記して何のファイルかを示す。",
-    "- spec.md は軸。それ以外は必要に応じて presence-driven に作る（無ければ作らない・無理に増やさない）。",
-    "",
-    "## タイトル",
-    "- issue.md の frontmatter `title` が空 or「Untitled」なら、**最優先で**内容を表す簡潔なタイトルに更新する（忘れない）。",
-    "",
-    ...designConventionBlock(issue),
-    "## 受入基準の根拠（実装後に Spec へ付す）",
-    "- **採点はしない**（PASS/FAIL を書かない）。代わりに、実装が終わったら spec.md の **各受入基準の直下に「根拠」を1行**付す:",
-    "  例: `- [ ] ログインできる`",
-    "  　　`  - 根拠: \\`src/auth/login.tsx\\` に実装。⚠️ 認証を変更（要目視）。`",
-    "  → 根拠＝**どこに/どう実装したか・関連ファイル**。auth / DB・スキーマ / env / 権限 に触れたら明記。",
-    "- チェック（採点）は **maker が** その根拠を見て付けます。あなたの責務は **実装 ＋ 各基準への根拠付与 ＋ 変更点の簡潔な要約** まで。",
-    "",
-    "## ショートカット（claude スラッシュコマンド・任意）",
-    "- maker が Bezier の設定からインストールしていれば、このプロンプトで次のコマンドを呼べます（未導入なら `/` メニューに出ません。その場合は無視して通常通り進めてください）:",
-    "  - `/bezier:verify` — 受入基準の直下に「根拠」を1行ずつ付す（採点はしない）",
-    "  - `/bezier:spec` — spec.md を読み直して実装と同期する",
-    "  - `/bezier:states` — 画面のエッジ状態（Empty/Error/Focus…）を洗い出し受入基準に落とす",
-    "  - `/bezier:alt3` — デザイン別案を3つ（グレースケールのワイヤー）",
-    "  - `/bezier:precommit` — 型・lint・動作を事前チェックして報告する",
-    "",
-  ].join("\n");
+  return bezierGuideDoc(slotPath(issue, "spec"), issue.dir);
 }
 
 export async function buildImplementHandoff(
@@ -834,84 +794,25 @@ export async function buildImplementHandoff(
   try {
     specMd = await readFile(slotPath(issue, "spec"));
   } catch {
-    specMd = "(spec.md がありません)";
+    specMd = specMissingText();
   }
   const outPath = `${stripTrailingSlash(root)}/.bezier/handoff/${issue.id}.md`;
-  const specPath = slotPath(issue, "spec");
-  // On a re-run the worktree already holds the previous iteration's changes; ask
-  // the agent to adjust them to the updated spec rather than start over (DEC-012
-  // review↔refine cycle).
-  // DEC-050 Build loop: every fresh build starts with a short, repo-grounded
-  // Clarify (ambiguity removal) and treats the spec's 受入基準 as the Definition
-  // of Done — so the agent doesn't race ahead on a vague request, and what it
-  // builds is exactly what Verify will later score.
-  const intro = opts?.userMessage
-    ? [
-        `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-        "これは **新規 Issue のチャット開始** です。ユーザーの最初のリクエスト（下記）をもとに、次の順で進めてください:",
-        "0) **まず Clarify（確認）**: いきなり実装せず、**リポジトリを読んだ上で** 要望の曖昧さを潰す確認を **3〜5 問** してください。各問いには **おすすめの既定値（best-guess）を併記** し、ユーザーが「それで OK」と言うだけで前に進めるように。既存の実装・部品・規約に接地した具体的な問いにし、誘導尋問は避けます。",
-        `1) 合意できたら \`${specPath}\` に Spec を書き起こす（テンプレートがあれば埋める）。特に **「受入基準」は観察可能・チェック可能な文で先に確定**（= 完成の定義。後で maker が証拠を見てチェックします）。「やらないこと」で境界も引く。`,
-        "2) issue.md の frontmatter の `title` が空または「Untitled」なら、簡潔なタイトルを設定する。",
-        "3) **Design ステップ（UI の変更なら）**: 実装の前に、**デザイン別案（ワイヤー）を 2〜3 案**作って方向を見比べてもらう（下記「デザイン別案」の規約に従う）。Design ボードに自動で並びます。ユーザーが方向を選んだら次へ。ロジック中心でビジュアル判断が不要なら、その旨を伝えてスキップして良い。",
-        "4) 選ばれた方向で **この worktree 内のコードに実装**する。受入基準を満たすことをゴールにする。",
-        "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
-      ]
-    : opts?.followUp
-      ? [
-          `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-          "これは **追記の再 Implement 依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
-          "**ゼロからやり直さず**、更新後の Issue / Spec（特に **受入基準**）に合わせて既存の変更を調整・拡張してください。",
-          "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
-        ]
-      : [
-          `あなたは git worktree \`${worktreePath}\`（branch を切った隔離作業コピー）の中にいます。`,
-          "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
-          "**実装の前に Spec の「受入基準」を確認**してください。空・曖昧なら、いきなり作らず **まず 3〜5 問の確認**（各問いに既定値を併記・リポジトリに接地）をして spec.md を更新してから実装します。",
-          "受入基準は「完成の定義」です。これを満たすことをゴールにしてください（後で maker が証拠を見てチェックします）。",
-          "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
-        ];
-  // Monorepo scope (DEC-039): when the issue is scoped to a subfolder of a
-  // larger repo, the agent's cwd IS that subfolder. Tell it to stay within it.
-  const monorepoNote = opts?.subPath
-    ? [
-        `**この作業は monorepo の \`${opts.subPath}/\` パッケージに限定されています。** あなたの作業ディレクトリは既にそこです。原則 \`${opts.subPath}/\` の外（リポジトリの他パッケージや root 設定）は変更しないでください。`,
-        "",
-      ]
-    : [];
-  // DEC-057 harness: the STABLE conventions (living-spec rules, title reminder,
-  // Design convention, Verify) live in a written BEZIER.md the agent reads — so
-  // this per-turn handoff REFERENCES it instead of re-injecting every block each
-  // turn (prompt bloat → dropped instructions). Keeps the handoff focused on the
-  // task; the spec is still inlined (small + task-specific).
   const guidePath = `${issue.dir}/BEZIER.md`;
-  const guideRef = [
-    "## 作法（重要・先に読む）",
-    `この issue の共通ルールは \`${guidePath}\` にあります（\`--add-dir\` で読めます）。**まず読んでから**進めてください — 生きた Spec / 受入基準=DoD / タイトル更新 / デザイン別案の作り方 / 検証。`,
-    "",
-  ];
-  const content = [
-    `# 実装ハンドオフ — ${issue.title || "(無題)"}`,
-    "",
-    ...intro,
-    "",
-    ...monorepoNote,
-    "---",
-    "",
-    ...(opts?.userMessage
-      ? ["## ユーザーの最初のリクエスト", "", opts.userMessage, "", "---", ""]
-      : []),
-    ...guideRef,
-    "---",
-    "",
-    "## Issue",
-    "",
+  // The per-turn task instructions (Clarify-first, acceptance criteria = DoD,
+  // Design step, monorepo scope) follow the maker's locale (DEC-108). The STABLE
+  // conventions are REFERENCED from the written BEZIER.md (DEC-057) rather than
+  // re-injected each turn (prompt bloat → dropped instructions).
+  const content = implementHandoffDoc({
+    worktree: worktreePath,
+    issueTitle: issue.title,
     issueMd,
-    "",
-    "## Spec",
-    "",
     specMd,
-    "",
-  ].join("\n");
+    specPath: slotPath(issue, "spec"),
+    guidePath,
+    userMessage: opts?.userMessage,
+    followUp: opts?.followUp,
+    subPath: opts?.subPath,
+  });
   // Write the durable guide alongside the handoff (read via --add-dir issue.dir).
   await writeFile(guidePath, bezierGuide(issue));
   await writeFile(outPath, content);
@@ -946,59 +847,22 @@ export async function buildVariantHandoff(
   try {
     specMd = await readFile(slotPath(issue, "spec"));
   } catch {
-    specMd = "(spec.md がありません)";
+    specMd = specMissingText();
   }
   const ids = opts.ids.length ? opts.ids : ["01"];
   const ctx = (opts.context ?? "").trim();
   const designGlob = `${issue.dir}/design/`;
   const outPath = `${stripTrailingSlash(root)}/.bezier/handoff/${issue.id}-variant-${ids.join("")}.md`;
-  const content = [
-    `# デザイン別案（ワイヤー）— ${issue.title || "(無題)"}`,
-    "",
-    `あなたの作業ディレクトリは \`${worktreePath}\` です。これは **Design（考える層）** の依頼で、**Implementの前段**でも構いません。`,
-    `**実装コードは書かないでください。** 代わりに、**${ids.length} 案**を **それぞれ別の方向**で書き出します。`,
-    "",
-    "## 出力先と命名（厳守）",
-    "",
-    `- 保存先フォルダ: \`${designGlob}\``,
-    `- ファイル名: **\`NN-<短いkebab-slug>.html\`**。今回使う番号: **${ids.join(" / ")}**（この番号をそのまま使う）。slug は各案の方向の短い名前（英小文字ハイフン）。例: \`${ids[0]}-toolbar-filter.html\` / \`${ids[1] ?? "02"}-column-menu.html\`。`,
-    `- 既存ファイルがあれば読み、番号・方向が**重複しない**ようにする（番号は使い回さない＝増えていく）。`,
-    "",
-    "## スタックに依存しない自由なアイデア（重要）",
-    "",
-    "- ここは **repo の技術スタックから独立**しています。**repo のフレームワーク・コンポーネント・既存コードを読みに行かない／真似ない**。Spec が示す「何を解くか」から、**自由に**ビジュアルの方向を出す（実装の制約は後段 Implement の仕事）。",
-    "- **完全に自己完結した HTML**：**プレーンなインライン CSS のみ**。**Tailwind の class・外部 CSS/JS/CDN・外部画像は使わない**（fully sandboxed iframe で静的描画されるため）。アイコンは文字（▾ × ＋ ⌕ 等）や CSS シェイプで。",
-    "",
-    "## これは『ワイヤー（構造スケッチ）』— 作り込まない",
-    "",
-    "- 目的は **レイアウト / 構造 / 情報設計の方向を見比べる**こと。ピクセル忠実は不要（採用案だけ後で Implement が実物を描画）。",
-    "- **グレースケール**（白〜グレー: #fff / #f3f4f6 / #e5e7eb / #d1d5db / #9ca3af / #374151 程度）。**色は使わない**（方向差は構造で出す）。本文/ラベルはグレーのバー・箱・短文で represent。",
-    "- 各案は別方向に振る：ツールバー型 / 列ヘッダメニュー型 / サイドパネル型、密 vs 余白、タブ vs アコーディオン、一覧 vs カード… 似た案を量産しない。",
-    "",
-    "## 参照（あなたの環境に委ねる）",
-    "",
-    "- もし参照ツール（デザイン事例の MCP 等）や、このプロジェクトのデザイン指針（CLAUDE.md / design.md 等）が**あれば**それを踏まえて方向の引き出しを増やす。無ければ無しで良い（Bezier 側は特定ツールを前提にしない）。",
-    ctx
-      ? `- **方向性の指定: ${ctx}** — これを最優先で反映する。`
-      : "- 方向性の指定はなし。Spec から妥当な複数方向を選ぶ。",
-    "",
-    "## メタ（各ファイル必須）",
-    "",
-    "- ファイル先頭付近に `<title>この案の短い名前</title>` と `<!-- bezier:prompt: 〈方向の一言〉 -->` を入れる（Bezier がラベルとして読みます）。",
-    "",
-    "## @参照",
-    "",
-    `- ユーザー指定に「@01」のような参照があれば、それは番号 01 のアイデア（\`${designGlob}01-*.html\`）を指します。読んで踏まえてください（例:「@02 を密に」「@01 の余白＋@03 の構成」）。`,
-    "",
-    `書き出したら、チャットで各案を1行ずつ「案 NN: 〈方向〉」と述べてください（コード・commit は不要）。`,
-    "",
-    "---",
-    "",
-    "## Spec",
-    "",
+  // Stack-independent grayscale wireframes; the prompt follows the maker's locale
+  // (DEC-108). Naming/convention details live in @/lib/prompts.
+  const content = variantHandoffDoc({
+    worktree: worktreePath,
+    issueTitle: issue.title,
+    ids,
+    ctx,
+    designGlob,
     specMd,
-    "",
-  ].join("\n");
+  });
   await writeFile(outPath, content);
   return { path: outPath, content };
 }

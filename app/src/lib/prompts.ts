@@ -226,3 +226,415 @@ export function adoptVariantPrompt(id: string, designDir: string): string {
 export function conflictResolvePrompt(worktree: string, base: string, files: string | null): string {
   return promptPhrases().conflict(worktree, base, files).join("\n");
 }
+
+// ===========================================================================
+// Handoff tier (DEC-108): the implement / variant HANDOFF docs + the BEZIER.md
+// guide — the core agent harness (DEC-050/057). Same en/ja-co-located shape so a
+// future tuning pass improves all locales together (see the prompt-tuning memo).
+// ===========================================================================
+
+interface HandoffPhrases {
+  untitled: string;
+  specMissing: string;
+
+  // BEZIER.md guide
+  guideTitle: string;
+  guideIntro: string;
+  livingSpecHeader: string;
+  livingSpec: (specPath: string) => string[];
+  docsHeader: string;
+  docs: (issueDir: string) => string[];
+  titleHeader: string;
+  titleRule: string;
+  evidenceHeader: string;
+  evidence: string[];
+  shortcutsHeader: string;
+  shortcuts: string[];
+
+  // design-variant convention (its own block: header + lines + trailing blank)
+  designBlock: (designDir: string) => string[];
+
+  // implement handoff
+  implementTitle: (title: string) => string;
+  introUser: (worktree: string, specPath: string) => string[];
+  introFollowUp: (worktree: string) => string[];
+  introPlain: (worktree: string) => string[];
+  monorepo: (subPath: string) => string[];
+  guideRef: (guidePath: string) => string[];
+  userRequestHeader: string;
+  issueHeader: string;
+  specHeader: string;
+
+  // variant handoff
+  variantTitle: (title: string) => string;
+  variantBody: (a: { worktree: string; ids: string[]; ctx: string; designGlob: string }) => string[];
+}
+
+const JA_HANDOFF: HandoffPhrases = {
+  untitled: "(無題)",
+  specMissing: "(spec.md がありません)",
+
+  guideTitle: "# Bezier — この issue での作法（自動生成。毎ターン従う）",
+  guideIntro:
+    "Bezier 経由でこの issue を進めています。タスク指示が薄くても、以下の共通ルールに従ってください。",
+  livingSpecHeader: "## 生きた Spec",
+  livingSpec: (specPath) => [
+    `- 仕様書は \`${specPath}\`（worktree の外。\`--add-dir\` で読み書きできます）。`,
+    "- **実装の前に必ず spec.md を読み直す**。会話で意図/要件が変わったら **まず spec.md を更新**してから実装し、Spec⇆実装を常に同期する。",
+    "- **「受入基準」= 完成の定義（DoD）**。観察可能・チェック可能な文に保つ。**採点はあなたではなく maker** が、Bezier が集めた証拠を見て行う（自己採点はしない）。",
+  ],
+  docsHeader: "## ドキュメント（docs/）",
+  docs: (issueDir) => [
+    `- 永続的なドキュメント（決定ログ・QA/テストケース・共有メモ・調査メモ等）は \`${issueDir}/docs/\` に Markdown で置く。Bezier の Docs タブが自動で一覧表示する。`,
+    "- この BEZIER.md が docs/ の**索引兼「使い方」**。新しい docs を作ったら、ここに1行追記して何のファイルかを示す。",
+    "- spec.md は軸。それ以外は必要に応じて presence-driven に作る（無ければ作らない・無理に増やさない）。",
+  ],
+  titleHeader: "## タイトル",
+  titleRule:
+    "- issue.md の frontmatter `title` が空 or「Untitled」なら、**最優先で**内容を表す簡潔なタイトルに更新する（忘れない）。",
+  evidenceHeader: "## 受入基準の根拠（実装後に Spec へ付す）",
+  evidence: [
+    "- **採点はしない**（PASS/FAIL を書かない）。代わりに、実装が終わったら spec.md の **各受入基準の直下に「根拠」を1行**付す:",
+    "  例: `- [ ] ログインできる`",
+    "  　　`  - 根拠: \\`src/auth/login.tsx\\` に実装。⚠️ 認証を変更（要目視）。`",
+    "  → 根拠＝**どこに/どう実装したか・関連ファイル**。auth / DB・スキーマ / env / 権限 に触れたら明記。",
+    "- チェック（採点）は **maker が** その根拠を見て付けます。あなたの責務は **実装 ＋ 各基準への根拠付与 ＋ 変更点の簡潔な要約** まで。",
+  ],
+  shortcutsHeader: "## ショートカット（claude スラッシュコマンド・任意）",
+  shortcuts: [
+    "- maker が Bezier の設定からインストールしていれば、このプロンプトで次のコマンドを呼べます（未導入なら `/` メニューに出ません。その場合は無視して通常通り進めてください）:",
+    "  - `/bezier:verify` — 受入基準の直下に「根拠」を1行ずつ付す（採点はしない）",
+    "  - `/bezier:spec` — spec.md を読み直して実装と同期する",
+    "  - `/bezier:states` — 画面のエッジ状態（Empty/Error/Focus…）を洗い出し受入基準に落とす",
+    "  - `/bezier:alt3` — デザイン別案を3つ（グレースケールのワイヤー）",
+    "  - `/bezier:precommit` — 型・lint・動作を事前チェックして報告する",
+  ],
+
+  designBlock: (designDir) => [
+    "## デザイン別案（Design）— チャットからいつでも作れる",
+    "",
+    "UI の方向を決めたい時や、ユーザーが「デザイン案を出して」「他の方向は？」と言った時は、**実装コードを書く前に** 下記の規約で **ワイヤー（構造スケッチ）** を作ってください。Bezier の Design ボードに自動で並び、ユーザーが見比べられます（別途プロンプトは不要）。",
+    `- **保存先**: \`${designDir}/NN-<短いkebab-slug>.html\`（NN=2桁ゼロ埋め連番。既存の最大+1から・**使い回さない＝蓄積**）。例 \`${designDir}/01-toolbar-filter.html\`。`,
+    "- **スタックに依存しない・自己完結**: **プレーンなインライン CSS のみ**。Tailwind の class・外部 CSS/JS/CDN・外部画像に依存しない（sandboxed iframe で静的描画されるため）。repo の実装は読まず、Spec から自由に発想する。",
+    "- **グレースケールの構造スケッチ**（色は使わない／方向差は構造で）。複数頼まれたら **各案を別方向** にして一度に複数ファイル書く。",
+    "- 各ファイル先頭に `<title>短い名前</title>` と `<!-- bezier:prompt: 〈方向の一言〉 -->`。",
+    "- 書いたらチャットで「案 NN: 〈方向〉」を1行ずつ報告（コード・commit は不要）。",
+    "- ユーザーが「案 NN で進めて / 実装して」と言ったら、その方向で **実コード（実物の DS）** に実装する。",
+    "",
+  ],
+
+  implementTitle: (title) => `# 実装ハンドオフ — ${title}`,
+  introUser: (worktree, specPath) => [
+    `あなたは git worktree \`${worktree}\`（branch を切った隔離作業コピー）の中にいます。`,
+    "これは **新規 Issue のチャット開始** です。ユーザーの最初のリクエスト（下記）をもとに、次の順で進めてください:",
+    "0) **まず Clarify（確認）**: いきなり実装せず、**リポジトリを読んだ上で** 要望の曖昧さを潰す確認を **3〜5 問** してください。各問いには **おすすめの既定値（best-guess）を併記** し、ユーザーが「それで OK」と言うだけで前に進めるように。既存の実装・部品・規約に接地した具体的な問いにし、誘導尋問は避けます。",
+    `1) 合意できたら \`${specPath}\` に Spec を書き起こす（テンプレートがあれば埋める）。特に **「受入基準」は観察可能・チェック可能な文で先に確定**（= 完成の定義。後で maker が証拠を見てチェックします）。「やらないこと」で境界も引く。`,
+    "2) issue.md の frontmatter の `title` が空または「Untitled」なら、簡潔なタイトルを設定する。",
+    "3) **Design ステップ（UI の変更なら）**: 実装の前に、**デザイン別案（ワイヤー）を 2〜3 案**作って方向を見比べてもらう（下記「デザイン別案」の規約に従う）。Design ボードに自動で並びます。ユーザーが方向を選んだら次へ。ロジック中心でビジュアル判断が不要なら、その旨を伝えてスキップして良い。",
+    "4) 選ばれた方向で **この worktree 内のコードに実装**する。受入基準を満たすことをゴールにする。",
+    "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+  ],
+  introFollowUp: (worktree) => [
+    `あなたは git worktree \`${worktree}\`（branch を切った隔離作業コピー）の中にいます。`,
+    "これは **追記の再 Implement 依頼** です。この worktree には前回イテレーションの変更が既に入っています。",
+    "**ゼロからやり直さず**、更新後の Issue / Spec（特に **受入基準**）に合わせて既存の変更を調整・拡張してください。",
+    "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+  ],
+  introPlain: (worktree) => [
+    `あなたは git worktree \`${worktree}\`（branch を切った隔離作業コピー）の中にいます。`,
+    "下記の Issue と Spec を読み、**この worktree 内のコード**に実装してください。",
+    "**実装の前に Spec の「受入基準」を確認**してください。空・曖昧なら、いきなり作らず **まず 3〜5 問の確認**（各問いに既定値を併記・リポジトリに接地）をして spec.md を更新してから実装します。",
+    "受入基準は「完成の定義」です。これを満たすことをゴールにしてください（後で maker が証拠を見てチェックします）。",
+    "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
+  ],
+  monorepo: (subPath) => [
+    `**この作業は monorepo の \`${subPath}/\` パッケージに限定されています。** あなたの作業ディレクトリは既にそこです。原則 \`${subPath}/\` の外（リポジトリの他パッケージや root 設定）は変更しないでください。`,
+    "",
+  ],
+  guideRef: (guidePath) => [
+    "## 作法（重要・先に読む）",
+    `この issue の共通ルールは \`${guidePath}\` にあります（\`--add-dir\` で読めます）。**まず読んでから**進めてください — 生きた Spec / 受入基準=DoD / タイトル更新 / デザイン別案の作り方 / 検証。`,
+    "",
+  ],
+  userRequestHeader: "## ユーザーの最初のリクエスト",
+  issueHeader: "## Issue",
+  specHeader: "## Spec",
+
+  variantTitle: (title) => `# デザイン別案（ワイヤー）— ${title}`,
+  variantBody: ({ worktree, ids, ctx, designGlob }) => [
+    `あなたの作業ディレクトリは \`${worktree}\` です。これは **Design（考える層）** の依頼で、**Implementの前段**でも構いません。`,
+    `**実装コードは書かないでください。** 代わりに、**${ids.length} 案**を **それぞれ別の方向**で書き出します。`,
+    "",
+    "## 出力先と命名（厳守）",
+    "",
+    `- 保存先フォルダ: \`${designGlob}\``,
+    `- ファイル名: **\`NN-<短いkebab-slug>.html\`**。今回使う番号: **${ids.join(" / ")}**（この番号をそのまま使う）。slug は各案の方向の短い名前（英小文字ハイフン）。例: \`${ids[0]}-toolbar-filter.html\` / \`${ids[1] ?? "02"}-column-menu.html\`。`,
+    `- 既存ファイルがあれば読み、番号・方向が**重複しない**ようにする（番号は使い回さない＝増えていく）。`,
+    "",
+    "## スタックに依存しない自由なアイデア（重要）",
+    "",
+    "- ここは **repo の技術スタックから独立**しています。**repo のフレームワーク・コンポーネント・既存コードを読みに行かない／真似ない**。Spec が示す「何を解くか」から、**自由に**ビジュアルの方向を出す（実装の制約は後段 Implement の仕事）。",
+    "- **完全に自己完結した HTML**：**プレーンなインライン CSS のみ**。**Tailwind の class・外部 CSS/JS/CDN・外部画像は使わない**（fully sandboxed iframe で静的描画されるため）。アイコンは文字（▾ × ＋ ⌕ 等）や CSS シェイプで。",
+    "",
+    "## これは『ワイヤー（構造スケッチ）』— 作り込まない",
+    "",
+    "- 目的は **レイアウト / 構造 / 情報設計の方向を見比べる**こと。ピクセル忠実は不要（採用案だけ後で Implement が実物を描画）。",
+    "- **グレースケール**（白〜グレー: #fff / #f3f4f6 / #e5e7eb / #d1d5db / #9ca3af / #374151 程度）。**色は使わない**（方向差は構造で出す）。本文/ラベルはグレーのバー・箱・短文で represent。",
+    "- 各案は別方向に振る：ツールバー型 / 列ヘッダメニュー型 / サイドパネル型、密 vs 余白、タブ vs アコーディオン、一覧 vs カード… 似た案を量産しない。",
+    "",
+    "## 参照（あなたの環境に委ねる）",
+    "",
+    "- もし参照ツール（デザイン事例の MCP 等）や、このプロジェクトのデザイン指針（CLAUDE.md / design.md 等）が**あれば**それを踏まえて方向の引き出しを増やす。無ければ無しで良い（Bezier 側は特定ツールを前提にしない）。",
+    ctx
+      ? `- **方向性の指定: ${ctx}** — これを最優先で反映する。`
+      : "- 方向性の指定はなし。Spec から妥当な複数方向を選ぶ。",
+    "",
+    "## メタ（各ファイル必須）",
+    "",
+    "- ファイル先頭付近に `<title>この案の短い名前</title>` と `<!-- bezier:prompt: 〈方向の一言〉 -->` を入れる（Bezier がラベルとして読みます）。",
+    "",
+    "## @参照",
+    "",
+    `- ユーザー指定に「@01」のような参照があれば、それは番号 01 のアイデア（\`${designGlob}01-*.html\`）を指します。読んで踏まえてください（例:「@02 を密に」「@01 の余白＋@03 の構成」）。`,
+    "",
+    `書き出したら、チャットで各案を1行ずつ「案 NN: 〈方向〉」と述べてください（コード・commit は不要）。`,
+  ],
+};
+
+const EN_HANDOFF: HandoffPhrases = {
+  untitled: "(untitled)",
+  specMissing: "(no spec.md)",
+
+  guideTitle: "# Bezier — working conventions for this issue (auto-generated; follow every turn)",
+  guideIntro:
+    "You're working on this issue via Bezier. Even if the task instructions are thin, follow the shared rules below.",
+  livingSpecHeader: "## Living Spec",
+  livingSpec: (specPath) => [
+    `- The spec lives at \`${specPath}\` (outside the worktree; read/write it with \`--add-dir\`).`,
+    "- **Always re-read spec.md before implementing.** If the intent/requirements change during the conversation, **update spec.md first**, then implement — keep Spec and code in sync at all times.",
+    "- **The “acceptance criteria” = the Definition of Done (DoD)**. Keep them observable and checkable. **The maker, not you, scores them** by looking at the evidence Bezier collected (do not self-score).",
+  ],
+  docsHeader: "## Documents (docs/)",
+  docs: (issueDir) => [
+    `- Put durable documents (decision logs, QA / test cases, handoff notes, research notes, etc.) as Markdown under \`${issueDir}/docs/\`. Bezier's Docs tab lists them automatically.`,
+    "- This BEZIER.md is the **index and how-to** for docs/. When you add a new doc, append one line here noting what it is.",
+    "- spec.md is the backbone; create the rest presence-driven, only as needed (don't create what isn't needed, don't pad).",
+  ],
+  titleHeader: "## Title",
+  titleRule:
+    "- If issue.md's frontmatter `title` is empty or “Untitled”, **update it first** to a concise title that reflects the content (don't forget).",
+  evidenceHeader: "## Evidence for the acceptance criteria (add to the Spec after implementing)",
+  evidence: [
+    "- **Don't score** (no PASS/FAIL). Instead, once implementation is done, add a one-line “evidence” **right under each acceptance criterion** in spec.md:",
+    "  e.g. `- [ ] Can log in`",
+    "  　　`  - evidence: implemented in \\`src/auth/login.tsx\\`. ⚠️ changed auth (needs a visual check).`",
+    "  → evidence = **where / how you implemented it + related files**. Call it out when you touch auth / DB / schema / env / permissions.",
+    "- The **maker** does the checking (scoring) by reading that evidence. Your job ends at **implement + add evidence to each criterion + a brief summary of the changes**.",
+  ],
+  shortcutsHeader: "## Shortcuts (claude slash commands; optional)",
+  shortcuts: [
+    "- If the maker installed them from Bezier's settings, you can call these commands in this prompt (if not installed they won't appear in the `/` menu — just ignore them and proceed normally):",
+    "  - `/bezier:verify` — add a one-line “evidence” under each acceptance criterion (no scoring)",
+    "  - `/bezier:spec` — re-read spec.md and sync it with the implementation",
+    "  - `/bezier:states` — enumerate a screen's edge states (Empty / Error / Focus…) and turn them into acceptance criteria",
+    "  - `/bezier:alt3` — three design variants (grayscale wireframes)",
+    "  - `/bezier:precommit` — pre-check types / lint / behavior and report",
+  ],
+
+  designBlock: (designDir) => [
+    "## Design variants (Design) — make them any time from chat",
+    "",
+    "When you want to settle a UI direction, or the user says “show me some designs” / “any other directions?”, make **wireframes (structural sketches)** with the convention below **before writing implementation code**. They line up automatically on Bezier's Design board for the user to compare (no separate prompt needed).",
+    `- **Save to**: \`${designDir}/NN-<short-kebab-slug>.html\` (NN = 2-digit zero-padded serial; start from the existing max + 1, **never reuse — they accumulate**). e.g. \`${designDir}/01-toolbar-filter.html\`.`,
+    "- **Stack-independent & self-contained**: **plain inline CSS only**. Don't depend on Tailwind classes, external CSS/JS/CDN, or external images (it renders statically in a sandboxed iframe). Don't read the repo's implementation — ideate freely from the Spec.",
+    "- **Grayscale structural sketches** (no color; express directional difference through structure). If several are requested, make **each a different direction** and write multiple files at once.",
+    "- At the top of each file, put `<title>short name</title>` and `<!-- bezier:prompt: 〈one-line direction〉 -->`.",
+    "- After writing, report one line per idea in chat: “variant NN: 〈direction〉” (no code, no commit).",
+    "- When the user says “go with NN / implement it”, implement that direction in the **real code (the real design system)**.",
+    "",
+  ],
+
+  implementTitle: (title) => `# Implementation handoff — ${title}`,
+  introUser: (worktree, specPath) => [
+    `You are inside the git worktree \`${worktree}\` (an isolated working copy on its own branch).`,
+    "This is the **start of a chat for a new issue**. Based on the user's first request (below), proceed in this order:",
+    "0) **Clarify first**: don't jump into implementation — **after reading the repo**, ask **3–5 questions** that remove ambiguity in the request. For each, **include a recommended best-guess default** so the user can move forward just by saying “that's fine”. Make the questions concrete and grounded in the existing implementation / components / conventions; avoid leading questions.",
+    `1) Once aligned, write the Spec into \`${specPath}\` (fill in the template if present). In particular, **lock the “acceptance criteria” first, as observable & checkable statements** (= the Definition of Done; the maker checks them against evidence later). Draw the boundary with “out of scope”.`,
+    "2) If issue.md's frontmatter `title` is empty or “Untitled”, set a concise title.",
+    "3) **Design step (for UI changes)**: before implementing, make **2–3 design variants (wireframes)** so the directions can be compared (follow the “design variants” convention). They line up automatically on the Design board. Once the user picks a direction, continue. If it's logic-heavy with no visual call to make, say so and skip.",
+    "4) Implement the chosen direction **in the code inside this worktree**. Make meeting the acceptance criteria the goal.",
+    "When you're done, summarize the changes briefly (commits are made by a human from the UI).",
+  ],
+  introFollowUp: (worktree) => [
+    `You are inside the git worktree \`${worktree}\` (an isolated working copy on its own branch).`,
+    "This is a **follow-up re-implement request**. This worktree already contains the previous iteration's changes.",
+    "**Don't start over** — adjust and extend the existing changes to match the updated Issue / Spec (especially the **acceptance criteria**).",
+    "When you're done, summarize the changes briefly (commits are made by a human from the UI).",
+  ],
+  introPlain: (worktree) => [
+    `You are inside the git worktree \`${worktree}\` (an isolated working copy on its own branch).`,
+    "Read the Issue and Spec below and implement **in the code inside this worktree**.",
+    "**Before implementing, check the Spec's “acceptance criteria”.** If they're empty or vague, don't just build — **first ask 3–5 clarifying questions** (each with a default, grounded in the repo) and update spec.md, then implement.",
+    "The acceptance criteria are the “Definition of Done”. Make meeting them the goal (the maker checks them against evidence later).",
+    "When you're done, summarize the changes briefly (commits are made by a human from the UI).",
+  ],
+  monorepo: (subPath) => [
+    `**This work is limited to the \`${subPath}/\` package of a monorepo.** Your working directory is already there. As a rule, don't change anything outside \`${subPath}/\` (other packages or root config).`,
+    "",
+  ],
+  guideRef: (guidePath) => [
+    "## Conventions (important — read first)",
+    `The shared rules for this issue are in \`${guidePath}\` (readable via \`--add-dir\`). **Read it first**, then proceed — living Spec / acceptance criteria = DoD / title update / how to make design variants / verification.`,
+    "",
+  ],
+  userRequestHeader: "## The user's first request",
+  issueHeader: "## Issue",
+  specHeader: "## Spec",
+
+  variantTitle: (title) => `# Design variants (wireframes) — ${title}`,
+  variantBody: ({ worktree, ids, ctx, designGlob }) => [
+    `Your working directory is \`${worktree}\`. This is a **Design (the “think” layer)** request, and may come **before Implement**.`,
+    `**Do not write implementation code.** Instead, produce **${ids.length} variant(s)**, **each in a different direction**.`,
+    "",
+    "## Output location & naming (strict)",
+    "",
+    `- Save folder: \`${designGlob}\``,
+    `- File name: **\`NN-<short-kebab-slug>.html\`**. Numbers to use this time: **${ids.join(" / ")}** (use exactly these). The slug is a short name for each direction (lowercase, hyphenated). e.g. \`${ids[0]}-toolbar-filter.html\` / \`${ids[1] ?? "02"}-column-menu.html\`.`,
+    `- If files already exist, read them so numbers and directions **don't collide** (numbers are never reused — they accumulate).`,
+    "",
+    "## Free, stack-independent ideas (important)",
+    "",
+    "- This is **independent of the repo's tech stack**. **Don't go read or mimic the repo's framework / components / existing code.** From what the Spec says to solve, explore visual directions **freely** (implementation constraints are the later Implement step's job).",
+    "- **Fully self-contained HTML**: **plain inline CSS only**. **No Tailwind classes, no external CSS/JS/CDN, no external images** (it renders statically in a fully sandboxed iframe). Use text glyphs (▾ × ＋ ⌕ etc.) or CSS shapes for icons.",
+    "",
+    "## These are ‘wireframes (structural sketches)’ — don't over-build",
+    "",
+    "- The goal is to **compare directions for layout / structure / information design**. Pixel fidelity isn't needed (only the adopted one gets rendered for real later by Implement).",
+    "- **Grayscale** (white–gray: roughly #fff / #f3f4f6 / #e5e7eb / #d1d5db / #9ca3af / #374151). **No color** (show directional difference through structure). Represent body/labels with gray bars, boxes, and short text.",
+    "- Push each variant in a different direction: toolbar-style / column-header-menu / side-panel, dense vs spacious, tabs vs accordion, list vs cards… don't mass-produce similar variants.",
+    "",
+    "## Reference (left to your environment)",
+    "",
+    "- If you have reference tools (a design-examples MCP, etc.) or this project's design guidance (CLAUDE.md / design.md, etc.), use them to widen your range of directions. If not, that's fine (Bezier doesn't assume any specific tool).",
+    ctx
+      ? `- **Direction specified: ${ctx}** — reflect this with top priority.`
+      : "- No direction specified. Pick several sensible directions from the Spec.",
+    "",
+    "## Meta (required in each file)",
+    "",
+    "- Near the top of each file, include `<title>short name of this variant</title>` and `<!-- bezier:prompt: 〈one-line direction〉 -->` (Bezier reads these as the label).",
+    "",
+    "## @references",
+    "",
+    `- If the user's instruction has a reference like “@01”, it points to idea number 01 (\`${designGlob}01-*.html\`). Read it and take it into account (e.g. “make @02 denser”, “@01's spacing + @03's structure”).`,
+    "",
+    `Once written, state each variant in chat, one line each: “variant NN: 〈direction〉” (no code or commit needed).`,
+  ],
+};
+
+/** The active handoff phrase set (the maker's UI locale, DEC-108). */
+function handoff(locale: Locale = getSettings().locale): HandoffPhrases {
+  return locale === "ja" ? JA_HANDOFF : EN_HANDOFF;
+}
+
+/** The design-variant convention block (BEZIER.md sub-section / standalone). */
+export function designConventionLines(designDir: string): string[] {
+  return handoff().designBlock(designDir);
+}
+
+/** The full BEZIER.md guide (DEC-057 stable conventions the agent reads). */
+export function bezierGuideDoc(specPath: string, issueDir: string): string {
+  const h = handoff();
+  return [
+    h.guideTitle,
+    "",
+    h.guideIntro,
+    "",
+    h.livingSpecHeader,
+    ...h.livingSpec(specPath),
+    "",
+    h.docsHeader,
+    ...h.docs(issueDir),
+    "",
+    h.titleHeader,
+    h.titleRule,
+    "",
+    ...h.designBlock(`${issueDir}/design`),
+    h.evidenceHeader,
+    ...h.evidence,
+    "",
+    h.shortcutsHeader,
+    ...h.shortcuts,
+    "",
+  ].join("\n");
+}
+
+/** The placeholder used when spec.md can't be read (locale-aware). */
+export function specMissingText(): string {
+  return handoff().specMissing;
+}
+
+/** The implement handoff doc (the per-turn task instructions). */
+export function implementHandoffDoc(a: {
+  worktree: string;
+  issueTitle: string;
+  issueMd: string;
+  specMd: string;
+  specPath: string;
+  guidePath: string;
+  userMessage?: string;
+  followUp?: boolean;
+  subPath?: string;
+}): string {
+  const h = handoff();
+  const intro = a.userMessage
+    ? h.introUser(a.worktree, a.specPath)
+    : a.followUp
+      ? h.introFollowUp(a.worktree)
+      : h.introPlain(a.worktree);
+  return [
+    h.implementTitle(a.issueTitle || h.untitled),
+    "",
+    ...intro,
+    "",
+    ...(a.subPath ? h.monorepo(a.subPath) : []),
+    "---",
+    "",
+    ...(a.userMessage ? [h.userRequestHeader, "", a.userMessage, "", "---", ""] : []),
+    ...h.guideRef(a.guidePath),
+    "---",
+    "",
+    h.issueHeader,
+    "",
+    a.issueMd,
+    "",
+    h.specHeader,
+    "",
+    a.specMd,
+    "",
+  ].join("\n");
+}
+
+/** The variant-generation handoff doc (the Design "think" layer). */
+export function variantHandoffDoc(a: {
+  worktree: string;
+  issueTitle: string;
+  ids: string[];
+  ctx: string;
+  designGlob: string;
+  specMd: string;
+}): string {
+  const h = handoff();
+  return [
+    h.variantTitle(a.issueTitle || h.untitled),
+    "",
+    ...h.variantBody({ worktree: a.worktree, ids: a.ids, ctx: a.ctx, designGlob: a.designGlob }),
+    "",
+    "---",
+    "",
+    h.specHeader,
+    "",
+    a.specMd,
+    "",
+  ].join("\n");
+}
