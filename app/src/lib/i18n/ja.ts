@@ -34,6 +34,8 @@ export const ja: Messages = {
     expandRepo: "展開",
     collapseRepo: "折りたたむ",
     openRepoLive: "{name} を開く（現状）",
+    badgeNeedsSetup: "セットアップが必要",
+    badgeUpdateAvailable: "更新があります",
     newIssue: "新規 Issue",
     revealFinder: "Finder で開く",
     openIde: "IDE で開く",

@@ -35,6 +35,8 @@ export const en = {
     expandRepo: "Expand",
     collapseRepo: "Collapse",
     openRepoLive: "Open {name} (Live)",
+    badgeNeedsSetup: "Setup needed",
+    badgeUpdateAvailable: "Update available",
     newIssue: "New issue",
     revealFinder: "Reveal in Finder",
     openIde: "Open in IDE",

@@ -32,6 +32,7 @@ import { useT } from "@/lib/i18n";
 import { repoName } from "@/lib/workspace-root";
 import { packageCwd } from "@/lib/preview";
 import { cn } from "@/lib/utils";
+import { setRepoStatus } from "@/lib/repo-status";
 import { usePreviewServer } from "./use-preview-server";
 import { useReadiness, type ReadinessController } from "./use-readiness";
 import { useRepoFreshness, type RepoFreshness } from "./use-repo-freshness";
@@ -73,6 +74,23 @@ export function RepoLive({ root }: { root: string }) {
   const packageDir = config?.packageDir ?? "";
   const setup = useSetupSignals(root, packageDir);
   const [showTerminal, setShowTerminal] = React.useState(false);
+
+  // Publish the active repo's truth to the sidebar badge store (DEC-111 Phase 4)
+  // so its badge is instantly correct after a one-click fix / update — without
+  // waiting for the sidebar's slow probe loop.
+  React.useEffect(() => {
+    if (readiness.loaded) {
+      setRepoStatus(root, { needsSetup: !readiness.ready, checkedAt: Date.now() });
+    }
+  }, [root, readiness.loaded, readiness.ready]);
+  React.useEffect(() => {
+    if (freshness.loaded) {
+      setRepoStatus(root, {
+        updateAvailable: freshness.hasRemote && freshness.behind > 0,
+        checkedAt: Date.now(),
+      });
+    }
+  }, [root, freshness.loaded, freshness.hasRemote, freshness.behind]);
 
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");

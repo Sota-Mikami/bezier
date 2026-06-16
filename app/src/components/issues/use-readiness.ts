@@ -17,6 +17,7 @@ import {
 import {
   probeReadiness,
   copyEnvTemplate,
+  invalidateNvmCache,
   type ReadinessItem,
   type ReadinessId,
 } from "@/lib/readiness";
@@ -119,6 +120,7 @@ export function useReadiness(
         const item = items.find((i) => i.id === "node");
         if (!item?.nodeVersion || item.nvmMissing) return false; // can't auto-install
         const code = await runPty(nvmInstallLaunch(item.nodeVersion), dir, `nvm install ${item.nodeVersion}`);
+        if (code === 0) invalidateNvmCache(); // the new version must show on reprobe
         return code === 0;
       }
       if (id === "deps") {

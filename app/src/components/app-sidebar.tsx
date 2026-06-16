@@ -29,6 +29,8 @@ import {
   Pencil,
   Code2,
   Settings as SettingsIcon,
+  TriangleAlert,
+  ArrowDownToLine,
 } from "lucide-react";
 
 import {
@@ -66,6 +68,12 @@ import {
 } from "@/lib/ipc";
 import { gitDefaultBehind, gitUpdateDefault } from "@/lib/git";
 import {
+  useRepoStatusMap,
+  getRepoStatus,
+  probeRepoStatus,
+  type RepoStatus,
+} from "@/lib/repo-status";
+import {
   ptyStatuses,
   ptyDismiss,
   type AgentStatus,
@@ -91,6 +99,8 @@ export function AppSidebar() {
   const { root, recents, switchTo, openRoot, removeRepo, setRepoDisplayName } =
     useWorkspaceRoot();
   const t = useT();
+  // Per-repo readiness/freshness badges (DEC-111 Phase 4).
+  const statusMap = useRepoStatusMap();
 
   const [query, setQuery] = React.useState("");
   const [showTrash, setShowTrash] = React.useState(false);
@@ -210,6 +220,30 @@ export function AppSidebar() {
     }, 0);
     return () => window.clearTimeout(t);
   }, [recents, trashByRepo, loadTrash]);
+
+  // Probe each recent repo's readiness + freshness for the sidebar badges
+  // (DEC-111 Phase 4). CHEAP + no-network; staggered to avoid a burst; a ~60s
+  // interval re-probes; a staleness guard skips paths probed < 30s ago. Kept off
+  // the 2.5s agent poll on purpose — fs scans don't belong on that cadence.
+  React.useEffect(() => {
+    const STALE_MS = 30_000;
+    let timers: number[] = [];
+    const probeAll = () => {
+      timers.forEach((id) => window.clearTimeout(id));
+      timers = [];
+      recents.forEach((r, i) => {
+        const last = getRepoStatus(r.path)?.checkedAt ?? 0;
+        if (Date.now() - last < STALE_MS) return;
+        timers.push(window.setTimeout(() => void probeRepoStatus(r.path), i * 60));
+      });
+    };
+    probeAll();
+    const h = window.setInterval(probeAll, 60_000);
+    return () => {
+      window.clearInterval(h);
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [recents]);
 
   // Issues: load expanded repos (or all when searching, for a global filter).
   const searching = query.trim().length > 0;
@@ -649,6 +683,7 @@ export function AppSidebar() {
                   showAll={showAll.has(r.path)}
                   selectedId={selectedId}
                   statusByKey={statusByKey}
+                  status={statusMap.get(r.path)}
                   previewKeys={previewKeys}
                   onToggle={() => toggleRepo(r.path)}
                   onExpand={() => expandRepo(r.path)}
@@ -718,6 +753,7 @@ function RepoGroup({
   showAll,
   selectedId,
   statusByKey,
+  status,
   previewKeys,
   onToggle,
   onExpand,
@@ -742,6 +778,7 @@ function RepoGroup({
   showAll: boolean;
   selectedId: string | null;
   statusByKey: Map<string, AgentStatus>;
+  status: RepoStatus | undefined;
   previewKeys: Set<string>;
   onToggle: () => void;
   onExpand: () => void;
@@ -838,12 +875,17 @@ function RepoGroup({
             {active && (
               <span className="size-1.5 shrink-0 rounded-full bg-primary" />
             )}
-            {issues && all.length > 0 && (
-              // Count fades out on hover to make room for the … actions.
-              <span className="ml-auto shrink-0 text-[10px] font-normal text-muted-foreground transition-opacity group-hover/repo:opacity-0">
-                {all.length}
-              </span>
-            )}
+            {/* Badges + count, right-aligned, fading on hover so the … menu has
+                room (DEC-111 Phase 4). */}
+            <span className="ml-auto flex shrink-0 items-center gap-1 transition-opacity group-hover/repo:opacity-0">
+              {status?.needsSetup && <RepoBadge kind="setup" />}
+              {status?.updateAvailable && <RepoBadge kind="update" />}
+              {issues && all.length > 0 && (
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  {all.length}
+                </span>
+              )}
+            </span>
           </button>
         </div>
       )}
@@ -1005,6 +1047,24 @@ function RepoGroup({
         </div>
       )}
     </div>
+  );
+}
+
+// Repo readiness badge (DEC-111 Phase 4): ⚠️ needs setup (amber) / 🔄 update
+// available (emerald) — at-a-glance triage in the repo header. Lucide, not emoji,
+// matching AgentDot's colour language.
+function RepoBadge({ kind }: { kind: "setup" | "update" }) {
+  const t = useT();
+  const label =
+    kind === "setup" ? t("sidebar.badgeNeedsSetup") : t("sidebar.badgeUpdateAvailable");
+  return (
+    <span title={label} aria-label={label} className="flex shrink-0 items-center">
+      {kind === "setup" ? (
+        <TriangleAlert className="size-3 text-amber-500" />
+      ) : (
+        <ArrowDownToLine className="size-3 text-emerald-500" />
+      )}
+    </span>
   );
 }
 

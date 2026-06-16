@@ -33,13 +33,29 @@ async function fileExists(dir: string, file: string): Promise<boolean> {
   }
 }
 
+// Memoize the nvm version list with a short TTL so probing N repos for the
+// sidebar badges (Phase 4) doesn't `list_dir` ~/.nvm N times. Invalidated after a
+// successful node install (see invalidateNvmCache).
+let nvmCache: { at: number; list: string[] } | null = null;
+const NVM_TTL_MS = 30_000;
+
+/** Drop the nvm cache (call after installing a Node version). */
+export function invalidateNvmCache(): void {
+  nvmCache = null;
+}
+
 /** Node versions installed under nvm (bare, e.g. "20.16.0"); [] if no nvm. */
 async function nvmInstalled(): Promise<string[]> {
+  const now = Date.now();
+  if (nvmCache && now - nvmCache.at < NVM_TTL_MS) return nvmCache.list;
   try {
     const home = (await homeDir()).replace(/\/+$/, "");
     const entries = await listDir(`${home}/.nvm/versions/node`);
-    return entries.filter((e) => e.isDir).map((e) => e.name.replace(/^v/, ""));
+    const list = entries.filter((e) => e.isDir).map((e) => e.name.replace(/^v/, ""));
+    nvmCache = { at: now, list };
+    return list;
   } catch {
+    nvmCache = { at: now, list: [] };
     return [];
   }
 }
