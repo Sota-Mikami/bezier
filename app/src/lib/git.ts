@@ -162,6 +162,69 @@ export function gitBaseBranch(repoPath: string): Promise<string> {
   return invoke<string>("git_base_branch", { repoPath });
 }
 
+// ---------------------------------------------------------------------------
+// Repo freshness (DEC-111 Phase 2) — is the repo's default branch behind origin,
+// and a SAFE fast-forward-only one-click update. Separate from the merge-safety
+// layer below (that is per-issue-worktree vs base; this is base vs origin/base on
+// the root checkout).
+// ---------------------------------------------------------------------------
+
+/**
+ * Best-effort `git fetch origin` to refresh remote-tracking refs. Resolves
+ * `false` when there's no `origin` (nothing to fetch); rejects on offline/auth
+ * failure (callers swallow it). -> invoke("git_fetch", { repoPath })
+ */
+export function gitFetch(repoPath: string): Promise<boolean> {
+  return invoke<boolean>("git_fetch", { repoPath });
+}
+
+/** Snapshot of the default branch vs its origin upstream (no network). */
+export interface DefaultBehind {
+  /** local default branch ("" if detached/unknown). */
+  base: string;
+  /** the remote ref compared against, e.g. "origin/main" ("" if none). */
+  upstream: string;
+  hasRemote: boolean;
+  hasUpstream: boolean;
+  /** commits on the upstream the local branch is missing. */
+  behind: number;
+  /** local commits the upstream is missing (>0 = diverged). */
+  ahead: number;
+  dirty: boolean;
+}
+
+/**
+ * Snapshot how the default branch compares to its origin upstream — drives the
+ * non-blocking freshness banner. Does NOT fetch; call `gitFetch` first to
+ * refresh. -> invoke("git_default_behind", { repoPath })
+ */
+export function gitDefaultBehind(repoPath: string): Promise<DefaultBehind> {
+  return invoke<DefaultBehind>("git_default_behind", { repoPath });
+}
+
+/** Result of the one-click "update default branch" action. */
+export interface UpdateResult {
+  /** true = fast-forwarded (or already up to date). */
+  ok: boolean;
+  /** local branch has its own commits — ff impossible, handed off. */
+  diverged: boolean;
+  /** dirty tree overlapped the incoming changes — nothing changed. */
+  blocked: boolean;
+  /** commits still behind (0 on success). */
+  behind: number;
+  /** git output / reason, for the banner message. */
+  message: string;
+}
+
+/**
+ * SAFE fast-forward-only update of the default branch toward origin. Never
+ * conflicts, never discards uncommitted work, never auto-merges a diverged
+ * branch (hands off instead). -> invoke("git_update_default", { repoPath })
+ */
+export function gitUpdateDefault(repoPath: string): Promise<UpdateResult> {
+  return invoke<UpdateResult>("git_update_default", { repoPath });
+}
+
 /** Result of Sync-with-main. */
 export interface SyncResult {
   /** true = clean merge; false = conflicted (worktree left conflicted). */

@@ -1641,6 +1641,183 @@ fn git_base_branch(repo_path: String) -> Result<String, String> {
     current_branch(&repo_path)
 }
 
+/// A snapshot of how the repo's default branch compares to its origin upstream —
+/// powers the non-blocking "your repo is N behind" freshness banner (DEC-111
+/// Phase 2). Read-only: never fetches (call `git_fetch` first to refresh refs).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultBehind {
+    pub base: String,
+    pub upstream: String,
+    pub has_remote: bool,
+    pub has_upstream: bool,
+    pub behind: u32,
+    pub ahead: u32,
+    pub dirty: bool,
+}
+
+/// Best-effort `git fetch origin` to refresh remote-tracking refs so behind/ahead
+/// is accurate. `GIT_TERMINAL_PROMPT=0` makes a private repo fail FAST instead of
+/// hanging forever on a credential prompt. No `origin` remote -> Ok(false)
+/// (nothing to fetch). A real fetch failure (offline/auth) -> Err (callers swallow
+/// it and fall back to whatever refs are already on disk).
+#[tauri::command]
+fn git_fetch(repo_path: String) -> Result<bool, String> {
+    reject_traversal(Path::new(&repo_path))?;
+    let repo = repo_path.as_str();
+    if git_run(&["-C", repo, "remote", "get-url", "origin"]).is_err() {
+        return Ok(false);
+    }
+    let out = std::process::Command::new("git")
+        .args(["-C", repo, "fetch", "--quiet", "origin"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .map_err(|e| format!("failed to run git fetch: {e}"))?;
+    if out.status.success() {
+        Ok(true)
+    } else {
+        Err(format!(
+            "git fetch failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
+}
+
+/// Snapshot the default branch vs its origin upstream (NO network — call
+/// `git_fetch` first). Detached/unborn HEAD or no upstream ref -> behind:0 so the
+/// banner stays hidden. `ahead > 0` means the local branch diverged (a one-click
+/// fast-forward is impossible).
+#[tauri::command]
+fn git_default_behind(repo_path: String) -> Result<DefaultBehind, String> {
+    reject_traversal(Path::new(&repo_path))?;
+    let repo = repo_path.as_str();
+    let has_remote = git_run(&["-C", repo, "remote", "get-url", "origin"]).is_ok();
+    let dirty = !git_run(&["-C", repo, "status", "--porcelain"])
+        .unwrap_or_default()
+        .trim()
+        .is_empty();
+    let base = current_branch(repo)?;
+    // Detached HEAD -> nothing meaningful to compare.
+    if base == "HEAD" || base.is_empty() {
+        return Ok(DefaultBehind {
+            base: String::new(),
+            upstream: String::new(),
+            has_remote,
+            has_upstream: false,
+            behind: 0,
+            ahead: 0,
+            dirty,
+        });
+    }
+    // Prefer the configured upstream; fall back to origin/<base>.
+    let upstream = git_run(&[
+        "-C",
+        repo,
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        &format!("{base}@{{upstream}}"),
+    ])
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())
+    .or_else(|| {
+        let cand = format!("origin/{base}");
+        git_run(&["-C", repo, "rev-parse", "--verify", "--quiet", &cand])
+            .ok()
+            .map(|_| cand)
+    });
+    let Some(upstream) = upstream else {
+        return Ok(DefaultBehind {
+            base,
+            upstream: String::new(),
+            has_remote,
+            has_upstream: false,
+            behind: 0,
+            ahead: 0,
+            dirty,
+        });
+    };
+    let behind = rev_count(repo, &format!("{base}..{upstream}")).unwrap_or(0);
+    let ahead = rev_count(repo, &format!("{upstream}..{base}")).unwrap_or(0);
+    Ok(DefaultBehind {
+        base,
+        upstream,
+        has_remote,
+        has_upstream: true,
+        behind,
+        ahead,
+        dirty,
+    })
+}
+
+/// Result of the one-click "update default branch" action.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateResult {
+    pub ok: bool,
+    pub diverged: bool,
+    pub blocked: bool,
+    pub behind: u32,
+    pub message: String,
+}
+
+/// SAFE one-click update of the default branch toward origin (DEC-111 Phase 2).
+/// Fast-forward ONLY — it can neither create a conflict nor discard uncommitted
+/// work. If the local branch has its own commits (diverged) it refuses and hands
+/// off; it NEVER auto-merges/commits/stashes the user's real checkout. A dirty
+/// tree that overlaps the incoming changes is reported as `blocked` (nothing
+/// changed). Re-fetches this branch first to avoid a stale-ref TOCTOU.
+#[tauri::command]
+fn git_update_default(repo_path: String) -> Result<UpdateResult, String> {
+    reject_traversal(Path::new(&repo_path))?;
+    let repo = repo_path.as_str();
+    let base = current_branch(repo)?;
+    if base == "HEAD" || base.is_empty() {
+        return Err("detached HEAD — switch to your default branch first".into());
+    }
+    // Refresh just this branch's ref first (best-effort; ignore offline/auth).
+    let _ = std::process::Command::new("git")
+        .args(["-C", repo, "fetch", "--quiet", "origin", &base])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output();
+    let upstream = format!("origin/{base}");
+    git_run(&["-C", repo, "rev-parse", "--verify", "--quiet", &upstream])
+        .map_err(|_| format!("no upstream '{upstream}' yet"))?;
+    let behind = rev_count(repo, &format!("{base}..{upstream}")).unwrap_or(0);
+    let ahead = rev_count(repo, &format!("{upstream}..{base}")).unwrap_or(0);
+    if ahead > 0 {
+        // Diverged: a fast-forward is impossible. Hand off — do NOT merge.
+        return Ok(UpdateResult {
+            ok: false,
+            diverged: true,
+            blocked: false,
+            behind,
+            message: format!("local {base} has {ahead} commit(s) not on {upstream}"),
+        });
+    }
+    let out = git_output(&["-C", repo, "merge", "--ff-only", &upstream])?;
+    if out.status.success() {
+        return Ok(UpdateResult {
+            ok: true,
+            diverged: false,
+            blocked: false,
+            behind: 0,
+            message: String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        });
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // A dirty tree overlapping the incoming changes: git refuses, nothing changed.
+    let blocked = stderr.contains("would be overwritten") || stderr.contains("local changes");
+    Ok(UpdateResult {
+        ok: false,
+        diverged: !blocked,
+        blocked,
+        behind,
+        message: stderr.trim().to_string(),
+    })
+}
+
 /// Result of Sync-with-main: clean merge (`ok`) or the conflicted file list.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2398,6 +2575,9 @@ pub fn run() {
             git_branch_delete,
             git_behind_ahead,
             git_base_branch,
+            git_fetch,
+            git_default_behind,
+            git_update_default,
             git_sync_main,
             git_merge_conflict_check,
             git_merge_to_main,

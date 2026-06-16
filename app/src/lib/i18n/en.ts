@@ -161,6 +161,21 @@ export const en = {
     itemEnvWhat: "Copies {template} → .env and opens it. Fill in any secrets yourself.",
   },
 
+  freshness: {
+    behind: "{base} is {n} update(s) behind origin",
+    update: "Update",
+    updating: "Updating…",
+    dirtyHint: "You have unsaved changes — they'll be kept.",
+    diverged: "Your local {base} has diverged from origin ({n} local commit(s)).",
+    divergedHint: "Review or commit your local changes, then update from a terminal.",
+    divergedOpen: "Open folder",
+    blockedDirty: "Commit or stash your changes first, then update.",
+    updateFailed: "Couldn't update: {msg}",
+    issueConfirmTitle: "Update before starting?",
+    issueConfirm: "{base} is {n} behind origin. Update to the latest before starting?",
+    skip: "Start as is",
+  },
+
   journey: {
     specEmpty: "*(no spec yet)*",
     openApp: "Open the app →",

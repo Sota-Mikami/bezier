@@ -64,6 +64,7 @@ import {
   revealInFinder,
   openInEditor,
 } from "@/lib/ipc";
+import { gitDefaultBehind, gitUpdateDefault } from "@/lib/git";
 import {
   ptyStatuses,
   ptyDismiss,
@@ -287,6 +288,27 @@ export function AppSidebar() {
         if (target !== root) switchTo(target);
         void loadIssues(target);
         router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
+        // Soft, non-blocking nudge (DEC-111 Phase 2): if the base branch is behind
+        // origin, offer to update first. Detached + swallow-all so it can NEVER
+        // block creation; cached snapshot (no fetch) for an instant prompt.
+        void (async () => {
+          try {
+            const snap = await gitDefaultBehind(target);
+            if (snap.hasRemote && snap.behind > 0 && snap.ahead === 0) {
+              const ok = await confirmDialog(
+                t("freshness.issueConfirm", { base: snap.base, n: snap.behind }),
+                {
+                  title: t("freshness.issueConfirmTitle"),
+                  okLabel: t("freshness.update"),
+                  cancelLabel: t("freshness.skip"),
+                },
+              );
+              if (ok) await gitUpdateDefault(target);
+            }
+          } catch {
+            /* never block issue creation */
+          }
+        })();
       } catch (e) {
         await messageDialog(
           t("sidebar.createFailed", { msg: e instanceof Error ? e.message : String(e) }),

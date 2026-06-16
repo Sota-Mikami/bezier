@@ -160,6 +160,21 @@ export const ja: Messages = {
     itemEnvWhat: "{template} を .env にコピーして開きます。秘密値はご自身で入れてください。",
   },
 
+  freshness: {
+    behind: "{base} が origin より {n} 件遅れています",
+    update: "最新化する",
+    updating: "最新化中…",
+    dirtyHint: "未保存の変更があります — そのまま残ります。",
+    diverged: "ローカルの {base} が origin と枝分かれしています（手元のコミット {n} 件）。",
+    divergedHint: "手元の変更を確認・コミットしてから、ターミナルで最新化してください。",
+    divergedOpen: "フォルダを開く",
+    blockedDirty: "先に変更をコミットか退避してから、最新化してください。",
+    updateFailed: "最新化できませんでした: {msg}",
+    issueConfirmTitle: "始める前に最新化しますか？",
+    issueConfirm: "{base} が origin より {n} 件遅れています。最新化してから始めますか？",
+    skip: "このまま始める",
+  },
+
   journey: {
     specEmpty: "*(spec はまだありません)*",
     openApp: "アプリを開く →",

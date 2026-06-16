@@ -18,15 +18,18 @@ import {
   Download,
   TriangleAlert,
   Wand2,
+  ArrowDownToLine,
+  FolderOpen,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { openExternal } from "@/lib/ipc";
+import { openExternal, openInEditor } from "@/lib/ipc";
 import { useT } from "@/lib/i18n";
 import { repoName } from "@/lib/workspace-root";
 import { cn } from "@/lib/utils";
 import { usePreviewServer } from "./use-preview-server";
 import { useReadiness, type ReadinessController } from "./use-readiness";
+import { useRepoFreshness, type RepoFreshness } from "./use-repo-freshness";
 import type { ReadinessItem } from "@/lib/readiness";
 
 // Resizable OUTPUT panel (matches the Issue-detail divider, DEC-033): persisted
@@ -43,6 +46,9 @@ export function RepoLive({ root }: { root: string }) {
   // Repo readiness (DEC-111): detect "cloned but not set up" before Run fails
   // cryptically, and offer bounded one-click fixes (Node / deps / .env).
   const readiness = useReadiness(root, config?.packageDir ?? "");
+  // Repo freshness (DEC-111 Phase 2): is the default branch behind origin? Shown
+  // as a non-blocking banner — never gates Run.
+  const freshness = useRepoFreshness(root);
 
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
@@ -147,6 +153,8 @@ export function RepoLive({ root }: { root: string }) {
           </div>
         )}
       </div>
+
+      <FreshnessBanner f={freshness} root={root} />
 
       <div className={cn("relative min-h-0 flex-1", ready && "bg-white")}>
         {ready ? (
@@ -307,6 +315,79 @@ function ReadinessChecklist({
           {t("live.readyRunAnyway")}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Non-blocking "your repo is N behind origin" banner (DEC-111 Phase 2). Sits
+// above both the running iframe and the empty-state, so it never gates Run.
+// Hidden unless there's a remote and the default branch is actually behind.
+function FreshnessBanner({ f, root }: { f: RepoFreshness; root: string }) {
+  const t = useT();
+  if (!f.loaded || !f.hasRemote || f.behind === 0) return null;
+  const updating = f.busy === "updating";
+  return (
+    <div className="flex shrink-0 items-start gap-2 border-b bg-muted/40 px-3 py-2">
+      <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+      <div className="min-w-0 flex-1">
+        {f.diverged ? (
+          <>
+            <p className="text-xs leading-tight">
+              {t("freshness.diverged", { base: f.base, n: f.ahead })}
+            </p>
+            <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+              {t("freshness.divergedHint")}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-xs leading-tight">
+              {t("freshness.behind", { base: f.base, n: f.behind })}
+            </p>
+            {f.lastUpdate?.blocked ? (
+              <p className="mt-0.5 text-[11px] leading-snug text-destructive">
+                {t("freshness.blockedDirty")}
+              </p>
+            ) : f.updateError ? (
+              <p className="mt-0.5 text-[11px] leading-snug text-destructive">
+                {t("freshness.updateFailed", { msg: f.updateError })}
+              </p>
+            ) : (
+              f.dirty && (
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                  {t("freshness.dirtyHint")}
+                </p>
+              )
+            )}
+          </>
+        )}
+      </div>
+      {f.diverged ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 shrink-0 gap-1.5 text-[11px]"
+          onClick={() => void openInEditor(root).catch(() => {})}
+        >
+          <FolderOpen className="size-3" />
+          {t("freshness.divergedOpen")}
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 shrink-0 gap-1.5 text-[11px]"
+          disabled={!!f.busy}
+          onClick={() => void f.update()}
+        >
+          {updating ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <ArrowDownToLine className="size-3" />
+          )}
+          {updating ? t("freshness.updating") : t("freshness.update")}
+        </Button>
+      )}
     </div>
   );
 }
