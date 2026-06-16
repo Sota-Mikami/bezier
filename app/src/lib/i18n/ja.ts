@@ -135,6 +135,8 @@ export const ja: Messages = {
     routePlaceholder: "/route",
     reload: "再読み込み",
     openExternal: "ブラウザで開く",
+    frameBlocked: "このアプリは埋め込みプレビューを許可していません。ブラウザで開いてください。",
+    openInBrowser: "ブラウザで開く",
     stop: "停止",
     newHint: "または左のサイドバーから Issue を選ぶ／New で作成。",
     installDeps: "依存をインストール（{cmd}）",

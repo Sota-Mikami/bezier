@@ -62,7 +62,7 @@ export function RepoLive({ root }: { root: string }) {
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, log, installing, installCmd, config, start, stop, installDeps } = live;
+  const { status, url, error, log, installing, installCmd, config, start, stop, installDeps, frameBlocked } = live;
   // Repo readiness (DEC-111): detect "cloned but not set up" before Run fails
   // cryptically, and offer bounded one-click fixes (Node / deps / .env).
   const readiness = useReadiness(root, config?.packageDir ?? "");
@@ -204,6 +204,19 @@ export function RepoLive({ root }: { root: string }) {
             cwd={packageCwd(root, packageDir)}
             onClose={() => setShowTerminal(false)}
           />
+        ) : ready && frameBlocked ? (
+          // The app runs but forbids iframe embedding (X-Frame-Options / CSP) —
+          // can't show it inline; hand off to the browser instead of a blank pane.
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
+              <ExternalLink className="size-5 text-muted-foreground" />
+            </div>
+            <p className="max-w-sm text-sm text-muted-foreground">{t("live.frameBlocked")}</p>
+            <Button size="sm" className="gap-1.5" onClick={() => src && void openExternal(src)}>
+              <ExternalLink className="size-3.5" />
+              {t("live.openInBrowser")}
+            </Button>
+          </div>
         ) : ready ? (
           <iframe
             src={src!}

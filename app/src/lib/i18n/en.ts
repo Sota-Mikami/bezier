@@ -136,6 +136,8 @@ export const en = {
     routePlaceholder: "/route",
     reload: "Reload",
     openExternal: "Open in browser",
+    frameBlocked: "This app doesn't allow embedded preview. Open it in your browser instead.",
+    openInBrowser: "Open in browser",
     stop: "Stop",
     newHint: "Or pick an Issue from the sidebar, or create a New one.",
     installDeps: "Install dependencies ({cmd})",

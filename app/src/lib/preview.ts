@@ -53,11 +53,14 @@ export type Framework = "next" | "vite" | null;
 
 /** What package.json detection found about the worktree's dev script. */
 export interface DevDetect {
-  /** package.json `scripts.dev` value, or null if none found. */
+  /** The dev script's NAME (dev / develop / serve / start), so the run command
+   *  is `npm run <name>` — not hardcoded to "dev". null if none found. */
+  scriptName: string | null;
+  /** The dev script's command value (for framework inference), or null. */
   scriptsDev: string | null;
-  /** Framework inferred from scripts.dev, for port-flag injection. */
+  /** Framework inferred from the dev script, for port-flag injection. */
   framework: Framework;
-  /** Relative dir of the package with scripts.dev ("" = root). */
+  /** Relative dir of the package with the dev script ("" = root). */
   packageDir: string;
 }
 
@@ -153,50 +156,69 @@ export function detectFramework(cmd: string): Framework {
   return null;
 }
 
-/** Read a `scripts.dev` string from `<dir>/package.json`, or null. */
-async function readScriptsDev(dir: string): Promise<string | null> {
+// Dev-script names in priority order. `dev` is conventional (Next/Vite/etc.),
+// `develop` = Gatsby, `serve` = Vue CLI / Angular. `start` is ambiguous (CRA /
+// Angular use it for DEV, but Next/Express use it for PRODUCTION) — only accepted
+// when it doesn't look like a production start.
+const DEV_SCRIPT_NAMES = ["dev", "develop", "serve", "start"];
+const PROD_START_RE = /\bnext start\b|^\s*node\b|\bserve\s+-s\b|NODE_ENV=production/;
+
+/** Find the best dev script in `<dir>/package.json`: its name + command, or null. */
+async function readDevScript(dir: string): Promise<{ name: string; cmd: string } | null> {
   let text: string;
   try {
     text = await readFile(`${stripTrailingSlash(dir)}/package.json`);
   } catch {
     return null;
   }
+  let scripts: Record<string, unknown>;
   try {
-    const pkg = JSON.parse(text) as { scripts?: Record<string, unknown> };
-    const dev = pkg.scripts?.dev;
-    return typeof dev === "string" && dev.trim() ? dev : null;
+    scripts = (JSON.parse(text) as { scripts?: Record<string, unknown> }).scripts ?? {};
   } catch {
     return null;
   }
+  for (const name of DEV_SCRIPT_NAMES) {
+    const cmd = scripts[name];
+    if (typeof cmd !== "string" || !cmd.trim()) continue;
+    if (name === "start" && PROD_START_RE.test(cmd)) continue; // production start
+    return { name, cmd };
+  }
+  return null;
 }
 
 /**
- * Locate the package to run. Prefer a `scripts.dev` at the repo/worktree root;
- * otherwise scan common subdirs one level deep (`app`, `web`, `frontend`,
- * `client`, `site`) and take the first with a `scripts.dev`. Returns the dev
- * script, inferred framework, and the RELATIVE packageDir ("" = root). When
- * nothing is found, packageDir is "" and scriptsDev is null.
+ * Locate the package to run. Prefer a dev script (dev/develop/serve/start) at the
+ * repo/worktree root; otherwise scan common subdirs one level deep (`app`, `web`,
+ * `frontend`, `client`, `site`) and take the first with one. Returns the script
+ * NAME (for `npm run <name>`), its command, the inferred framework, and the
+ * RELATIVE packageDir ("" = root). All null when nothing is found.
  */
 export async function detectDev(dir: string): Promise<DevDetect> {
   const root = stripTrailingSlash(dir);
 
-  const rootDev = await readScriptsDev(root);
+  const rootDev = await readDevScript(root);
   if (rootDev) {
-    return { scriptsDev: rootDev, framework: detectFramework(rootDev), packageDir: "" };
+    return {
+      scriptName: rootDev.name,
+      scriptsDev: rootDev.cmd,
+      framework: detectFramework(rootDev.cmd),
+      packageDir: "",
+    };
   }
 
   for (const sub of SUBDIR_CANDIDATES) {
-    const subDev = await readScriptsDev(`${root}/${sub}`);
+    const subDev = await readDevScript(`${root}/${sub}`);
     if (subDev) {
       return {
-        scriptsDev: subDev,
-        framework: detectFramework(subDev),
+        scriptName: subDev.name,
+        scriptsDev: subDev.cmd,
+        framework: detectFramework(subDev.cmd),
         packageDir: sub,
       };
     }
   }
 
-  return { scriptsDev: null, framework: null, packageDir: "" };
+  return { scriptName: null, scriptsDev: null, framework: null, packageDir: "" };
 }
 
 /** Package managers we know how to install with. */
@@ -398,6 +420,15 @@ export function parseDevServerUrl(text: string): { port: number; url: string } |
  */
 export function httpPing(url: string): Promise<boolean> {
   return invoke<boolean>("http_ping", { url });
+}
+
+/**
+ * Whether the dev server forbids iframe embedding (X-Frame-Options /
+ * CSP frame-ancestors), so Live can offer "open in browser" instead of a blank
+ * preview. Best-effort — resolves false on any failure. (Rust `http_frame_blocked`)
+ */
+export function httpFrameBlocked(url: string): Promise<boolean> {
+  return invoke<boolean>("http_frame_blocked", { url });
 }
 
 /** Allocate a free TCP port so concurrent previews never collide (DEC-040). */

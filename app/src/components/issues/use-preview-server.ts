@@ -36,6 +36,7 @@ import {
   previewUrl,
   parseDevServerUrl,
   httpPing,
+  httpFrameBlocked,
   findFreePort,
   packageCwd,
   hasPackageJson,
@@ -173,6 +174,9 @@ export interface PreviewServer {
   error: string | null;
   /** The iframe target once ready, else null. */
   url: string | null;
+  /** The ready app forbids iframe embedding (X-Frame-Options / CSP) → offer
+   *  "open in browser" instead of a blank preview. */
+  frameBlocked: boolean;
   /** False until config + detection have resolved. */
   configLoaded: boolean;
   /** Persist a new config (and adopt it for the next start). */
@@ -205,6 +209,9 @@ export function usePreviewServer(
   const [scriptsDev, setScriptsDev] = React.useState<string | null>(null);
   const [log, setLog] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  // The ready dev server forbids iframe embedding (X-Frame-Options / CSP) — show
+  // an "open in browser" CTA instead of a blank preview.
+  const [frameBlocked, setFrameBlocked] = React.useState(false);
   const [url, setUrl] = React.useState<string | null>(null);
   const [configLoaded, setConfigLoaded] = React.useState(false);
   const [installing, setInstalling] = React.useState(false);
@@ -250,7 +257,7 @@ export function usePreviewServer(
         readPreviewConfig(root).catch(() => null),
         detectDev(worktreePath).catch(
           () =>
-            ({ scriptsDev: null, framework: null, packageDir: "" }) as DevDetect,
+            ({ scriptName: null, scriptsDev: null, framework: null, packageDir: "" }) as DevDetect,
         ),
       ]);
       if (cancelled) return;
@@ -276,7 +283,7 @@ export function usePreviewServer(
       // repo whose web app lives in a subdir (`app/`) still auto-resolves — the
       // user almost never has to fill the form by hand.
       const detected: PreviewConfig = {
-        devCommand: detect.scriptsDev ? "npm run dev" : "",
+        devCommand: detect.scriptsDev ? `npm run ${detect.scriptName ?? "dev"}` : "",
         port: defaultPort(root),
         packageDir: detect.packageDir,
       };
@@ -426,6 +433,7 @@ export function usePreviewServer(
       setStatus("starting");
       detectedPortRef.current = null;
       urlBufRef.current = "";
+      setFrameBlocked(false);
 
       // A free port per preview so concurrent dev servers never collide.
       const freePort = await findFreePort().catch(() => cfg.port);
@@ -553,7 +561,12 @@ export function usePreviewServer(
             if (ptyIdRef.current !== id) return;
             if (up) {
               clearTimers();
-              if (!isTauri) setUrl(target);
+              if (!isTauri) {
+                setUrl(target);
+                // If the app forbids iframing, surface "open in browser" instead
+                // of a blank preview (best-effort; failure -> assume embeddable).
+                void httpFrameBlocked(target).then(setFrameBlocked).catch(() => {});
+              }
               setStatus("ready");
               // Record the live port so reattach pings the right one.
               const e = previewRegistry.get(previewKey);
@@ -679,6 +692,7 @@ export function usePreviewServer(
     log,
     error,
     url,
+    frameBlocked,
     configLoaded,
     saveConfig,
     start,

@@ -2268,6 +2268,79 @@ fn http_ping(url: String) -> Result<bool, String> {
     }
 }
 
+/// Whether a dev server FORBIDS iframe embedding (`X-Frame-Options: DENY/
+/// SAMEORIGIN`, or a `Content-Security-Policy: frame-ancestors 'none'/'self'`), so
+/// Live can offer "open in browser" instead of a blank preview (DEC-111). Reads
+/// only the response headers; best-effort — any failure -> false (assume
+/// embeddable). Same dependency-free HTTP as `http_ping`.
+#[tauri::command]
+fn http_frame_blocked(url: String) -> Result<bool, String> {
+    use std::io::{Read, Write};
+    use std::net::{TcpStream, ToSocketAddrs};
+    use std::time::Duration;
+
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(&url);
+    let slash = rest.find('/').unwrap_or(rest.len());
+    let authority = &rest[..slash];
+    let path = if slash < rest.len() { &rest[slash..] } else { "/" };
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((h, p)) => match p.parse::<u16>() {
+            Ok(port) => (h.to_string(), port),
+            Err(_) => return Ok(false),
+        },
+        None => (authority.to_string(), 80),
+    };
+    if host.is_empty() {
+        return Ok(false);
+    }
+    let timeout = Duration::from_millis(1500);
+    let mut addrs = match (host.as_str(), port).to_socket_addrs() {
+        Ok(a) => a,
+        Err(_) => return Ok(false),
+    };
+    let addr = match addrs.next() {
+        Some(a) => a,
+        None => return Ok(false),
+    };
+    let mut stream = match TcpStream::connect_timeout(&addr, timeout) {
+        Ok(s) => s,
+        Err(_) => return Ok(false),
+    };
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    let req = format!("GET {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(req.as_bytes()).is_err() {
+        return Ok(false);
+    }
+    let mut data = Vec::new();
+    let mut buf = [0u8; 2048];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                data.extend_from_slice(&buf[..n]);
+                // Stop at the end of the header section, or a hard cap.
+                if data.len() > 16384 || data.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&data).to_lowercase();
+    let headers = text.split("\r\n\r\n").next().unwrap_or(&text);
+    let blocked = headers.lines().any(|l| {
+        let l = l.trim();
+        (l.starts_with("x-frame-options:") && (l.contains("deny") || l.contains("sameorigin")))
+            || (l.starts_with("content-security-policy:")
+                && (l.contains("frame-ancestors 'none'") || l.contains("frame-ancestors 'self'")))
+    });
+    Ok(blocked)
+}
+
 // ============================================================================
 // v0.5 slice 2.5.1 — node_modules symlink for worktree previews.
 //
@@ -2675,6 +2748,7 @@ pub fn run() {
             gh_pr_create,
             gh_pr_state,
             http_ping,
+            http_frame_blocked,
             find_free_port,
             symlink,
             clone_dir,
