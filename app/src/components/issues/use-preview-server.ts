@@ -38,6 +38,8 @@ import {
   findFreePort,
   packageCwd,
   hasPackageJson,
+  repoNodeVersion,
+  withRepoNode,
   ensureWorktreeNodeModules,
   ensureWorktreeTauriTarget,
   detectInstall,
@@ -340,14 +342,17 @@ export function usePreviewServer(
     // Corepack auto-download pnpm/yarn instead of asking "Do you want to continue?
     // [Y/n]" (the common pnpm-repo snag); harmless for npm/bun.
     const runCmd = `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 ${cmd}`;
+    // Run under the repo's Node version (nvm/.nvmrc/engines), like the dev server.
+    const node = await repoNodeVersion(cwd).catch(() => null);
+    const launch = withRepoNode(runCmd, node);
     setInstalling(true);
     setError(null);
     setLog((l) => `${l}\n[Bezier] ${cmd} …\n`);
     try {
       const id = await ptySpawn({
         cwd,
-        cmd: "/bin/sh",
-        args: ["-c", runCmd],
+        cmd: launch.cmd,
+        args: launch.args,
         cols: 120,
         rows: 40,
       });
@@ -448,14 +453,18 @@ export function usePreviewServer(
       }
 
       // Run in the package dir (root or a subdir like "app") — where package.json
-      // (the dev / tauri scripts) and, for tauri, src-tauri live.
+      // (the dev / tauri scripts) and, for tauri, src-tauri live. Launch under the
+      // repo's pinned Node version (nvm/.nvmrc/engines), not the app's inherited
+      // one — else a repo that requires e.g. Node 24 fails its engine check.
       const cwd = packageCwd(worktreePath, cfg.packageDir);
+      const node = await repoNodeVersion(cwd).catch(() => null);
+      const launch = withRepoNode(command, node);
       let id: string;
       try {
         id = await ptySpawn({
           cwd,
-          cmd: "/bin/sh",
-          args: ["-c", command],
+          cmd: launch.cmd,
+          args: launch.args,
           cols: 120,
           rows: 40,
           key: ptyKey, // persistent: survives leaving the issue (DEC-040)

@@ -416,6 +416,59 @@ export async function hasPackageJson(dir: string): Promise<boolean> {
   return fileExists(dir, "package.json");
 }
 
+// --- Node version: run dev/install with the repo's Node, not the app's ------
+// A GUI app inherits a minimal Node (whatever nvm default / system), so dev
+// servers + installs in repos that pin a Node version (`.nvmrc` / `engines.node`,
+// common in mikan/Sotas repos) run on the WRONG Node and fail the engine check.
+// We read the pinned version and `nvm use` it before running.
+
+/** POSIX single-quote (so a version like ">=18" can't act as a shell redirect). */
+function shq(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/** The Node version this repo wants: `.nvmrc` (explicit dev pin) → `engines.node`,
+ *  or null. Ranges (e.g. ">=18") are returned as-is; `nvm use` falls back when it
+ *  can't resolve them. */
+export async function repoNodeVersion(dir: string): Promise<string | null> {
+  const base = stripTrailingSlash(dir);
+  try {
+    const v = (await readFile(`${base}/.nvmrc`)).trim();
+    if (v) return v.replace(/^v/, "");
+  } catch {
+    /* no .nvmrc */
+  }
+  try {
+    const pkg = JSON.parse(await readFile(`${base}/package.json`)) as {
+      engines?: { node?: unknown };
+    };
+    const e = typeof pkg.engines?.node === "string" ? pkg.engines.node.trim() : "";
+    if (e) return e;
+  } catch {
+    /* no/invalid package.json */
+  }
+  return null;
+}
+
+/**
+ * Wrap a dev/install command so it runs under the user's nvm with the repo's Node
+ * version. Sources nvm explicitly (no rc-file dependency), `nvm use`s the pinned
+ * version (falling back to `.nvmrc` in cwd, then the default, then the inherited
+ * Node), then runs the command. No-op for users without nvm (the source is
+ * guarded; `nvm use` failures are swallowed). The command runs in the user's
+ * shell (zsh on macOS), which carries their normal PATH.
+ */
+export function withRepoNode(
+  command: string,
+  nodeVersion: string | null,
+): { cmd: string; args: string[] } {
+  const use = nodeVersion
+    ? `nvm use ${shq(nodeVersion)} >/dev/null 2>&1 || nvm use >/dev/null 2>&1 || true;`
+    : `nvm use >/dev/null 2>&1 || true;`;
+  const preamble = `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1; ${use}`;
+  return { cmd: "/bin/zsh", args: ["-c", `${preamble} ${command}`] };
+}
+
 /** Outcome of ensuring the worktree's Rust build cache. */
 export interface TargetCloneResult {
   /** True if the worktree now has a cloned `target` (incremental build). */
