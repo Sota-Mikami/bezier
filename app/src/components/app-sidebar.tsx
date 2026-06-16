@@ -111,6 +111,13 @@ export function AppSidebar() {
   // Last seen "needs attention?" per key, to fire a notification only on the
   // transition INTO needs-attention (not every poll).
   const prevAttentionRef = React.useRef<Map<string, boolean>>(new Map());
+  // "view = acknowledged" (DF-11): keys whose WAITING the user has already seen
+  // (by opening that issue) — kept OUT of the inbox so it doesn't pile up. A key
+  // is forgotten the moment it leaves "waiting" (e.g. after a reply), so the next
+  // turn-end surfaces it again. The per-issue row still shows the true state.
+  const [seenWaiting, setSeenWaiting] = React.useState<Set<string>>(
+    () => new Set(),
+  );
   // Issue ids with a live preview dev-server (the N-max rule, DEC-040) — shown
   // as a static "live" indicator on the issue row so you know what's running.
   const [previewKeys, setPreviewKeys] = React.useState<Set<string>>(new Set());
@@ -130,6 +137,24 @@ export function AppSidebar() {
       const map = new Map(list.map((s) => [s.key, s]));
       setStatusByKey(map);
       setPreviewKeys(new Set(runningPreviewKeys()));
+
+      // Maintain the "seen waiting" set (DF-11): the OPEN issue's waiting counts
+      // as seen; any key that's no longer waiting is forgotten so a later
+      // turn-end re-surfaces it in the inbox. Returns the SAME set when nothing
+      // changed, so it doesn't churn renders.
+      setSeenWaiting((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const s of list) {
+          if (s.state !== "waiting") {
+            if (next.delete(s.key)) changed = true;
+          } else if (s.key === selectedId && !next.has(s.key)) {
+            next.add(s.key);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
 
       const prev = prevAttentionRef.current;
       const next = new Map<string, boolean>();
@@ -429,13 +454,22 @@ export function AppSidebar() {
 
   // Agent Inbox (DEC-028): agents that need me — waiting / done / error — newest
   // (most idle) first. running agents are NOT in the inbox (they don't need me).
+  // "waiting" you've already SEEN (opened that issue) is filtered out so the
+  // inbox doesn't pile up (DF-11); done/error stay until dismissed (✕).
   const inbox = React.useMemo(() => {
     const rows = [...statusByKey.values()].filter(
-      (s) => s.state === "waiting" || s.state === "done" || s.state === "error",
+      (s) =>
+        // Hide a waiting agent you're looking at now (selectedId) or already
+        // opened once (seen) — keep done/error until explicitly dismissed.
+        (s.state === "waiting" &&
+          s.key !== selectedId &&
+          !seenWaiting.has(s.key)) ||
+        s.state === "done" ||
+        s.state === "error",
     );
     rows.sort((a, b) => b.idleMs - a.idleMs);
     return rows;
-  }, [statusByKey]);
+  }, [statusByKey, selectedId, seenWaiting]);
 
   // If the inbox references an issue we haven't loaded yet (e.g. after restart),
   // load every recent repo's issues so we can show titles. Deferred off the sync
