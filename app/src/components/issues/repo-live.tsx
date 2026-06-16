@@ -334,8 +334,8 @@ function ReadinessRow({
       fixLabel = t("live.itemNodeFix", { version: v });
     }
   } else if (item.id === "deps") {
-    label = t("live.itemDeps");
-    what = t("live.itemDepsWhat");
+    label = item.depsStale ? t("live.itemDepsStale") : t("live.itemDeps");
+    what = item.depsStale ? t("live.itemDepsStaleWhat") : t("live.itemDepsWhat");
     fixLabel = t("live.itemDepsFix");
   } else {
     label = t("live.itemEnv", { template: item.envTemplate ?? ".env.example" });

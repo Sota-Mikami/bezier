@@ -4,7 +4,7 @@
 // Node, install deps, copy a .env template); complex setup is handed off, never
 // auto-run. Never touches secrets; never blocks (read-only is always fine).
 
-import { readFile, writeFile, listDir, homeDir } from "@/lib/ipc";
+import { readFile, writeFile, listDir, homeDir, pathMtime } from "@/lib/ipc";
 import { packageCwd, repoNodeVersion } from "@/lib/preview";
 
 export type ReadinessId = "node" | "deps" | "env";
@@ -16,6 +16,9 @@ export interface ReadinessItem {
   nodeVersion?: string;
   /** node: nvm isn't set up, so we can't auto-install — guide instead. */
   nvmMissing?: boolean;
+  /** deps: node_modules exists but the lockfile is newer → reinstall (Phase 1.5).
+   *  Distinguishes the "installed but stale" case from "never installed". */
+  depsStale?: boolean;
   /** env: the template file found (e.g. ".env.example"). */
   envTemplate?: string;
 }
@@ -55,6 +58,39 @@ function nodeSatisfied(want: string, installed: string[]): boolean {
 const ENV_TEMPLATES = [".env.example", ".env.sample", ".env.template", ".env.dist"];
 const ENV_PRESENT = [".env", ".env.local"];
 
+// Lockfile → the marker a fresh install writes into node_modules. We compare
+// mtimes: a lockfile newer than its marker means `git pull` changed deps but
+// nobody reinstalled (the classic "node_modules is there so it looks fine, then
+// the dev server explodes" trap). Falls back to the node_modules dir mtime when
+// the package-manager-specific marker is absent.
+const LOCK_MARKERS: { lock: string; marker: string }[] = [
+  { lock: "pnpm-lock.yaml", marker: "node_modules/.modules.yaml" },
+  { lock: "package-lock.json", marker: "node_modules/.package-lock.json" },
+  { lock: "yarn.lock", marker: "node_modules/.yarn-integrity" },
+  { lock: "bun.lockb", marker: "node_modules" },
+  { lock: "bun.lock", marker: "node_modules" },
+];
+// Fresh installs write the lockfile and the marker within the same moment; only
+// flag when the lockfile is meaningfully newer to avoid same-install jitter.
+const STALE_TOLERANCE_MS = 5_000;
+
+/** node_modules exists but the present lockfile is newer than the install marker
+ *  → deps need reinstalling. Conservative: any inability to compare → not stale
+ *  (never false-flag a working repo). */
+async function depsStale(dir: string): Promise<boolean> {
+  for (const { lock, marker } of LOCK_MARKERS) {
+    const lockMtime = await pathMtime(`${dir}/${lock}`).catch(() => null);
+    if (lockMtime == null) continue; // this lockfile isn't the one in use
+    let markerMtime = await pathMtime(`${dir}/${marker}`).catch(() => null);
+    if (markerMtime == null) {
+      markerMtime = await pathMtime(`${dir}/node_modules`).catch(() => null);
+    }
+    if (markerMtime == null) return false; // nothing to compare against
+    return lockMtime > markerMtime + STALE_TOLERANCE_MS;
+  }
+  return false;
+}
+
 /** Probe a repo's readiness for the dev server: pinned-but-uninstalled Node,
  *  missing node_modules, and a missing .env (with a template present). Only
  *  returns items that need attention OR are explicitly ok for shown checks. */
@@ -79,7 +115,8 @@ export async function probeReadiness(
     }
   }
 
-  // Deps: node_modules present in the run dir.
+  // Deps: node_modules present in the run dir — and, if so, not stale vs the
+  // lockfile (Phase 1.5). Both the missing and the stale case fix via reinstall.
   let hasNodeModules = false;
   try {
     const entries = await listDir(dir);
@@ -87,7 +124,13 @@ export async function probeReadiness(
   } catch {
     /* dir unreadable — leave false */
   }
-  items.push({ id: "deps", status: hasNodeModules ? "ok" : "needs" });
+  if (!hasNodeModules) {
+    items.push({ id: "deps", status: "needs" });
+  } else if (await depsStale(dir).catch(() => false)) {
+    items.push({ id: "deps", status: "needs", depsStale: true });
+  } else {
+    items.push({ id: "deps", status: "ok" });
+  }
 
   // Env: a template exists but no real .env yet.
   let envTemplate: string | null = null;

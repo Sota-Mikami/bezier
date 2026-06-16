@@ -153,6 +153,9 @@ export const en = {
     itemDeps: "Dependencies aren't installed",
     itemDepsFix: "Install dependencies",
     itemDepsWhat: "Installs the project's dependencies (node_modules).",
+    itemDepsStale: "Dependencies are out of date",
+    itemDepsStaleWhat:
+      "The lockfile changed since the last install (likely a recent pull). Reinstalling syncs node_modules.",
     itemEnv: "No .env yet ({template} is present)",
     itemEnvFix: "Create & open .env",
     itemEnvWhat: "Copies {template} → .env and opens it. Fill in any secrets yourself.",

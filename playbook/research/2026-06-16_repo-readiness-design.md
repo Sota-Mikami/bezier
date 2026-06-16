@@ -21,8 +21,8 @@
 **C「複雑 setup」改訂 = ハンドオフのみ**: `setup`/`bootstrap` script・Docker・README "Getting Started" を**検出して見せる** → ［README を開く］/［ターミナルを開く（自分で実行）］。旧 ［エージェントに環境構築を任せる］は**廃止**。
 
 ### 開発計画（フェーズ）
-- **Phase 1（最優先・今着手）— 環境 readiness チェックリスト（Live）**: 検出（Node 未インストール／依存 無し／.env 無し）＋1クリック修正（nvm install／依存 install／.env テンプレコピー）＋［全部準備する］順序実行＋「何が起きる」1行＋全 green で Run 有効化（自律実行しない）＋安全（nvm 無し案内・.env 秘密は触らない・ブロックしない）。**起点バグ（fs-student-web）を即潰す**。
-- **Phase 1.5** — lockfile 鮮度チェック（node_modules 有でも lockfile より古ければ要 reinstall）。
+- **Phase 1（✅実装済 `3d8e032`）— 環境 readiness チェックリスト（Live）**: 検出（Node 未インストール／依存 無し／.env 無し）＋1クリック修正（nvm install／依存 install／.env テンプレコピー）＋［全部準備する］順序実行＋「何が起きる」1行＋全 green で Run 有効化（自律実行しない）＋安全（nvm 無し案内・.env 秘密は触らない・ブロックしない）。**起点バグ（fs-student-web）を即潰す**。
+- **Phase 1.5（✅実装済）** — lockfile 鮮度チェック（node_modules 有でも lockfile より古ければ要 reinstall）。`path_mtime`（Rust）で lockfile mtime > install marker mtime（pnpm `.modules.yaml`／npm `.package-lock.json`／yarn `.yarn-integrity`、無ければ node_modules 自体）を比較。古ければ deps 行を「依存が古い」表示＋同じ reinstall で直す。比較不能なら stale 扱いしない（誤検知しない）。
 - **Phase 2 — 鮮度（git）**: 裏 fetch →「N 遅れ」→ ［最新化する］（merge 既定・dirty 事前提示・衝突は確認＋差分＝Ship 流用）＋ Issue 作成時の base 最新化提示。
 - **Phase 3 — ハンドオフ**: setup script/Docker/README 検出 → 開くだけ。
 - **Phase 4 — サイドバー repo バッジ**（⚠️準備／🔄更新）＝俯瞰トリアージ。

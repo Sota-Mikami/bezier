@@ -396,6 +396,35 @@ fn read_file_bytes(
     fs::read(&path).map_err(|e| format!("read_file_bytes {path}: {e}"))
 }
 
+/// A path's modified time as epoch milliseconds (DEC-111 Phase 1.5 — detect a
+/// lockfile that is newer than the installed `node_modules` marker, i.e. deps
+/// that need reinstalling). Returns `None` when the path does not exist so the
+/// caller can treat "no marker" distinctly from a real error. Works for files
+/// and directories. Traversal + grant guarded like `read_file`.
+#[tauri::command]
+fn path_mtime(
+    state: tauri::State<'_, PathGrantState>,
+    path: String,
+) -> Result<Option<i64>, String> {
+    let target = Path::new(&path);
+    reject_traversal(target)?;
+    ensure_granted(&state, target)?;
+    match fs::metadata(target) {
+        Ok(md) => {
+            let modified = md
+                .modified()
+                .map_err(|e| format!("path_mtime {path}: {e}"))?;
+            let ms = modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| format!("path_mtime {path}: {e}"))?
+                .as_millis() as i64;
+            Ok(Some(ms))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("path_mtime {path}: {e}")),
+    }
+}
+
 /// Reveal a path in the macOS Finder (DEC-041 "…" menu → Finderで開く). `open`
 /// on a directory opens it in Finder; on a file it reveals/opens its app. Path is
 /// traversal-guarded; a spawn failure surfaces a clear Err.
@@ -2336,6 +2365,7 @@ pub fn run() {
             write_file,
             write_file_bytes,
             read_file_bytes,
+            path_mtime,
             reveal_in_finder,
             open_external,
             open_in_editor,

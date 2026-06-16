@@ -139,6 +139,15 @@ export async function readFileBytes(path: string): Promise<Uint8Array> {
   return Uint8Array.from(arr);
 }
 
+/**
+ * A path's modified time as epoch milliseconds, or null when it does not exist
+ * (DEC-111 Phase 1.5 — lockfile-vs-install staleness). Works for files & dirs.
+ * -> invoke("path_mtime", { path })
+ */
+export function pathMtime(path: string): Promise<number | null> {
+  return invoke<number | null>("path_mtime", { path });
+}
+
 /** Reveal a path in the macOS Finder (DEC-041). -> invoke("reveal_in_finder", { path }) */
 export function revealInFinder(path: string): Promise<void> {
   return invoke<void>("reveal_in_finder", { path });

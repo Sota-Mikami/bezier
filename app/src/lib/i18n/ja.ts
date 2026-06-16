@@ -152,6 +152,9 @@ export const ja: Messages = {
     itemDeps: "依存（node_modules）が未インストール",
     itemDepsFix: "依存をインストール",
     itemDepsWhat: "プロジェクトの依存（node_modules）を入れます。",
+    itemDepsStale: "依存が古くなっています",
+    itemDepsStaleWhat:
+      "前回のインストール以降に lockfile が変わっています（pull した直後など）。入れ直すと node_modules が同期されます。",
     itemEnv: ".env がありません（{template} あり）",
     itemEnvFix: ".env を作って開く",
     itemEnvWhat: "{template} を .env にコピーして開きます。秘密値はご自身で入れてください。",
