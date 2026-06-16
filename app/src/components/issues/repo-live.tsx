@@ -17,14 +17,57 @@ import { repoName } from "@/lib/workspace-root";
 import { cn } from "@/lib/utils";
 import { usePreviewServer } from "./use-preview-server";
 
+// Resizable OUTPUT panel (matches the Issue-detail divider, DEC-033): persisted
+// height in px + its floor. Default ≈ the old max-h-44 (11rem).
+const LOG_HEIGHT_KEY = "bezier:live-log-height";
+const LOG_MIN = 80;
+const LOG_DEFAULT = 176;
+
 export function RepoLive({ root }: { root: string }) {
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, log, installing, start, stop, installDeps } = live;
+  const { status, url, error, log, installing, installCmd, start, stop, installDeps } = live;
 
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
+
+  // OUTPUT panel height, dragged via the handle at its top edge and persisted.
+  const [logHeight, setLogHeight] = React.useState<number>(() => {
+    if (typeof window === "undefined") return LOG_DEFAULT;
+    const v = Number(window.localStorage.getItem(LOG_HEIGHT_KEY));
+    return Number.isFinite(v) && v >= LOG_MIN ? v : LOG_DEFAULT;
+  });
+  const draggingRef = React.useRef(false);
+  const onLogResizeStart = React.useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      draggingRef.current = true;
+      const startY = e.clientY;
+      const startH = logHeight;
+      let latest = startH;
+      const onMove = (ev: PointerEvent) => {
+        if (!draggingRef.current) return;
+        // The panel sits at the bottom — dragging UP (smaller clientY) grows it.
+        const max = Math.max(LOG_MIN, window.innerHeight * 0.7);
+        latest = Math.max(LOG_MIN, Math.min(max, startH + (startY - ev.clientY)));
+        setLogHeight(latest);
+      };
+      const onUp = () => {
+        draggingRef.current = false;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        try {
+          window.localStorage.setItem(LOG_HEIGHT_KEY, String(latest));
+        } catch {
+          /* ignore */
+        }
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [logHeight],
+  );
 
   const src = url ? url.replace(/\/+$/, "") + (path.startsWith("/") ? path : `/${path}`) : null;
   const ready = status === "ready" && !!src;
@@ -97,7 +140,7 @@ export function RepoLive({ root }: { root: string }) {
           />
         ) : (
           <div className="flex h-full flex-col">
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
               <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
                 <MonitorPlay className="size-5 text-muted-foreground" />
               </div>
@@ -138,7 +181,9 @@ export function RepoLive({ root }: { root: string }) {
                     ) : (
                       <Download className="size-3.5" />
                     )}
-                    {installing ? t("live.installing") : t("live.installDeps")}
+                    {installing
+                      ? t("live.installing")
+                      : t("live.installDeps", { cmd: installCmd ?? "npm install" })}
                   </Button>
                 </div>
               )}
@@ -148,13 +193,27 @@ export function RepoLive({ root }: { root: string }) {
               )}
             </div>
 
-            {/* Dev-server / install output — so a failure is never a dead end. */}
+            {/* Dev-server / install output — so a failure is never a dead end.
+                Height is draggable from the top edge (DEC-033 parity). */}
             {(log.trim() || installing) && (
-              <div className="shrink-0 border-t">
-                <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+              <div
+                className="flex shrink-0 flex-col border-t"
+                style={{ height: logHeight }}
+              >
+                <div
+                  role="separator"
+                  aria-orientation="horizontal"
+                  onPointerDown={onLogResizeStart}
+                  onDoubleClick={() => setLogHeight(LOG_DEFAULT)}
+                  title={t("live.resizeLog")}
+                  className="group/loghandle -mt-1 flex h-2 shrink-0 cursor-row-resize items-center"
+                >
+                  <div className="h-px w-full bg-transparent transition-colors group-hover/loghandle:bg-primary/50" />
+                </div>
+                <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
                   {t("live.logLabel")}
                 </div>
-                <pre className="max-h-44 overflow-auto bg-muted/30 px-3 pb-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+                <pre className="min-h-0 flex-1 overflow-auto bg-muted/30 px-3 pb-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
                   {log.trim() || "…"}
                 </pre>
               </div>

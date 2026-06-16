@@ -32,6 +32,9 @@ export const en = {
     openFolderFooter: "Open folder…",
     settings: "Settings",
     repoActions: "Repository actions",
+    expandRepo: "Expand",
+    collapseRepo: "Collapse",
+    openRepoLive: "Open {name} (Live)",
     newIssue: "New issue",
     revealFinder: "Reveal in Finder",
     openIde: "Open in IDE",
@@ -131,11 +134,12 @@ export const en = {
     openExternal: "Open in browser",
     stop: "Stop",
     newHint: "Or pick an Issue from the sidebar, or create a New one.",
-    installDeps: "Install dependencies (npm install)",
+    installDeps: "Install dependencies ({cmd})",
     installing: "Installing…",
     retry: "Run again",
     logLabel: "Output",
     depsHint: "If it exited right away, the project's dependencies probably aren't installed.",
+    resizeLog: "Drag to resize (double-click to reset)",
   },
 
   journey: {

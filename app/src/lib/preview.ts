@@ -181,6 +181,51 @@ export async function detectDev(dir: string): Promise<DevDetect> {
   return { scriptsDev: null, framework: null, packageDir: "" };
 }
 
+/** Package managers we know how to install with. */
+export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
+
+// Lockfile → manager, in priority order (a repo may carry more than one; the
+// first match wins). bun has two lockfile names across versions.
+const LOCKFILES: ReadonlyArray<{ file: string; manager: PackageManager }> = [
+  { file: "pnpm-lock.yaml", manager: "pnpm" },
+  { file: "yarn.lock", manager: "yarn" },
+  { file: "bun.lockb", manager: "bun" },
+  { file: "bun.lock", manager: "bun" },
+  { file: "package-lock.json", manager: "npm" },
+];
+
+/** The install command for a manager (`npm install`, `pnpm install`, …). */
+export function installCommand(manager: PackageManager): string {
+  return `${manager} install`;
+}
+
+/**
+ * Decide HOW and WHERE to install deps: walk UP from the package dir looking for
+ * a lockfile (npm / pnpm / yarn / bun). This covers two real cases at once:
+ *   - non-npm projects → use the matching manager, not a hard-coded `npm`.
+ *   - monorepos → the lockfile + node_modules live at the workspace ROOT, above
+ *     the package, so install must run there (running `npm install` inside the
+ *     sub-package wouldn't populate the hoisted node_modules).
+ * Falls back to `npm` in the package dir when no lockfile is found anywhere.
+ */
+export async function detectInstall(
+  worktreePath: string,
+  packageDir: string,
+): Promise<{ manager: PackageManager; cwd: string }> {
+  const start = packageCwd(worktreePath, packageDir);
+  let dir = start;
+  // Bound the walk so a stray path never loops to the filesystem root.
+  for (let i = 0; i < 6; i++) {
+    for (const { file, manager } of LOCKFILES) {
+      if (await fileExists(dir, file)) return { manager, cwd: dir };
+    }
+    const parent = stripTrailingSlash(dir).replace(/\/[^/]+$/, "");
+    if (!parent || parent === dir) break;
+    dir = parent;
+  }
+  return { manager: "npm", cwd: start };
+}
+
 /**
  * A deterministic, repo-stable default port in [4100, 4179]. Deliberately away
  * from 3210 (Bezier's own dev port). Used only when no config exists yet.

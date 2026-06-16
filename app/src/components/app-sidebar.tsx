@@ -213,6 +213,12 @@ export function AppSidebar() {
     });
   }, []);
 
+  // Expand (never collapse) — used when going to a repo's Live so the issue list
+  // opens alongside it (DEC-109: header name = Live + expand).
+  const expandRepo = React.useCallback((path: string) => {
+    setExpanded((prev) => (prev.has(path) ? prev : new Set(prev).add(path)));
+  }, []);
+
   const selectIssue = React.useCallback(
     (repoPath: string, id: string) => {
       if (repoPath !== root) switchTo(repoPath);
@@ -576,6 +582,7 @@ export function AppSidebar() {
                   statusByKey={statusByKey}
                   previewKeys={previewKeys}
                   onToggle={() => toggleRepo(r.path)}
+                  onExpand={() => expandRepo(r.path)}
                   onSelectLive={() => selectLive(r.path)}
                   onSelectIssue={(id) => selectIssue(r.path, id)}
                   onDeleteIssue={(id) => void handleDeleteIssueRow(r.path, id)}
@@ -644,6 +651,7 @@ function RepoGroup({
   statusByKey,
   previewKeys,
   onToggle,
+  onExpand,
   onSelectLive,
   onSelectIssue,
   onDeleteIssue,
@@ -667,6 +675,7 @@ function RepoGroup({
   statusByKey: Map<string, AgentStatus>;
   previewKeys: Set<string>;
   onToggle: () => void;
+  onExpand: () => void;
   onSelectLive: () => void;
   onSelectIssue: (id: string) => void;
   onDeleteIssue: (id: string) => void;
@@ -723,32 +732,51 @@ function RepoGroup({
           />
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={onToggle}
+        // The repo header IS the Live (現状) entry (DEC-109): the chevron toggles
+        // open/close ONLY; clicking the NAME opens that repo's Live and expands
+        // the list. Highlighted when we're actually on Live (active && no issue
+        // selected). A row, not one button, so the two targets are distinct.
+        <div
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-2 py-2 text-xs font-semibold transition-colors hover:bg-sidebar-accent",
+            "flex w-full items-center rounded-md pr-2 text-xs font-semibold transition-colors",
+            active && !selectedId
+              ? "bg-sidebar-accent"
+              : "hover:bg-sidebar-accent",
             active ? "text-foreground" : "text-muted-foreground",
           )}
-          title={path}
         >
-          <ChevronRight
-            className={cn(
-              "size-4 shrink-0 transition-transform",
-              open && "rotate-90",
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={open ? t("sidebar.collapseRepo") : t("sidebar.expandRepo")}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronRight
+              className={cn("size-4 transition-transform", open && "rotate-90")}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onExpand();
+              onSelectLive();
+            }}
+            title={path}
+            aria-label={t("sidebar.openRepoLive", { name })}
+            className="flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
+          >
+            <span className="truncate">{name}</span>
+            {active && (
+              <span className="size-1.5 shrink-0 rounded-full bg-primary" />
             )}
-          />
-          <span className="truncate">{name}</span>
-          {active && (
-            <span className="size-1.5 shrink-0 rounded-full bg-primary" />
-          )}
-          {issues && all.length > 0 && (
-            // Count fades out on hover to make room for the +/… actions.
-            <span className="ml-auto shrink-0 text-[10px] font-normal text-muted-foreground transition-opacity group-hover/repo:opacity-0">
-              {all.length}
-            </span>
-          )}
-        </button>
+            {issues && all.length > 0 && (
+              // Count fades out on hover to make room for the … actions.
+              <span className="ml-auto shrink-0 text-[10px] font-normal text-muted-foreground transition-opacity group-hover/repo:opacity-0">
+                {all.length}
+              </span>
+            )}
+          </button>
+        </div>
       )}
 
       {/* Hover action: the "…" menu (DEC-041 #5 / DEC-089). Aligned to the repo
@@ -814,22 +842,6 @@ function RepoGroup({
 
       {open && (
         <div className="ml-3 border-l pl-2">
-          {/* Live (現状) — the repo's "home": run & see the current app, the
-              orient step before framing an Issue (DEC-109). Always above issues. */}
-          <button
-            type="button"
-            onClick={onSelectLive}
-            title={t("live.title")}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-sidebar-accent",
-              active && !selectedId
-                ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                : "text-foreground/80",
-            )}
-          >
-            <MonitorPlay className="size-3 shrink-0 text-emerald-600/70 dark:text-emerald-400/70" />
-            <span className="truncate">{t("live.title")}</span>
-          </button>
           {!issues ? (
             <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" /> {t("common.loading")}

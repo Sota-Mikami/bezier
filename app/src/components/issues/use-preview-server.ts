@@ -39,6 +39,8 @@ import {
   packageCwd,
   ensureWorktreeNodeModules,
   ensureWorktreeTauriTarget,
+  detectInstall,
+  installCommand,
   type PreviewConfig,
   type Framework,
   type DevDetect,
@@ -170,9 +172,14 @@ export interface PreviewServer {
   start: (override?: PreviewConfig) => Promise<void>;
   /** Kill the dev server and detach listeners. Safe to call repeatedly. */
   stop: () => Promise<void>;
-  /** True while `npm install` is running. */
+  /** True while the install command is running. */
   installing: boolean;
-  /** Run `npm install` in the package dir (for repos without node_modules). */
+  /**
+   * The resolved install command for this repo (`npm install`, `pnpm install`,
+   * …), detected from its lockfile. Null until detection resolves.
+   */
+  installCmd: string | null;
+  /** Install deps with the detected manager (for repos without node_modules). */
   installDeps: () => Promise<void>;
 }
 
@@ -192,6 +199,7 @@ export function usePreviewServer(
   const [url, setUrl] = React.useState<string | null>(null);
   const [configLoaded, setConfigLoaded] = React.useState(false);
   const [installing, setInstalling] = React.useState(false);
+  const [installCmd, setInstallCmd] = React.useState<string | null>(null);
 
   const ptyIdRef = React.useRef<string | null>(null);
   const pollRef = React.useRef<number | null>(null);
@@ -258,16 +266,23 @@ export function usePreviewServer(
         port: defaultPort(root),
         packageDir: detect.packageDir,
       };
-      setConfig(
-        saved
-          ? {
-              devCommand: saved.devCommand.trim() || detected.devCommand,
-              port: saved.port || detected.port,
-              packageDir: saved.packageDir || detected.packageDir,
-            }
-          : detected,
-      );
+      const resolved: PreviewConfig = saved
+        ? {
+            devCommand: saved.devCommand.trim() || detected.devCommand,
+            port: saved.port || detected.port,
+            packageDir: saved.packageDir || detected.packageDir,
+          }
+        : detected;
+      setConfig(resolved);
       setConfigLoaded(true);
+
+      // Resolve the install command from the lockfile (npm/pnpm/yarn/bun), so
+      // the "Install dependencies" button names the RIGHT manager + dir (DEC-109).
+      const inst = await detectInstall(worktreePath, resolved.packageDir).catch(
+        () => null,
+      );
+      if (cancelled) return;
+      if (inst) setInstallCmd(installCommand(inst.manager));
     })();
     return () => {
       cancelled = true;
@@ -303,21 +318,30 @@ export function usePreviewServer(
     setStatus((s) => (s === "idle" ? "idle" : "stopped"));
   }, [clearTimers, detachListeners, previewKey]);
 
-  // Run `npm install` in the package dir for makers who haven't installed deps —
-  // the dev server can't start without node_modules (DEC-109, the Live view's
-  // common first-run snag). Streams into `log`; flips `installing` until it exits.
-  // A throwaway pty (no key), distinct from the dev server.
+  // Install deps for makers who haven't yet — the dev server can't start without
+  // node_modules (DEC-109, the Live view's common first-run snag). The manager
+  // (npm/pnpm/yarn/bun) and the dir to run in are detected from the lockfile, so
+  // non-npm projects AND monorepos (lockfile hoisted above the package) both
+  // work. Streams into `log`; flips `installing` until it exits. A throwaway pty
+  // (no key), distinct from the dev server.
   const installDeps = React.useCallback(async () => {
     if (!worktreePath || installing) return;
-    const cwd = packageCwd(worktreePath, config?.packageDir ?? "");
+    const { manager, cwd } = await detectInstall(
+      worktreePath,
+      config?.packageDir ?? "",
+    ).catch(() => ({
+      manager: "npm" as const,
+      cwd: packageCwd(worktreePath, config?.packageDir ?? ""),
+    }));
+    const cmd = installCommand(manager);
     setInstalling(true);
     setError(null);
-    setLog((l) => `${l}\n[Bezier] npm install …\n`);
+    setLog((l) => `${l}\n[Bezier] ${cmd} …\n`);
     try {
       const id = await ptySpawn({
         cwd,
         cmd: "/bin/sh",
-        args: ["-c", "npm install"],
+        args: ["-c", cmd],
         cols: 120,
         rows: 40,
       });
@@ -333,7 +357,7 @@ export function usePreviewServer(
         offData();
         offExit();
         setInstalling(false);
-        setLog((l) => `${l}\n[Bezier] npm install ${p.code === 0 ? "done." : `exited (${p.code}).`}\n`);
+        setLog((l) => `${l}\n[Bezier] ${cmd} ${p.code === 0 ? "done." : `exited (${p.code}).`}\n`);
       });
     } catch (e) {
       setInstalling(false);
@@ -600,6 +624,7 @@ export function usePreviewServer(
     start,
     stop,
     installing,
+    installCmd,
     installDeps,
   };
 }
