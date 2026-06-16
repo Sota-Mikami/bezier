@@ -26,6 +26,7 @@ import {
   type UnlistenFn,
 } from "@/lib/pty";
 import { readPreviewConfig, packageCwd } from "@/lib/preview";
+import { tt } from "@/lib/i18n";
 import { readFile, writeFile, removeVercelDir } from "@/lib/ipc";
 import {
   getSettings,
@@ -235,9 +236,7 @@ export function usePublish(
       if (!bin) {
         setUrl(null);
         setStatus("error");
-        setLog(
-          "vercel CLI が見つかりません。`npm i -g vercel` でインストールし、`vercel login` してください。",
-        );
+        setLog(tt("publishFlow.vercelNotFound"));
         finish(null);
         return null;
       }
@@ -260,9 +259,7 @@ export function usePublish(
           parsed = JSON.parse(overrideTxt);
         } catch {
           setStatus("error");
-          setLog(
-            "[Bezier] .bezier/publish-env.json が無効な JSON です。修正するか削除してください。",
-          );
+          setLog(tt("publishFlow.invalidEnvJson"));
           finish(null);
           return null;
         }
@@ -317,9 +314,9 @@ export function usePublish(
       // Make what's injected VISIBLE (the user can open the log).
       const header =
         (envPairs.length > 0
-          ? `[Bezier] 公開値（NEXT_PUBLIC_/VITE_）${envPairs.length} 件を注入。サーバ秘密は注入しません — 必要なら Vercel のプロジェクト設定に。\n`
-          : "[Bezier] 公開env（NEXT_PUBLIC_）は見つかりませんでした。サーバ env は Vercel に設定してください。\n") +
-        (scope ? `[Bezier] アカウント: ${conn?.label}（scope: ${scope}）\n` : "");
+          ? tt("publishFlow.injectedPublic", { n: envPairs.length })
+          : tt("publishFlow.noPublicEnv")) +
+        (scope ? tt("publishFlow.account", { label: conn?.label ?? "", scope }) : "");
 
       detach();
       idRef.current = null;
@@ -386,11 +383,7 @@ export function usePublish(
           } else {
             // Friendly hints for the most common non-engineer failures.
             if (/Not authenticated|vercel login|No existing credentials/i.test(logAccRef.current)) {
-              setLog(
-                (l) =>
-                  l +
-                  "\n[Bezier] ヒント: `vercel login` が必要かもしれません。ターミナルで実行してください。",
-              );
+              setLog((l) => l + tt("publishFlow.loginHint"));
             } else if (!resolved) {
               setLog(
                 (l) => l + "\n[Bezier] デプロイ URL を取得できませんでした（exit 0 でも URL なし）。",

@@ -83,10 +83,11 @@ test("ISSUE_STATUSES lists the three persisted statuses", () => {
 });
 
 test("documentLabel: known stems map, unknown stems humanize", () => {
+  // Default locale in tests is English (DEC-108).
   assert.equal(documentLabel("spec"), "Spec");
   assert.equal(documentLabel("qa"), "QA");
-  assert.equal(documentLabel("decision"), "決定");
-  assert.equal(documentLabel("handoff"), "共有");
+  assert.equal(documentLabel("decision"), "Decision");
+  assert.equal(documentLabel("handoff"), "Handoff");
   assert.equal(documentLabel("design-notes"), "Design Notes");
 });
 

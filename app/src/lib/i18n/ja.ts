@@ -74,6 +74,37 @@ export const ja: Messages = {
     issueTitleWithState: "{title}（{state}）",
   },
 
+  docType: {
+    spec: "Spec",
+    qa: "QA",
+    decision: "決定",
+    handoff: "共有",
+  },
+
+  imageInsert: {
+    saveFailed: "画像を保存できませんでした: {msg}",
+    loadFailed: "画像を読み込めませんでした: {msg}",
+    errorTitle: "画像の挿入エラー",
+  },
+
+  publishFlow: {
+    vercelNotFound: "vercel CLI が見つかりません。`npm i -g vercel` でインストールし、`vercel login` してください。",
+    invalidEnvJson: "[Bezier] .bezier/publish-env.json が無効な JSON です。修正するか削除してください。",
+    injectedPublic: "[Bezier] 公開値（NEXT_PUBLIC_/VITE_）{n} 件を注入。サーバ秘密は注入しません — 必要なら Vercel のプロジェクト設定に。\n",
+    noPublicEnv: "[Bezier] 公開env（NEXT_PUBLIC_）は見つかりませんでした。サーバ env は Vercel に設定してください。\n",
+    account: "[Bezier] アカウント: {label}（scope: {scope}）\n",
+    loginHint: "\n[Bezier] ヒント: `vercel login` が必要かもしれません。ターミナルで実行してください。",
+    pwProtectFailed: "この環境ではパスワード保護を適用できませんでした。",
+    listenerFailed: "\n[Bezier] リスナー登録に失敗しました。",
+  },
+
+  previewServer: {
+    devCommandUnset: "dev コマンドが未設定です。設定欄でコマンドを入力して保存してください。",
+    nodeModulesFailed: "{msg} — node_modules を用意できなかったため dev server を起動できません。",
+    processExited: "dev server プロセスが終了しました。下のログを確認してください。",
+    noResponse: "{sec} 秒以内に {target} が応答しませんでした。dev コマンドとポートを確認してください。",
+  },
+
   journey: {
     specEmpty: "*(spec はまだありません)*",
     openApp: "アプリを開く →",

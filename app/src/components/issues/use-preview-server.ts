@@ -45,6 +45,7 @@ import {
   type RunnerKind,
 } from "@/lib/preview";
 import { getSettings } from "@/lib/settings";
+import { tt } from "@/lib/i18n";
 
 export type PreviewStatus = "idle" | "starting" | "ready" | "error" | "stopped";
 
@@ -306,9 +307,7 @@ export function usePreviewServer(
       // (`npm run tauri dev …`), so it doesn't.
       if (!cfg || (!isTauri && !cfg.devCommand.trim())) {
         setStatus("error");
-        setError(
-          "dev コマンドが未設定です。設定欄でコマンドを入力して保存してください。",
-        );
+        setError(tt("previewServer.devCommandUnset"));
         return;
       }
 
@@ -336,7 +335,7 @@ export function usePreviewServer(
       } catch (e) {
         setStatus("error");
         setError(
-          `${e instanceof Error ? e.message : String(e)} — node_modules を用意できなかったため dev server を起動できません。`,
+          tt("previewServer.nodeModulesFailed", { msg: e instanceof Error ? e.message : String(e) }),
         );
         return;
       }
@@ -401,9 +400,7 @@ export function usePreviewServer(
           clearTimers();
           ptyIdRef.current = null;
           setStatus((s) => (s === "ready" ? "stopped" : "error"));
-          setError(
-            "dev server プロセスが終了しました。下のログを確認してください。",
-          );
+          setError(tt("previewServer.processExited"));
         }),
       );
 
@@ -432,9 +429,10 @@ export function usePreviewServer(
               clearTimers();
               setStatus("error");
               setError(
-                `${Math.round(
-                  READY_TIMEOUT_MS / 1000,
-                )} 秒以内に ${target} が応答しませんでした。dev コマンドとポートを確認してください。`,
+                tt("previewServer.noResponse", {
+                  sec: Math.round(READY_TIMEOUT_MS / 1000),
+                  target,
+                }),
               );
             }
           });

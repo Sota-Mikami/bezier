@@ -75,6 +75,37 @@ export const en = {
     issueTitleWithState: "{title} ({state})",
   },
 
+  docType: {
+    spec: "Spec",
+    qa: "QA",
+    decision: "Decision",
+    handoff: "Handoff",
+  },
+
+  imageInsert: {
+    saveFailed: "Couldn't save the image: {msg}",
+    loadFailed: "Couldn't load the image: {msg}",
+    errorTitle: "Image insert error",
+  },
+
+  publishFlow: {
+    vercelNotFound: "vercel CLI not found. Install it with `npm i -g vercel`, then run `vercel login`.",
+    invalidEnvJson: "[Bezier] .bezier/publish-env.json is invalid JSON. Fix or delete it.",
+    injectedPublic: "[Bezier] Injected {n} public value(s) (NEXT_PUBLIC_/VITE_). Server secrets are NOT injected — set them in your Vercel project settings if needed.\n",
+    noPublicEnv: "[Bezier] No public env (NEXT_PUBLIC_) found. Set server env in Vercel.\n",
+    account: "[Bezier] Account: {label} (scope: {scope})\n",
+    loginHint: "\n[Bezier] Hint: you may need `vercel login`. Run it in your terminal.",
+    pwProtectFailed: "Password protection couldn't be applied in this environment.",
+    listenerFailed: "\n[Bezier] Failed to register the listener.",
+  },
+
+  previewServer: {
+    devCommandUnset: "The dev command isn't set. Enter and save a command in settings.",
+    nodeModulesFailed: "{msg} — couldn't prepare node_modules, so the dev server can't start.",
+    processExited: "The dev server process exited. Check the log below.",
+    noResponse: "{target} didn't respond within {sec} seconds. Check the dev command and port.",
+  },
+
   journey: {
     specEmpty: "*(no spec yet)*",
     openApp: "Open the app →",

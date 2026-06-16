@@ -5,6 +5,7 @@
 
 import type { EditorView } from "@codemirror/view";
 import { writeFileBytes, readFileBytes, messageDialog, pickImageFiles } from "@/lib/ipc";
+import { tt } from "@/lib/i18n";
 
 /** Directory portion of an absolute file path ("" when none). */
 export function dirOf(path: string): string {
@@ -72,8 +73,8 @@ async function writeAndInsert(
     return pos + snippet.length + 1;
   } catch (e) {
     await messageDialog(
-      `画像を保存できませんでした: ${e instanceof Error ? e.message : String(e)}`,
-      { title: "画像の挿入エラー" },
+      tt("imageInsert.saveFailed", { msg: e instanceof Error ? e.message : String(e) }),
+      { title: tt("imageInsert.errorTitle") },
     );
     return pos;
   }
@@ -114,8 +115,8 @@ export async function pickAndInsertImages(
       pos = await writeAndInsert(view, baseDir, bytes, p.split("/").pop() ?? "image.png", "", pos);
     } catch (e) {
       await messageDialog(
-        `画像を読み込めませんでした: ${e instanceof Error ? e.message : String(e)}`,
-        { title: "画像の挿入エラー" },
+        tt("imageInsert.loadFailed", { msg: e instanceof Error ? e.message : String(e) }),
+        { title: tt("imageInsert.errorTitle") },
       );
     }
   }

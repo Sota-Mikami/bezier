@@ -18,6 +18,7 @@ import {
   type UnlistenFn,
 } from "@/lib/pty";
 import { readFile, writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
+import { tt } from "@/lib/i18n";
 import { getSettings } from "@/lib/settings";
 import { buildJourneyHtml, buildGatePage, type EncryptedBlob } from "@/lib/journey";
 import { gitRemoteUrl, type Checkpoint } from "@/lib/git";
@@ -147,9 +148,7 @@ export function useJourney(
       const bin = await resolveCommand("vercel").catch(() => "");
       if (!bin) {
         setStatus("error");
-        setLog(
-          "vercel CLI が見つかりません。`npm i -g vercel` でインストールし、`vercel login` してください。",
-        );
+        setLog(tt("publishFlow.vercelNotFound"));
         return;
       }
 
@@ -205,7 +204,7 @@ export function useJourney(
           pageHtml = buildGatePage(title, await encryptHtml(pageHtml, password));
         } catch {
           setStatus("error");
-          setLog("この環境ではパスワード保護を適用できませんでした。");
+          setLog(tt("publishFlow.pwProtectFailed"));
           return;
         }
       }
@@ -291,7 +290,7 @@ export function useJourney(
       );
       } catch {
         setStatus("error");
-        setLog((l) => l + "\n[Bezier] リスナー登録に失敗しました。");
+        setLog((l) => l + tt("publishFlow.listenerFailed"));
       }
     } finally {
       busyRef.current = false;

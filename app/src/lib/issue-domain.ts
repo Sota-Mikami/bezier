@@ -1,7 +1,11 @@
-// Issue domain primitives — pure, dependency-free (no IPC / fs / settings / React).
+// Issue domain primitives — pure (no IPC / fs / React). The one exception is
+// documentLabel(), which reads the UI locale via the safe non-React tt() snapshot
+// (DEC-108) so doc labels follow the language; everything else stays dependency-free.
 // Extracted from issues.ts so the issue state machine and naming rules can be
 // unit-tested in isolation and reused without pulling in the data layer.
 // Re-exported from issues.ts, so `@/lib/issues` consumers are unaffected.
+
+import { tt } from "@/lib/i18n";
 
 // Persisted lifecycle marker, auto-maintained (no manual editing, DEC-027):
 // open (no work) → in-progress (worktree exists) → merged (landed on main). The
@@ -82,22 +86,24 @@ export function issueFolderName(id: string, slug: string): string {
 // created docs) is humanized and sorted after, so the view reflects whatever
 // the repo's conventions produced without a fixed schema.
 
-const DOC_LABELS: Record<string, string> = {
-  spec: "Spec",
-  decision: "決定",
-  decisions: "決定",
-  qa: "QA",
-  handoff: "共有",
-  share: "共有",
+// Known stems → a docType catalog key (the label follows the UI locale, DEC-108).
+const DOC_LABEL_KEYS: Record<string, "spec" | "decision" | "qa" | "handoff"> = {
+  spec: "spec",
+  decision: "decision",
+  decisions: "decision",
+  qa: "qa",
+  handoff: "handoff",
+  share: "handoff",
 };
 
 const DOC_ORDER = ["spec", "decision", "decisions", "qa", "handoff", "share"];
 
 /** Display label for a document, keyed by its filename stem ("qa" → "QA").
- * Unknown stems are humanized ("design-notes" → "Design Notes"). */
+ * Known stems use the locale catalog; unknown stems are humanized
+ * ("design-notes" → "Design Notes"). */
 export function documentLabel(stem: string): string {
-  const known = DOC_LABELS[stem.toLowerCase()];
-  if (known) return known;
+  const key = DOC_LABEL_KEYS[stem.toLowerCase()];
+  if (key) return tt(`docType.${key}`);
   return stem
     .replace(/[-_]+/g, " ")
     .trim()
