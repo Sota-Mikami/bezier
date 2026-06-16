@@ -120,11 +120,13 @@ async function resolveLaunch(
   if (spawn && spawn.wrap) {
     const sh = await resolveUserShell();
     // The agent runs by absolute path (no PATH needed), so the outer shell is a
-    // plain `-c`; when it exits we `exec` a full interactive LOGIN shell (-il) so
-    // the leftover terminal has the user's real env (PATH/aliases → `claude`
-    // works again), in the same cwd.
+    // plain `-c`. On a CLEAN exit (code 0 — e.g. `/exit`) we `exec` a full
+    // interactive LOGIN shell so the terminal stays usable (TQ-1). On a NON-zero
+    // exit we propagate it (don't swallow it in a shell) so the session's
+    // exit-based logic still fires — notably the `claude --continue` resume
+    // fallback, which relaunches a fresh seed when there's no session to resume.
     const parts = [spawn.cmd, ...(spawn.args ?? [])].map(shQuote).join(" ");
-    const script = `${parts}; exec ${shQuote(sh.cmd)} -il`;
+    const script = `${parts}; __c=$?; if [ "$__c" = 0 ]; then exec ${shQuote(sh.cmd)} -il; else exit "$__c"; fi`;
     return { cmd: sh.cmd, args: ["-c", script] };
   }
   if (spawn) return { cmd: spawn.cmd, args: spawn.args ?? [] };
