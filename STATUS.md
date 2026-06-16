@@ -1,4 +1,4 @@
-<!-- 最終更新: 2026-06-16 / DEC-112 「入り口(Live)」実装完走＋どんなwebスタックでも開ける堅牢化(出力URL検出·nvm最新Nodeフォールバック·packageDir検証自己修復·PATH/agent再検出·devスクリプト名拡張·iframe不可→ブラウザ案内)·全本番反映済(22:05ビルド) / DEC-111 repo readiness設計 / DEC-108 i18n 全部日英 / DEC-107 i18n基盤 / DEC-106 CPを履歴ドロワーへ / 中央IA確定(Design/Prototype 2エリア·Map·グローバル注釈モード) / DEC-105 Document View・状態=受入基準・Clarify=skillマーケット·Implement=Preview -->
+<!-- 最終更新: 2026-06-16 / DEC-112 「入り口(Live)」実装完走＋どんなwebスタックでも開ける堅牢化(出力URL検出·nvm最新Nodeフォールバック·packageDir検証自己修復·PATH/agent再検出·devスクリプト名拡張·iframe不可→ブラウザ案内·Issue Preview worktreeへ.env symlink)·全本番反映済(22:21ビルド) / DEC-111 repo readiness設計 / DEC-108 i18n 全部日英 / DEC-107 i18n基盤 / DEC-106 CPを履歴ドロワーへ / 中央IA確定(Design/Prototype 2エリア·Map·グローバル注釈モード) / DEC-105 Document View・状態=受入基準・Clarify=skillマーケット·Implement=Preview -->
 # Bezier — 現在地
 
 > **新しいチャットへ**: まずこの「オンボーディング・サマリ」(§0〜§5) を読めば、**何のサービスで・何を目指し・今何ができ・次に何を検討しているか**が分かる。詳細な意思決定は `playbook/decisions-log.md`（DEC-###・逆時系列）、憲章は `COMPANY.md`、時系列の作業ログは本ファイルの §6 以降（過去の append ログ）。
@@ -35,11 +35,12 @@
 - **dev に反映済み（2026-06-16 までの全部）**: 中央IA確定（Design/Prototype 2エリア・Map・グローバル注釈モード）・チェックポイントを履歴ドロワーへ（DEC-106）・**i18n 全部日英（DEC-107/108）**。さらに前回分の共有 UX 一新（DEC-100/101/102）・Merge 確認/main 保護（DEC-099）・パスワード保護。各段 tsc/eslint/vitest(23)/build green。
 - **i18n の要点（DEC-107/108）**: 依存ライブラリなしの型付き i18n（`src/lib/i18n/`・en 既定・型で全言語の鍵パリティ）。Agent 向け文言は `src/lib/prompts.ts` に en/ja co-located（将来の多言語同時チューニング＋eval を見据えた配置・[[prompt-tuning-multilingual-eval]]）。活動ログの自由ノートは**描画時**ローカライズ（書込時に言語凍結しない）。
 - **🐛 共有失敗の修正（DEC-102・既出）**: 大文字 ULID dir→Vercel 400 を `bezier-share/<小文字 id>` で修正済み。
-- **✅ 本番 `.app` 反映済（2026-06-16 22:05 ビルド）**: IA確定 / Map / 注釈モード / CP移設 / i18n全部日英 に加え、**repo readiness（DEC-111 P1〜4）＋「入り口(Live)」堅牢化（DEC-112）**まで全て `/Applications/Bezier.app` に反映済み。日常使いの `.app` が最新。再ビルド時は `npm run tauri -- build --bundles app` → `/Applications` へ **`ditto`**（[[bezier-prod-app-for-daily-use]]・`rm -rf /Applications` は権限拒否されるので ditto で in-place 置換）。反映確認は**バイナリ mtime**＋新コマンド grep。
+- **✅ 本番 `.app` 反映済（2026-06-16 22:21 ビルド）**: IA確定 / Map / 注釈モード / CP移設 / i18n全部日英 に加え、**repo readiness（DEC-111 P1〜4）＋「入り口(Live)」堅牢化＋Issue Preview の worktree env mirror（DEC-112）**まで全て `/Applications/Bezier.app` に反映済み。日常使いの `.app` が最新。再ビルド時は `npm run tauri -- build --bundles app` → `/Applications` へ **`ditto`**（[[bezier-prod-app-for-daily-use]]・`rm -rf /Applications` は権限拒否されるので ditto で in-place 置換）。反映確認は**バイナリ mtime**＋新コマンド grep。
 - **🚪 入り口(Live) = どんな web スタックでも開ける（DEC-112・[[live-preview-robustness]]）**: 「web である限り Live を開け、環境不備は最大限案内してユーザーに責任を渡す」を達成。
   - **readiness（DEC-111 P1〜4 完走）**: 準備チェックリスト（Node pin 未／依存 無／lockfile 古い／.env 無）＋1クリック修正＋［全部準備する］／git 鮮度の非ブロッキングバナー＋安全 ff-only ［最新化］／setup ハンドオフ（開くだけ）／サイドバー repo バッジ。秘密値は絶対触らない・ブロックしない。SSOT = `playbook/research/2026-06-16_repo-readiness-design.md`。
   - **どのスタックでも起動（dogfood で確立）**: ①**ポート推測をやめ dev サーバーの出力 URL を読む**（固定ポート/`run-p`/入れ子モノレポ/衝突に強い）②**pin 無しは nvm 最新 Node**（古い system Node 回避）③**packageDir を検証・自己修復**（壊れた保存値を無視）④**dev スクリプト名拡張**（dev/develop/serve/start）⑤**iframe 不可を検知**して［ブラウザで開く］案内⑥失敗時は OUTPUT＋［ターミナルで起動］で詰ませない。
   - **GUI 起動の落とし穴も解消**: Finder 起動の最小 PATH に nvm/Homebrew/local を補正・claude/node を発見／エージェント再検出 UI／`node_modules` は `pathMtime` 直接確認（`list_dir` は除外する）／nvm は grant 回避で読む／RepoLive を root で key（2リポ混線解消）。
+  - **Issue Preview（worktree）も env を揃える**: worktree は gitignore された `.env` を持って来ない → 実 repo の `.env*`（ルート＋ワークスペース）を worktree へ **symlink**（`mirror_worktree_env`・秘密複製なし・追跡済みは上書きしない）。`.env` 依存のどの repo の Issue Preview でも動く。
   - **残（実際に当たったら）**: 非nvm版管理（fnm/asdf/volta）／2階層以上深いモノレポでルートに dev 無し／Node 以外の web スタック。
 
 ## §4. 次に検討する機能（backlog・`playbook/ideas-backlog.md` が正本）
