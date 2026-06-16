@@ -405,6 +405,7 @@ export const ja: Messages = {
   },
 
   map: {
+    needWorktree: "先に Prototype で worktree を作成してください。",
     loadingMap: "Map を読み込み中…",
     scopeLabel: "範囲",
     entryRoute: "開始ルート",

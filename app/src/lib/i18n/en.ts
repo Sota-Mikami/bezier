@@ -406,6 +406,7 @@ export const en = {
   },
 
   map: {
+    needWorktree: "Create a worktree first via Prototype.",
     loadingMap: "Loading Map…",
     scopeLabel: "Scope",
     entryRoute: "Start route",

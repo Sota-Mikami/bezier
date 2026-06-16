@@ -79,6 +79,7 @@ import {
 } from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
+import { adoptVariantPrompt, conflictResolvePrompt } from "@/lib/prompts";
 import type {
   ImplementSession,
   SessionAction,
@@ -769,11 +770,7 @@ export function useImplementSession(
         setError(tt("session.noAgent"));
         return;
       }
-      const pickPrompt = [
-        `デザインの方向として **案 ${id}（design/${id}-*.html）を採用** します。`,
-        `\`${issue.dir}/design/\` の案 ${id} を読み、その方向に沿って **この worktree 内の実コード（実物の DS）で実装/調整** してください（受入基準を満たすことをゴールに）。`,
-        "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
-      ].join("\n");
+      const pickPrompt = adoptVariantPrompt(id, `${issue.dir}/design/`);
       setAction("variant");
       setError(null);
       setInfo(null);
@@ -1095,14 +1092,8 @@ export function useImplementSession(
   // the human concludes the merge via Accept (commit on the branch).
   const resolveConflictsWithAI = React.useCallback(() => {
     if (!ref || action || !selectedAgent?.available) return;
-    const files = syncConflicts.join(", ");
-    const prompt = [
-      `git worktree \`${ref.path}\` でベースブランチ \`${baseBranchRef.current}\` を取り込んだ際にマージ衝突が発生しました。`,
-      files ? `衝突ファイル: ${files}。` : "",
-      "各ファイルの衝突マーカー (<<<<<<< / ======= / >>>>>>>) を解決し、解決後に `git add` してください（commit は人間が UI の Commit から行います）。",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const files = syncConflicts.join(", ") || null;
+    const prompt = conflictResolvePrompt(ref.path, baseBranchRef.current, files);
     launchAgent(selectedAgent, workDir(ref.path), { prompt });
   }, [ref, action, selectedAgent, syncConflicts, launchAgent, workDir]);
 

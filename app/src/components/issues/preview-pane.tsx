@@ -34,6 +34,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { openExternal } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
+import { previewFeedbackPrompt } from "@/lib/prompts";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
@@ -63,18 +64,7 @@ function buildAnnotationSurface(session: ImplementSession): AnnotationSurface {
     key: "build",
     canSend: !!session.ref,
     cannotSendMessage: tt("preview.cannotSendNoWorktree"),
-    buildPrompt: (lines, shot) =>
-      [
-        "## デザインフィードバック",
-        "プレビュー上の注釈への修正依頼です。下記の番号付き指示に従い、この worktree 内の UI を修正してください。",
-        shot
-          ? `注釈つきスクリーンショット: \`${shot}\`（この画像を開き、同じ番号の付いた箇所を確認してください）`
-          : "(スクリーンショットは取得できませんでした。位置％を参考にしてください)",
-        "",
-        ...lines,
-        "",
-        "対応したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
-      ].join("\n"),
+    buildPrompt: (lines, shot) => previewFeedbackPrompt(lines, shot),
     send: (p, n) => session.sendDesignFeedback(p, n),
   };
 }

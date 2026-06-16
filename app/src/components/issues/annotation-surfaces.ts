@@ -3,35 +3,12 @@
 // `designSurface` (design-variants); these add md docs / Map / QA. Each surface
 // only declares WHAT the annotations instruct — the AnnotationLayer (Pin / Area /
 // Pen + screenshot) is fully shared. Sending routes through sendDesignFeedback.
+// The agent prompt text follows the maker's UI locale (DEC-108 · @/lib/prompts).
 
+import { tt } from "@/lib/i18n";
+import { docFeedbackPrompt, mapFeedbackPrompt, qaFeedbackPrompt } from "@/lib/prompts";
 import type { ImplementSession } from "./implement-session-types";
 import type { AnnotationSurface } from "./design-annotations";
-
-function feedbackSurface(
-  session: ImplementSession,
-  key: string,
-  canSend: boolean,
-  cannotSendMessage: string,
-  header: string[],
-): AnnotationSurface {
-  return {
-    key,
-    canSend,
-    cannotSendMessage,
-    buildPrompt: (lines, shot) =>
-      [
-        ...header,
-        shot
-          ? `注釈つきスクリーンショット: \`${shot}\`（同じ番号の付いた箇所を確認してください）`
-          : "(スクリーンショットは取得できませんでした。位置％を参考にしてください)",
-        "",
-        ...lines,
-        "",
-        "対応したら変更点を簡潔に要約してください（commit は人間が Bezier の UI から行います）。",
-      ].join("\n"),
-    send: (p, n) => session.sendDesignFeedback(p, n),
-  };
-}
 
 /** md document (Spec / 決定 / QA-doc): reflect the annotations into the doc or impl. */
 export function docAnnotationSurface(
@@ -40,16 +17,13 @@ export function docAnnotationSurface(
   type: string,
   label: string,
 ): AnnotationSurface {
-  return feedbackSurface(
-    session,
-    `doc:${type}`,
-    true,
-    "利用可能なエージェントが見つかりません。",
-    [
-      `## ドキュメント「${label}」への注釈`,
-      `\`${docPath}\` の下記の番号付き注釈を反映してください（文書の更新、または実装への反映）。`,
-    ],
-  );
+  return {
+    key: `doc:${type}`,
+    canSend: true,
+    cannotSendMessage: tt("session.noAgent"),
+    buildPrompt: (lines, shot) => docFeedbackPrompt(label, docPath, lines, shot),
+    send: (p, n) => session.sendDesignFeedback(p, n),
+  };
 }
 
 /** Map (bird's-eye): annotations target the scoped screens of the real app. */
@@ -57,28 +31,22 @@ export function mapAnnotationSurface(
   session: ImplementSession,
   routes: string[],
 ): AnnotationSurface {
-  return feedbackSurface(
-    session,
-    "map",
-    !!session.ref,
-    "先に Prototype で worktree を作成してください。",
-    [
-      "## Map（俯瞰）への注釈",
-      `対象範囲: ${routes.join(", ") || "(未指定)"}。下記の注釈に従い、該当画面を worktree 内で修正してください。`,
-    ],
-  );
+  return {
+    key: "map",
+    canSend: !!session.ref,
+    cannotSendMessage: tt("map.needWorktree"),
+    buildPrompt: (lines, shot) => mapFeedbackPrompt(routes, lines, shot),
+    send: (p, n) => session.sendDesignFeedback(p, n),
+  };
 }
 
 /** QA table: annotations are remarks on test cases / coverage. */
 export function qaAnnotationSurface(session: ImplementSession): AnnotationSurface {
-  return feedbackSurface(
-    session,
-    "qa",
-    true,
-    "利用可能なエージェントが見つかりません。",
-    [
-      "## QA への注釈",
-      "下記は QA 項目・観点への指摘です。spec.md の受入基準や実装に反映してください。",
-    ],
-  );
+  return {
+    key: "qa",
+    canSend: true,
+    cannotSendMessage: tt("session.noAgent"),
+    buildPrompt: (lines, shot) => qaFeedbackPrompt(lines, shot),
+    send: (p, n) => session.sendDesignFeedback(p, n),
+  };
 }

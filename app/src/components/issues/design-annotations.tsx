@@ -38,6 +38,7 @@ import {
 } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
+import { promptPhrases } from "@/lib/prompts";
 import type { ImplementSession } from "./implement-session-types";
 
 // Comment is now Figma-style — click = point pin, drag = area rect (DEC-068), so
@@ -335,9 +336,10 @@ export function AnnotationLayer({
       setBusy(true);
       try {
         const shot = await captureShot(false);
-        const marks = batch.map((a) => `${numberOf(a.id)}. [${describe(a)}] ${a.text.trim() || "(描画/指定を参照)"}`);
+        const ph = promptPhrases();
+        const marks = batch.map((a) => `${numberOf(a.id)}. [${describe(a)}] ${a.text.trim() || ph.markFallback}`);
         const lines = note?.trim()
-          ? [`（全体の指示）${note.trim()}`, "", ...marks]
+          ? [ph.overall(note.trim()), "", ...marks]
           : marks;
         const promptText = surface.buildPrompt(lines, shot);
         await surface.send(
@@ -582,21 +584,23 @@ function penPath(path: { x: number; y: number }[]): string {
   return path.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x * 100} ${p.y * 100}`).join(" ");
 }
 
-/** Human-readable "where" for the agent prompt, per annotation kind. */
+/** Human-readable "where" for the agent prompt, per annotation kind (locale). */
 function describe(a: Annotation): string {
+  const p = promptPhrases();
+  const pos = `${pct(a.x)},${pct(a.y)}`;
   switch (a.kind) {
     case "pen":
-      return `ペン注釈 位置 ${pct(a.x)},${pct(a.y)}`;
+      return p.describePen(pos);
     case "rect":
-      return `領域 左上 ${pct(a.x)},${pct(a.y)} / 幅${pct(a.rect?.w ?? 0)} 高${pct(a.rect?.h ?? 0)}`;
+      return p.describeRect(pos, pct(a.rect?.w ?? 0), pct(a.rect?.h ?? 0));
     case "element": {
       const el = a.element;
-      const sel = el?.selector ? ` セレクタ \`${el.selector}\`` : "";
-      const tag = el?.tag ? `<${el.tag}>` : "要素";
-      return `${tag}${sel} 位置 ${pct(a.x)},${pct(a.y)}`;
+      const sel = el?.selector ? p.describeSelector(el.selector) : "";
+      const tag = el?.tag ? `<${el.tag}>` : p.describeElementWord;
+      return p.describeElement(tag, sel, pos);
     }
     default:
-      return `ピン 位置 ${pct(a.x)},${pct(a.y)}`;
+      return p.describePin(pos);
   }
 }
 

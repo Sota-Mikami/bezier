@@ -19,6 +19,7 @@ import { Loader2, Plus, Sparkles, ArrowRightCircle, Check, X } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { useT, tt } from "@/lib/i18n";
+import { designRevisePrompt } from "@/lib/prompts";
 import { removePath } from "@/lib/ipc";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
 import {
@@ -375,18 +376,12 @@ export function designSurface(
     canSend: agentAvailable,
     cannotSendMessage: tt("designVariants.noAgent"),
     buildPrompt: (lines, shot) =>
-      [
-        `## デザイン別案の改訂 — 案 ${pattern.id}`,
-        `\`${session.issue.dir}/design/${pattern.file}\` を、下記の番号付き注釈に従って改訂してください。`,
-        "**ワイヤーの規約は維持**：スタック非依存・プレーンなインライン CSS のみ・グレースケール。**実装コードは書かない**（これは Design）。",
-        shot
-          ? `注釈つきスクリーンショット: \`${shot}\`（同じ番号の付いた箇所を確認）`
-          : "(スクリーンショットは取得できませんでした。位置％を参考に)",
-        "",
-        ...lines,
-        "",
-        "改訂したらチャットで一言だけ要約してください。",
-      ].join("\n"),
+      designRevisePrompt(
+        pattern.id,
+        `${session.issue.dir}/design/${pattern.file}`,
+        lines,
+        shot,
+      ),
     send: (p, n) => revise(p, tt("designVariants.reviseNote", { id: pattern.id, note: n })),
   };
 }
