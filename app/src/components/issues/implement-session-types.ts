@@ -96,7 +96,6 @@ export interface ImplementSession {
 
   canGenerateVariant: boolean;
   handleGenerateVariant: (ids: string[], context: string) => Promise<void>;
-  handlePickVariant: (id: string) => Promise<void>;
   reviseDesignPattern: (promptText: string, note: string) => Promise<void>;
   handleDiscard: () => Promise<void>;
 }

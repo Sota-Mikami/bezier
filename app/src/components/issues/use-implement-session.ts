@@ -63,11 +63,6 @@ import {
   type Checkpoint,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
-import {
-  listVariants,
-  writeAdoptedDesign,
-  syncSpecDesignSection,
-} from "@/lib/variants";
 import { getSettings, resolveDark } from "@/lib/settings";
 import {
   ptyWrite,
@@ -80,7 +75,7 @@ import {
 } from "@/lib/pty";
 import { confirmDialog } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
-import { adoptVariantPrompt, conflictResolvePrompt } from "@/lib/prompts";
+import { conflictResolvePrompt } from "@/lib/prompts";
 import type {
   ImplementSession,
   SessionAction,
@@ -761,77 +756,6 @@ export function useImplementSession(
     [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir],
   );
 
-  // Adopt a Design direction (DEC-051/054): implement the chosen wireframe in the
-  // REAL Build (worktree code = the convergence half of the hybrid). This is the
-  // design→build PROMOTION: if no worktree exists yet (designs were explored
-  // pre-Build), create the branch + worktree first, then build the picked
-  // direction; if one already exists, continue the conversation. The agent reads
-  // the picked wireframe via `--add-dir issue.dir`.
-  const handlePickVariant = React.useCallback(
-    async (id: string) => {
-      if (action) return;
-      if (!selectedAgent?.available) {
-        setError(tt("session.noAgent"));
-        return;
-      }
-      const pickPrompt = adoptVariantPrompt(id, `${issue.dir}/design/`);
-      setAction("variant");
-      setError(null);
-      setInfo(null);
-      try {
-        // Record the DECISION (durable) + mirror it into spec.md (DEC-056).
-        await writeAdoptedDesign(issue, id).catch(() => {});
-        await listVariants(issue)
-          .then((vs) => syncSpecDesignSection(issue, vs, id))
-          .catch(() => {});
-        await ptyKillKey(issue.id).catch(() => {});
-        if (ref) {
-          // Already building — continue in the worktree.
-          launchAgent(selectedAgent, workDir(ref.path), {
-            prompt: pickPrompt,
-            resume: true,
-          });
-          void logEvent("variant", { key: "threadNote.variantAdopted", params: { id } });
-        } else {
-          // Promote: pre-Build design → create the worktree, then build.
-          if (!gitRepo) {
-            setError(tt("session.gitRequired"));
-            setAction(null);
-            return;
-          }
-          const branch = branchName(issue);
-          const wt = await worktreeDir(root, issue);
-          await gitWorktreeAdd(root, branch, wt);
-          const newRef: WorktreeRef = { branch, path: wt, baseSHA: "" };
-          await writeWorktreeRef(issue, newRef);
-          await updateIssueMeta(root, issue, { status: "in-progress" });
-          onStatusChange("in-progress");
-          setRef(newRef);
-          launchAgent(selectedAgent, workDir(wt), { prompt: pickPrompt });
-          void logEvent("variant", { key: "threadNote.variantAdoptedStart", params: { id } });
-          void loadBehind(wt);
-        }
-      } catch (e) {
-        setError(errMsg(e));
-      } finally {
-        setAction(null);
-      }
-    },
-    [
-      ref,
-      action,
-      gitRepo,
-      selectedAgent,
-      root,
-      issue,
-      launchAgent,
-      logEvent,
-      workDir,
-      onStatusChange,
-      loadBehind,
-    ],
-  );
-
   // Revise a Design wireframe from annotations (DEC-056). Same launch shape as
   // generation (cwd = worktree if building, else the issue folder; resume only
   // when there's a build session). The prompt (built by the AnnotationLayer's
@@ -1263,7 +1187,6 @@ export function useImplementSession(
     handleRerun,
     canGenerateVariant,
     handleGenerateVariant,
-    handlePickVariant,
     reviseDesignPattern,
     handleDiscard,
   };
