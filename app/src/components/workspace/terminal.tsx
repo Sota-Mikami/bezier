@@ -26,13 +26,18 @@ import {
   commandExists,
   type UnlistenFn,
 } from "@/lib/pty";
+import { appDataDir, writeFileBytes } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 export interface TerminalPaneProps {
   /** Working directory the shell/agent launches in (workspace root). */
   cwd: string;
-  /** What to run; defaults to the user's login shell. */
-  spawn?: { cmd: string; args?: string[] };
+  /**
+   * What to run; defaults to the user's login shell. When `wrap` is set, the
+   * command runs INSIDE an interactive shell that stays alive after it exits
+   * (TQ-1) — so `/exit`-ing an embedded agent leaves a usable terminal.
+   */
+  spawn?: { cmd: string; args?: string[]; wrap?: boolean };
   /** Fired once the pty is spawned, with its id. */
   onReady?: (id: string) => void;
   /** Fired once when the child process exits, with its exit code (null if signal-killed). */
@@ -59,6 +64,71 @@ async function resolveUserShell(): Promise<{ cmd: string; args: string[] }> {
     }
   }
   return { cmd: "/bin/sh", args: [] };
+}
+
+/** POSIX single-quote: wrap in '…' and escape embedded quotes. Makes ANY string
+ *  (incl. the agent's multi-line prompt with $, `, ", newlines) shell-safe. */
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+// Image paste/drop (TQ-2): xterm pastes text only, so an image in the clipboard
+// is lost. We save it to an app-data temp file and type the PATH into the pty —
+// the embedded agent (claude) reads image file paths as attachments. Keyed by
+// mime to a sane extension.
+const IMG_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "image/bmp": "bmp",
+  "image/tiff": "tiff",
+};
+
+async function attachImageToPty(blob: Blob, mime: string, pid: string, stamp: string): Promise<void> {
+  const ext = IMG_EXT[mime] ?? "png";
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const path = `${await appDataDir()}/bezier-pastes/paste-${stamp}.${ext}`;
+  await writeFileBytes(path, bytes);
+  // The controlled path has no spaces; a trailing space separates it from the
+  // next token the user types.
+  await ptyWrite(pid, `${path} `);
+}
+
+/** Find the first image in a clipboard/drag payload, or null. */
+function firstImage(items: DataTransferItemList | null | undefined): { blob: Blob; mime: string } | null {
+  if (!items) return null;
+  for (const it of items) {
+    if (it.kind === "file" && it.type.startsWith("image/")) {
+      const blob = it.getAsFile();
+      if (blob) return { blob, mime: it.type };
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve what the pty actually launches. `spawn.wrap` runs the command inside
+ * the user's interactive shell and `exec`s a fresh interactive shell when it
+ * exits (TQ-1) — so an embedded agent's `/exit` leaves a live terminal instead
+ * of a dead pane. Without `wrap`, the command (or the default shell) runs直.
+ */
+async function resolveLaunch(
+  spawn: TerminalPaneProps["spawn"],
+): Promise<{ cmd: string; args: string[] }> {
+  if (spawn && spawn.wrap) {
+    const sh = await resolveUserShell();
+    // The agent runs by absolute path (no PATH needed), so the outer shell is a
+    // plain `-c`; when it exits we `exec` a full interactive LOGIN shell (-il) so
+    // the leftover terminal has the user's real env (PATH/aliases → `claude`
+    // works again), in the same cwd.
+    const parts = [spawn.cmd, ...(spawn.args ?? [])].map(shQuote).join(" ");
+    const script = `${parts}; exec ${shQuote(sh.cmd)} -il`;
+    return { cmd: sh.cmd, args: ["-c", script] };
+  }
+  if (spawn) return { cmd: spawn.cmd, args: spawn.args ?? [] };
+  return resolveUserShell();
 }
 
 export default function TerminalPane({
@@ -127,6 +197,7 @@ export default function TerminalPane({
         fontSize: 13,
         theme: terminalTheme(),
         convertEol: false,
+        scrollback: 5000, // TQ-3: deeper history than the 1000 default
       });
       // Follow the OS light/dark setting live (the app theme is OS-driven).
       const mql = window.matchMedia("(prefers-color-scheme: dark)");
@@ -169,7 +240,7 @@ export default function TerminalPane({
       }
 
       if (!id) {
-        const shell = spawn ?? (await resolveUserShell());
+        const shell = await resolveLaunch(spawn);
         if (disposed) {
           dispose();
           return;
@@ -244,6 +315,34 @@ export default function TerminalPane({
           }
         }
 
+        // ⌘C copies the SELECTION (TQ-3) — ⌃C (no meta) still falls through as
+        // interrupt. No selection → fall through so ⌘C does nothing harmful.
+        if (
+          ev.metaKey &&
+          !ev.ctrlKey &&
+          !ev.altKey &&
+          (ev.key === "c" || ev.key === "C")
+        ) {
+          const sel = term?.getSelection();
+          if (sel) {
+            ev.preventDefault();
+            void navigator.clipboard?.writeText(sel).catch(() => {});
+            return false;
+          }
+        }
+
+        // ⌘A selects the whole buffer (TQ-3); ⌃A (no meta) stays line-start.
+        if (
+          ev.metaKey &&
+          !ev.ctrlKey &&
+          !ev.altKey &&
+          (ev.key === "a" || ev.key === "A")
+        ) {
+          ev.preventDefault();
+          term?.selectAll();
+          return false;
+        }
+
         const isEnter = ev.key === "Enter" || ev.keyCode === 13;
         if (isEnter && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
           // preventDefault stops the browser inserting a newline into xterm's
@@ -260,6 +359,49 @@ export default function TerminalPane({
       // Keystrokes / paste -> pty stdin.
       term.onData((d) => {
         ptyWrite(pid, d).catch(() => {});
+      });
+
+      // Image paste / drop (TQ-2): capture an image BEFORE xterm's text-only
+      // paste, save it to a temp file, and type the path in for the agent. Plain
+      // text paste/drop falls through to xterm untouched.
+      let pasteSeq = 0;
+      const onPaste = (e: ClipboardEvent) => {
+        const img = firstImage(e.clipboardData?.items);
+        if (!img) return; // text → let xterm handle it
+        e.preventDefault();
+        e.stopPropagation();
+        void attachImageToPty(img.blob, img.mime, pid, `${Date.now()}-${++pasteSeq}`);
+      };
+      const onDragOver = (e: DragEvent) => {
+        if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+      };
+      const onDrop = (e: DragEvent) => {
+        const img = firstImage(e.dataTransfer?.items);
+        if (!img) return;
+        e.preventDefault();
+        e.stopPropagation();
+        void attachImageToPty(img.blob, img.mime, pid, `${Date.now()}-${++pasteSeq}`);
+      };
+      // Copy (TQ-3): xterm's selection is a canvas selection, NOT a DOM one, so
+      // the native Edit › Copy / ⌘C copies nothing. Fill the clipboard from
+      // term.getSelection() on the copy event (covers ⌘C and the menu). With no
+      // selection we leave it alone so ⌃C still interrupts the running program.
+      const onCopy = (e: ClipboardEvent) => {
+        const sel = term?.getSelection();
+        if (sel) {
+          e.clipboardData?.setData("text/plain", sel);
+          e.preventDefault();
+        }
+      };
+      el.addEventListener("paste", onPaste, true); // capture: beat xterm
+      el.addEventListener("dragover", onDragOver);
+      el.addEventListener("drop", onDrop);
+      el.addEventListener("copy", onCopy);
+      unlisteners.push(() => {
+        el.removeEventListener("paste", onPaste, true);
+        el.removeEventListener("dragover", onDragOver);
+        el.removeEventListener("drop", onDrop);
+        el.removeEventListener("copy", onCopy);
       });
 
       // pty output -> terminal. Callback fires for ALL ptys; filter on id.

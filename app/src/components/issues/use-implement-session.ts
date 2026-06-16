@@ -510,7 +510,9 @@ export function useImplementSession(
       // Remember whether THIS launch is a resume so a quick failure can fall back.
       resumeStartRef.current = opts.resume ? Date.now() : null;
       setTermCwd(cwd);
-      setTermSpawn({ cmd: agent.bin, args });
+      // Run the agent inside the user's shell so `/exit` returns to a live
+      // terminal instead of killing the pane (TQ-1).
+      setTermSpawn({ cmd: agent.bin, args, wrap: true });
       setTermMounted(true);
       setTermNonce((n) => n + 1);
     },

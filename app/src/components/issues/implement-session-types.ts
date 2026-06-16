@@ -27,6 +27,13 @@ export type SessionAction =
 export interface TermSpawn {
   cmd: string;
   args?: string[];
+  /**
+   * Run the command INSIDE the user's interactive shell and drop back to that
+   * shell when it exits (TQ-1) — so `/exit`-ing the agent leaves a live terminal
+   * (you can run it again) instead of a dead pane. The shell + quoting are
+   * resolved in TerminalPane.
+   */
+  wrap?: boolean;
 }
 
 export interface ImplementSession {
