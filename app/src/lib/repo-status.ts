@@ -14,6 +14,7 @@ import {
   detectDev,
   packageCwd,
   hasPackageJson,
+  resolvePackageDir,
 } from "@/lib/preview";
 import { probeReadiness } from "@/lib/readiness";
 import { gitBehindAhead } from "@/lib/git";
@@ -80,10 +81,11 @@ export function useRepoStatusMap(): ReadonlyMap<string, RepoStatus> {
 
 /** Cheap, NO-NETWORK probe of a repo's status; writes into the store. */
 export async function probeRepoStatus(path: string): Promise<void> {
-  // packageDir from a saved Live config, else detection (same dir Live would run).
-  const packageDir =
-    (await readPreviewConfig(path).catch(() => null))?.packageDir ??
-    (await detectDev(path).catch(() => ({ packageDir: "" }))).packageDir;
+  // packageDir VALIDATED the same way the Live view resolves it (saved value only
+  // when it really points at a package, else detection) — so the badge matches.
+  const saved = await readPreviewConfig(path).catch(() => null);
+  const detected = (await detectDev(path).catch(() => ({ packageDir: "" }))).packageDir;
+  const packageDir = await resolvePackageDir(path, saved?.packageDir ?? "", detected);
 
   // Gate on "is this a Node project at all" — probeReadiness ALWAYS emits a deps
   // item, so without this gate every Go/Rust/static/docs repo would show ⚠️.

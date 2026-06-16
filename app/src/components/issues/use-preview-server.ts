@@ -38,6 +38,7 @@ import {
   findFreePort,
   packageCwd,
   hasPackageJson,
+  resolvePackageDir,
   repoNodeVersion,
   withRepoNode,
   ensureWorktreeNodeModules,
@@ -270,15 +271,35 @@ export function usePreviewServer(
         port: defaultPort(root),
         packageDir: detect.packageDir,
       };
+      // packageDir is VALIDATED, not trusted: a stale/wrong saved value (e.g. a
+      // persisted "App" that points nowhere) would otherwise target every check +
+      // the dev run at a non-existent dir and wedge the entrance. resolvePackageDir
+      // keeps the saved value only when it really holds a package.json, else falls
+      // back to detection / root.
+      const packageDir = await resolvePackageDir(
+        root,
+        saved?.packageDir ?? "",
+        detected.packageDir,
+      );
+      if (cancelled) return;
       const resolved: PreviewConfig = saved
         ? {
             devCommand: saved.devCommand.trim() || detected.devCommand,
             port: saved.port || detected.port,
-            packageDir: saved.packageDir || detected.packageDir,
+            packageDir,
           }
         : detected;
       setConfig(resolved);
       setConfigLoaded(true);
+
+      // Self-heal: a saved config whose packageDir we just CORRECTED gets rewritten
+      // so the bad value never recurs. Only on a real correction — never create a
+      // config merely by opening a repo. (.bezier/ is gitignored — no git churn.)
+      if (saved && saved.packageDir && saved.packageDir !== packageDir) {
+        void writePreviewConfig(root, { ...resolved, ...(saved.runner ? { runner: saved.runner } : {}) }).catch(
+          () => {},
+        );
+      }
 
       // Resolve the install command from the lockfile (npm/pnpm/yarn/bun), so
       // the "Install dependencies" button names the RIGHT manager + dir (DEC-109).

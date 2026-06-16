@@ -87,6 +87,24 @@ export function packageCwd(base: string, packageDir: string): string {
   return rel ? `${b}/${rel}` : b;
 }
 
+/** The effective package dir for a repo: the first of [saved, detected, ""] whose
+ *  `<root>/<dir>` actually contains a package.json. Guards the entrance against a
+ *  stale/wrong SAVED packageDir (e.g. a persisted "App" pointing at a dir that
+ *  doesn't exist) — which would otherwise target every readiness check AND the dev
+ *  run at the wrong place, wedging "この repo を準備する" forever. A saved value is
+ *  authoritative only when it really points at a package; else detection wins. */
+export async function resolvePackageDir(
+  root: string,
+  saved: string,
+  detected: string,
+): Promise<string> {
+  for (const cand of [saved, detected, ""]) {
+    const c = normalizeRelDir(cand ?? "");
+    if (await hasPackageJson(packageCwd(root, c)).catch(() => false)) return c;
+  }
+  return "";
+}
+
 /** Read the saved preview config, or null if none / malformed. */
 export async function readPreviewConfig(
   root: string,

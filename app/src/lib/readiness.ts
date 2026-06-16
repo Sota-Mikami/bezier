@@ -5,7 +5,7 @@
 // auto-run. Never touches secrets; never blocks (read-only is always fine).
 
 import { readFile, writeFile, listDir, homeDir, pathMtime } from "@/lib/ipc";
-import { packageCwd, repoNodeVersion } from "@/lib/preview";
+import { packageCwd, repoNodeVersion, hasPackageJson } from "@/lib/preview";
 
 export type ReadinessId = "node" | "deps" | "env";
 
@@ -138,18 +138,23 @@ export async function probeReadiness(
     }
   }
 
-  // Deps: node_modules present in the run dir — and, if so, not stale vs the
-  // lockfile (Phase 1.5). Both the missing and the stale case fix via reinstall.
-  // NB: probe node_modules with `pathMtime` (a direct metadata call), NOT
-  // `listDir` — `list_dir` filters out SKIP_DIRS (node_modules/target/.next/out),
-  // so listing would NEVER see an installed node_modules (false "not installed").
-  const hasNodeModules = (await pathMtime(`${dir}/node_modules`).catch(() => null)) !== null;
-  if (!hasNodeModules) {
-    items.push({ id: "deps", status: "needs" });
-  } else if (await depsStale(dir).catch(() => false)) {
-    items.push({ id: "deps", status: "needs", depsStale: true });
-  } else {
-    items.push({ id: "deps", status: "ok" });
+  // Deps: only meaningful when `dir` is actually a package (has package.json).
+  // Otherwise there's nothing to install — skip the item rather than claim deps
+  // are "missing" (guards a non-Node dir or an unresolved packageDir).
+  if (await hasPackageJson(dir).catch(() => false)) {
+    // node_modules present in the run dir — and, if so, not stale vs the lockfile
+    // (Phase 1.5). Both the missing and stale case fix via reinstall. NB: probe
+    // node_modules with `pathMtime` (a direct metadata call), NOT `listDir` —
+    // `list_dir` filters out SKIP_DIRS (node_modules/target/.next/out), so listing
+    // would NEVER see an installed node_modules (false "not installed").
+    const hasNodeModules = (await pathMtime(`${dir}/node_modules`).catch(() => null)) !== null;
+    if (!hasNodeModules) {
+      items.push({ id: "deps", status: "needs" });
+    } else if (await depsStale(dir).catch(() => false)) {
+      items.push({ id: "deps", status: "needs", depsStale: true });
+    } else {
+      items.push({ id: "deps", status: "ok" });
+    }
   }
 
   // Env: a template exists but no real .env yet.
