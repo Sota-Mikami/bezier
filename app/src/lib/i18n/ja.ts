@@ -560,6 +560,8 @@ export const ja: Messages = {
     sessionPaused: "セッションは休止中",
     sessionPausedDesc: "この Issue には worktree があります。前回のエージェント会話を再開できます。",
     resumeSession: "セッションを再開",
+    agentMissing: "コーディングエージェント（Claude）が見つかりません。`claude` を入れてから再検出してください。",
+    redetectAgent: "エージェントを再検出",
     placeholderNotGitRepo: "このフォルダは git リポジトリではありません",
     placeholderNoAgent: "利用可能なエージェントがありません",
     placeholderDefault: "やりたいことを書く…（Enter で開始 / Shift+Enter で改行）",

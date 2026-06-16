@@ -561,6 +561,8 @@ export const en = {
     sessionPaused: "Session paused",
     sessionPausedDesc: "This issue has a worktree. You can resume the previous agent conversation.",
     resumeSession: "Resume session",
+    agentMissing: "Your coding agent (Claude) wasn't found. Make sure `claude` is installed, then re-detect.",
+    redetectAgent: "Re-detect agent",
     placeholderNotGitRepo: "This folder is not a git repository",
     placeholderNoAgent: "No agents available",
     placeholderDefault: "Describe what you want to do… (Enter to start / Shift+Enter for a new line)",

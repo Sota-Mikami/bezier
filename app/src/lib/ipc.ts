@@ -148,6 +148,16 @@ export function pathMtime(path: string): Promise<number | null> {
   return invoke<number | null>("path_mtime", { path });
 }
 
+/**
+ * Node versions installed under the user's nvm (`~/.nvm/versions/node`), bare
+ * (e.g. "24.16.0"); `[]` when nvm isn't set up. Grant-free — nvm lives outside any
+ * repo, so it must NOT go through the grant-checked list_dir (DEC-111).
+ * -> invoke("nvm_node_versions")
+ */
+export function nvmNodeVersions(): Promise<string[]> {
+  return invoke<string[]>("nvm_node_versions");
+}
+
 /** Reveal a path in the macOS Finder (DEC-041). -> invoke("reveal_in_finder", { path }) */
 export function revealInFinder(path: string): Promise<void> {
   return invoke<void>("reveal_in_finder", { path });

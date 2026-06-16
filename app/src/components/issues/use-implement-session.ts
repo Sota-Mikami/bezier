@@ -359,29 +359,57 @@ export function useImplementSession(
     };
   }, [refPrUrl, refBranch, root, issue, onStatusChange]);
 
-  // Detect installed agents once.
+  // Detect installed agents. Re-runnable so the maker can RECOVER from a transient
+  // "no agent found" (e.g. a Finder launch that hadn't picked up the agent's PATH
+  // yet, or the agent installed after launch) instead of being permanently stuck
+  // with a disabled Resume/Start. Keeps a still-available current pick; only
+  // re-picks when the current one is gone.
+  const redetectAgents = React.useCallback(async (): Promise<boolean> => {
+    const found = await detectAgents().catch(() => null);
+    if (!found) return false;
+    setAgents(found);
+    setSelectedAgentId((cur) => {
+      if (cur && found.some((a) => a.id === cur && a.available)) return cur;
+      const preferredId = getSettings().defaultAgentId;
+      const preferred = preferredId
+        ? found.find((a) => a.id === preferredId && a.available)
+        : undefined;
+      const pick = preferred ?? found.find((a) => a.available);
+      return pick ? pick.id : null;
+    });
+    return found.some((a) => a.available);
+  }, []);
+
+  // Initial detect. Inlined (not via redetectAgents) so setState runs only in the
+  // async continuation under a cancelled guard — no synchronous effect setState.
   React.useEffect(() => {
     let cancelled = false;
-    detectAgents()
-      .then((found) => {
-        if (cancelled) return;
-        setAgents(found);
-        // Prefer the user's default agent (Settings, DEC-043) when it's
-        // available; otherwise fall back to the first available one.
-        const preferredId = getSettings().defaultAgentId;
-        const preferred = preferredId
-          ? found.find((a) => a.id === preferredId && a.available)
-          : undefined;
-        const pick = preferred ?? found.find((a) => a.available);
-        setSelectedAgentId(pick ? pick.id : null);
-      })
-      .catch(() => {
-        /* none */
-      });
+    void (async () => {
+      const found = await detectAgents().catch(() => null);
+      if (cancelled || !found) return;
+      setAgents(found);
+      const preferredId = getSettings().defaultAgentId;
+      const preferred = preferredId
+        ? found.find((a) => a.id === preferredId && a.available)
+        : undefined;
+      const pick = preferred ?? found.find((a) => a.available);
+      setSelectedAgentId(pick ? pick.id : null);
+    })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Re-detect when the window regains focus IF no agent is currently available —
+  // so returning after installing/fixing the agent self-heals the dead-end.
+  const noAgentRef = React.useRef(false);
+  React.useEffect(() => {
+    const onFocus = () => {
+      if (noAgentRef.current) void redetectAgents();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [redetectAgents]);
 
   // Load the durable activity thread once per issue.
   React.useEffect(() => {
@@ -462,6 +490,11 @@ export function useImplementSession(
   );
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
+  // Track "no available agent" for the focus-driven re-detect (recovery).
+  const noAgent = !agents.some((a) => a.available);
+  React.useEffect(() => {
+    noAgentRef.current = noAgent;
+  }, [noAgent]);
 
   const launchAgent = React.useCallback(
     (
@@ -1145,6 +1178,7 @@ export function useImplementSession(
     selectedAgentId,
     setSelectedAgentId,
     selectedAgent,
+    redetectAgents,
     action,
     error,
     info,

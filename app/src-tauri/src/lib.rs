@@ -425,6 +425,40 @@ fn path_mtime(
     }
 }
 
+/// List Node versions installed under the user's nvm (`~/.nvm/versions/node`),
+/// bare (e.g. "24.16.0"). Read-only, FIXED home-relative path — deliberately NOT
+/// behind the repo path-grant: nvm lives OUTSIDE any opened repo, so routing this
+/// through the grant-checked `list_dir` would always deny it and falsely report
+/// "nvm not found" even when the required Node is installed (DEC-111). Empty when
+/// nvm isn't set up.
+#[tauri::command]
+fn nvm_node_versions(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("nvm_node_versions: {e}"))?;
+    let dir = home.join(".nvm").join("versions").join("node");
+    let read = match fs::read_dir(&dir) {
+        Ok(r) => r,
+        Err(_) => return Ok(Vec::new()), // no nvm / dir missing -> empty
+    };
+    let mut versions = Vec::new();
+    for item in read.flatten() {
+        if !item.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = item
+            .file_name()
+            .to_string_lossy()
+            .trim_start_matches('v')
+            .to_string();
+        if !name.is_empty() {
+            versions.push(name);
+        }
+    }
+    Ok(versions)
+}
+
 /// Reveal a path in the macOS Finder (DEC-041 "…" menu → Finderで開く). `open`
 /// on a directory opens it in Finder; on a file it reveals/opens its app. Path is
 /// traversal-guarded; a spawn failure surfaces a clear Err.
@@ -2441,26 +2475,80 @@ fn remove_bezier_command(app: tauri::AppHandle, name: String) -> Result<(), Stri
 /// command_exists / resolve_command / pty spawns all see the right tools. No-op
 /// when the env already looks rich (e.g. the dev run from a terminal).
 fn fix_path_env() {
-    // If PATH already includes a common user tool dir, assume we inherited a
-    // real shell PATH and skip the (slowish) login-shell probe.
-    if let Ok(p) = std::env::var("PATH") {
-        if p.contains("/.nvm/") || p.contains("/homebrew/") || p.contains("/.local/bin") {
-            return;
+    use std::collections::HashSet;
+
+    let mut ordered: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    // Append `s` if non-empty and not already present (params, not captured, so it
+    // doesn't borrow-lock `ordered`/`seen` for the whole function).
+    fn add(ordered: &mut Vec<String>, seen: &mut HashSet<String>, s: String) {
+        if !s.is_empty() && seen.insert(s.clone()) {
+            ordered.push(s);
         }
     }
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    // `-ilc` = interactive login shell running a command, so it sources the
-    // user's profile (.zprofile/.zshrc) where PATH is set.
-    let out = std::process::Command::new(&shell)
-        .args(["-ilc", "printf %s \"$PATH\""])
-        .output();
-    if let Ok(o) = out {
-        if o.status.success() {
-            let path = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if !path.is_empty() {
-                std::env::set_var("PATH", path);
+
+    // 1) The current process PATH (minimal for a Finder/Dock launch, already rich
+    //    when run from a terminal).
+    if let Ok(p) = std::env::var("PATH") {
+        for d in std::env::split_paths(&p) {
+            add(&mut ordered, &mut seen, d.to_string_lossy().into_owned());
+        }
+    }
+
+    // 2) The login-shell PATH — sources the user's profile (.zprofile/.zshrc) where
+    //    Homebrew/nvm set things up. Skip the (slowish) probe only when PATH already
+    //    looks rich (a terminal/dev launch).
+    let already_rich = ordered
+        .iter()
+        .any(|s| s.contains("/.nvm/") || s.contains("/homebrew/") || s.contains("/.local/bin"));
+    if !already_rich {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        // `-ilc` = interactive login shell running a command, so it sources the
+        // user's profile where PATH is set.
+        if let Ok(o) = std::process::Command::new(&shell)
+            .args(["-ilc", "printf %s \"$PATH\""])
+            .output()
+        {
+            if o.status.success() {
+                let probed = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                for d in std::env::split_paths(&std::ffi::OsString::from(probed)) {
+                    add(&mut ordered, &mut seen, d.to_string_lossy().into_owned());
+                }
             }
         }
+    }
+
+    // 3) Well-known user tool dirs a GUI login shell can still MISS — most
+    //    importantly the nvm node bins, where `claude`/`codex`/`node` are often
+    //    installed. Without these, a Finder-launched app can't find the coding
+    //    agent (or even node), which silently dead-ends the whole flow. Append all
+    //    nvm versions (the agent may live under any) + the usual bins; existing
+    //    entries win (we only ADD what's missing).
+    if let Ok(home) = std::env::var("HOME") {
+        let mut extras: Vec<PathBuf> = Vec::new();
+        let nvm = Path::new(&home).join(".nvm").join("versions").join("node");
+        if let Ok(rd) = fs::read_dir(&nvm) {
+            let mut bins: Vec<PathBuf> = rd
+                .flatten()
+                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                .map(|e| e.path().join("bin"))
+                .collect();
+            bins.sort(); // deterministic order
+            extras.extend(bins);
+        }
+        extras.push(Path::new(&home).join(".local").join("bin"));
+        extras.push(Path::new(&home).join(".bun").join("bin"));
+        extras.push(PathBuf::from("/opt/homebrew/bin"));
+        extras.push(PathBuf::from("/usr/local/bin"));
+        for b in extras {
+            if b.is_dir() {
+                add(&mut ordered, &mut seen, b.to_string_lossy().into_owned());
+            }
+        }
+    }
+
+    if let Ok(joined) = std::env::join_paths(ordered.iter().map(std::ffi::OsString::from)) {
+        std::env::set_var("PATH", joined);
     }
 }
 
@@ -2543,6 +2631,7 @@ pub fn run() {
             write_file_bytes,
             read_file_bytes,
             path_mtime,
+            nvm_node_versions,
             reveal_in_finder,
             open_external,
             open_in_editor,

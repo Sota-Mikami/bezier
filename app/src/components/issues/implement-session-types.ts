@@ -49,6 +49,9 @@ export interface ImplementSession {
   selectedAgentId: string | null;
   setSelectedAgentId: (id: string) => void;
   selectedAgent: AgentTool | null;
+  /** Re-run agent detection (recovery from a transient "no agent"); resolves to
+   *  whether any agent is now available. */
+  redetectAgents: () => Promise<boolean>;
   action: SessionAction;
   error: string | null;
   info: string | null;

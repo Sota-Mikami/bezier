@@ -4,7 +4,7 @@
 // Node, install deps, copy a .env template); complex setup is handed off, never
 // auto-run. Never touches secrets; never blocks (read-only is always fine).
 
-import { readFile, writeFile, listDir, homeDir, pathMtime } from "@/lib/ipc";
+import { readFile, writeFile, pathMtime, nvmNodeVersions } from "@/lib/ipc";
 import { packageCwd, repoNodeVersion, hasPackageJson } from "@/lib/preview";
 
 export type ReadinessId = "node" | "deps" | "env";
@@ -44,20 +44,15 @@ export function invalidateNvmCache(): void {
   nvmCache = null;
 }
 
-/** Node versions installed under nvm (bare, e.g. "20.16.0"); [] if no nvm. */
+/** Node versions installed under nvm (bare, e.g. "20.16.0"); [] if no nvm. Reads
+ *  via the grant-free `nvm_node_versions` command — nvm is outside any repo, so the
+ *  grant-checked list_dir would always deny it (false "nvm not found"). */
 async function nvmInstalled(): Promise<string[]> {
   const now = Date.now();
   if (nvmCache && now - nvmCache.at < NVM_TTL_MS) return nvmCache.list;
-  try {
-    const home = (await homeDir()).replace(/\/+$/, "");
-    const entries = await listDir(`${home}/.nvm/versions/node`);
-    const list = entries.filter((e) => e.isDir).map((e) => e.name.replace(/^v/, ""));
-    nvmCache = { at: now, list };
-    return list;
-  } catch {
-    nvmCache = { at: now, list: [] };
-    return [];
-  }
+  const list = await nvmNodeVersions().catch(() => [] as string[]);
+  nvmCache = { at: now, list };
+  return list;
 }
 
 /** Whether an installed version satisfies the repo's pin. Ranges (>=, ^, ~, *,

@@ -19,6 +19,7 @@ import {
   Sparkles,
   Play,
   GitBranch,
+  RotateCcw,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
     gitRepo,
     ref,
     selectedAgent,
+    redetectAgents,
     action,
     error,
     info,
@@ -100,7 +102,12 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
             onExit={handleTermExit}
           />
         ) : ref ? (
-          <ResumePane canResume={canResume} onResume={() => void handleResume()} />
+          <ResumePane
+            canResume={canResume}
+            agentAvailable={!!selectedAgent?.available}
+            onResume={() => void handleResume()}
+            onRedetect={redetectAgents}
+          />
         ) : (
           <ChatStart
             disabled={!selectedAgent?.available || gitRepo === false}
@@ -133,12 +140,26 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
 // offer to resume the prior conversation rather than start over.
 function ResumePane({
   canResume,
+  agentAvailable,
   onResume,
+  onRedetect,
 }: {
   canResume: boolean;
+  agentAvailable: boolean;
   onResume: () => void;
+  onRedetect: () => Promise<boolean>;
 }) {
   const t = useT();
+  const [redetecting, setRedetecting] = React.useState(false);
+  const redetect = async () => {
+    if (redetecting) return;
+    setRedetecting(true);
+    try {
+      await onRedetect();
+    } finally {
+      setRedetecting(false);
+    }
+  };
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="flex size-10 items-center justify-center rounded-full border border-border bg-muted">
@@ -148,10 +169,34 @@ function ResumePane({
       <p className="max-w-xs text-xs text-muted-foreground">
         {t("agentPanel.sessionPausedDesc")}
       </p>
-      <Button size="sm" className="gap-1.5" disabled={!canResume} onClick={onResume}>
-        <Play className="size-3.5" />
-        {t("agentPanel.resumeSession")}
-      </Button>
+      {/* Resume needs the coding agent. When it isn't found, say WHY and offer a
+          re-detect, so the maker is never stuck at a silently-disabled button. */}
+      {!agentAvailable ? (
+        <div className="flex flex-col items-center gap-2">
+          <p className="max-w-xs text-xs text-amber-600 dark:text-amber-500">
+            {t("agentPanel.agentMissing")}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            disabled={redetecting}
+            onClick={() => void redetect()}
+          >
+            {redetecting ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="size-3.5" />
+            )}
+            {t("agentPanel.redetectAgent")}
+          </Button>
+        </div>
+      ) : (
+        <Button size="sm" className="gap-1.5" disabled={!canResume} onClick={onResume}>
+          <Play className="size-3.5" />
+          {t("agentPanel.resumeSession")}
+        </Button>
+      )}
     </div>
   );
 }
