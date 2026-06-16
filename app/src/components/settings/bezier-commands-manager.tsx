@@ -3,8 +3,9 @@
 // The marketplace entry point (DEC-076 follow-up): manage the `/bezier:*`
 // slash-command pack from the UI. Disk IS the source of truth — every row is a
 // file under ~/.claude/commands/bezier/, so editing / adding / deleting here is
-// just reading and writing those files. Built-ins (verify/spec/alt3/precommit)
-// can be edited and "reset to default"; custom ones the maker adds are theirs.
+// just reading and writing those files. Built-ins (verify / spec / states /
+// design / research / precommit) can be edited and "reset to default"; custom
+// ones the maker adds are theirs.
 // Nothing is written without an explicit action (the opt-in policy stands).
 
 import * as React from "react";
