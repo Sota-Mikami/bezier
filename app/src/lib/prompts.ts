@@ -752,6 +752,65 @@ export function commandPack(locale: Locale = getSettings().locale): PackCommand[
   return locale === "ja" ? JA_COMMANDS : EN_COMMANDS;
 }
 
+// --- doc / spec content scaffolds (written into the user's repo) ----------
+// These are CONTENT (not UI chrome) the maker reads/edits, so they follow the
+// locale like the Spec template (DEC-108). Markdown bodies.
+
+interface Scaffolds {
+  issueBody: string;
+  docDecision: string;
+  docQa: string;
+  docHandoff: string;
+  docNote: string;
+  designHeader: string;
+  designAdopted: string;
+  designUndecided: string;
+}
+
+const JA_SCAFFOLDS: Scaffolds = {
+  issueBody: "> 解きたい問題 / 機会をここに書く。",
+  docDecision: ["# 決定ログ", "", "## 決定", "", "- ", "", "## 未解決の問い", "", "- ", ""].join("\n"),
+  docQa: ["# QA", "", "## テストケース", "", "- [ ] ", "", "## 状態", "", "- ", ""].join("\n"),
+  docHandoff: ["# 共有", "", "- URL: ", "- 変更点: ", "- 検討した決定: ", "- 未解決の問い: ", "- 既知の制約: ", ""].join("\n"),
+  docNote: ["# ", "", ""].join("\n"),
+  designHeader: "## デザイン方向（Bezier が自動更新）",
+  designAdopted: " ✅ 採用",
+  designUndecided: "<!-- まだ採用は決まっていません -->",
+};
+
+const EN_SCAFFOLDS: Scaffolds = {
+  issueBody: "> Write the problem / opportunity you want to solve here.",
+  docDecision: ["# Decision log", "", "## Decisions", "", "- ", "", "## Open questions", "", "- ", ""].join("\n"),
+  docQa: ["# QA", "", "## Test cases", "", "- [ ] ", "", "## Status", "", "- ", ""].join("\n"),
+  docHandoff: ["# Handoff", "", "- URL: ", "- Changes: ", "- Decisions considered: ", "- Open questions: ", "- Known constraints: ", ""].join("\n"),
+  docNote: ["# ", "", ""].join("\n"),
+  designHeader: "## Design directions (auto-updated by Bezier)",
+  designAdopted: " ✅ adopted",
+  designUndecided: "<!-- No direction adopted yet -->",
+};
+
+/** Content scaffolds in the maker's UI locale (DEC-108). */
+export function scaffolds(locale: Locale = getSettings().locale): Scaffolds {
+  return locale === "ja" ? JA_SCAFFOLDS : EN_SCAFFOLDS;
+}
+
+/** A docs/ template by stem (decision / qa / handoff / note); "" if unknown. */
+export function docTemplate(type: string): string {
+  const s = scaffolds();
+  switch (type) {
+    case "decision":
+      return s.docDecision;
+    case "qa":
+      return s.docQa;
+    case "handoff":
+      return s.docHandoff;
+    case "note":
+      return s.docNote;
+    default:
+      return "";
+  }
+}
+
 /** The design-variant convention block (BEZIER.md sub-section / standalone). */
 export function designConventionLines(designDir: string): string[] {
   return handoff().designBlock(designDir);

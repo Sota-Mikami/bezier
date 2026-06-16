@@ -16,6 +16,7 @@
 
 import { listDir, readFile, writeFile } from "@/lib/ipc";
 import { slotPath, type Issue } from "@/lib/issues";
+import { scaffolds } from "@/lib/prompts";
 
 export interface Variant {
   /** Display id = the zero-padded index string ("01", "02"…), or the bare name
@@ -179,16 +180,17 @@ export async function syncSpecDesignSection(
   const withoutBlock = text.replace(re, "\n");
   let next = withoutBlock;
   if (patterns.length > 0) {
+    const s = scaffolds();
     const lines = patterns.map((p) => {
       const name = p.title || p.slug;
-      const adopted = p.id === adoptedId ? " ✅ 採用" : "";
+      const adopted = p.id === adoptedId ? s.designAdopted : "";
       return `- ${p.id}${name ? ` — ${name}` : ""}${adopted}`;
     });
     const block = [
       DESIGN_MARK_START,
-      "## デザイン方向（Bezier が自動更新）",
+      s.designHeader,
       ...lines,
-      adoptedId ? "" : "<!-- まだ採用は決まっていません -->",
+      adoptedId ? "" : s.designUndecided,
       DESIGN_MARK_END,
     ]
       .filter((l) => l !== "")

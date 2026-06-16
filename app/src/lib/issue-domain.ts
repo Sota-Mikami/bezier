@@ -38,17 +38,8 @@ export function deriveState(opts: {
   return started ? "draft" : "idea";
 }
 
-/** JA label + a tone token for each derived state (UI badge / sidebar). */
-export const DERIVED_STATE_META: Record<
-  DerivedState,
-  { label: string; tone: "muted" | "running" | "draft" | "review" | "done" }
-> = {
-  idea: { label: "未着手", tone: "muted" },
-  running: { label: "実行中", tone: "running" },
-  draft: { label: "下書き", tone: "draft" },
-  review: { label: "レビュー中", tone: "review" },
-  done: { label: "完了", tone: "done" },
-};
+// (DERIVED_STATE_META — the JA state-badge labels — was removed with the state
+// badges in DEC-105; deriveState() remains for any future state-aware UI.)
 
 // DEC-011: the Design slot is removed (design intent lives in the Spec; the
 // output is the PR/code diff itself). DEC-014/A: decision.md is removed too —

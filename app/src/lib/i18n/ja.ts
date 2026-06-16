@@ -85,9 +85,13 @@ export const ja: Messages = {
     saveFailed: "画像を保存できませんでした: {msg}",
     loadFailed: "画像を読み込めませんでした: {msg}",
     errorTitle: "画像の挿入エラー",
+    pickerName: "画像",
+    imageWord: "画像",
+    cantLoad: "{name}（読み込めません）",
   },
 
   publishFlow: {
+    noDeployUrl: "\n[Bezier] デプロイ URL を取得できませんでした（exit 0 でも URL なし）。",
     vercelNotFound: "vercel CLI が見つかりません。`npm i -g vercel` でインストールし、`vercel login` してください。",
     invalidEnvJson: "[Bezier] .bezier/publish-env.json が無効な JSON です。修正するか削除してください。",
     injectedPublic: "[Bezier] 公開値（NEXT_PUBLIC_/VITE_）{n} 件を注入。サーバ秘密は注入しません — 必要なら Vercel のプロジェクト設定に。\n",
@@ -103,6 +107,8 @@ export const ja: Messages = {
     nodeModulesFailed: "{msg} — node_modules を用意できなかったため dev server を起動できません。",
     processExited: "dev server プロセスが終了しました。下のログを確認してください。",
     noResponse: "{sec} 秒以内に {target} が応答しませんでした。dev コマンドとポートを確認してください。",
+    rustCacheMissing: "Rust ビルドキャッシュ (src-tauri/target) が本体リポジトリに無いため、初回ビルドはフルビルドになります（数分かかることがあります）。",
+    rustCacheCloneFailed: "Rust ビルドキャッシュを clone できませんでした: {msg}",
   },
 
   journey: {
@@ -292,6 +298,7 @@ export const ja: Messages = {
     resizeHandleTitle: "ドラッグで幅を調整（ダブルクリックでリセット）",
     updating: "更新中",
     titleEditorAria: "Issue タイトル",
+    noRecords: "（記録なし）",
     threadEvent: {
       implement: "Implement を開始",
       rerun: "再 Implement",

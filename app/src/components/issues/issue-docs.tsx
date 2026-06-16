@@ -140,7 +140,7 @@ export function IssueDocs({
               key={d.path}
               active={d.path === selectedPath}
               onClick={() => setSelected(d.path)}
-              title={i < 9 ? `${d.file} ・ ⌘${i + 1}` : d.file}
+              title={i < 9 ? `${d.file} · ⌘${i + 1}` : d.file}
               className="max-w-[180px]"
               dragProps={dragProps(d.file)}
             >

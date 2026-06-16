@@ -21,12 +21,15 @@ import {
 } from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
 import { getSettings, getSpecTemplate } from "@/lib/settings";
+import { tt } from "@/lib/i18n";
 import {
   designConventionLines,
   bezierGuideDoc,
   implementHandoffDoc,
   variantHandoffDoc,
   specMissingText,
+  scaffolds,
+  docTemplate,
 } from "@/lib/prompts";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { ulid } from "ulid";
@@ -249,7 +252,7 @@ export async function createIssue(root: string, title: string): Promise<Issue> {
   const created = new Date().toISOString();
   const fm = serializeIssueFm({ id, title: cleanTitle || "Untitled", status: "open", created });
   const heading = cleanTitle ? `# ${cleanTitle}\n\n` : "";
-  const body = `${heading}> 解きたい問題 / 機会をここに書く。\n`;
+  const body = `${heading}${scaffolds().issueBody}\n`;
   const issue: Issue = {
     id,
     slug,
@@ -625,31 +628,15 @@ export async function listDocuments(issue: Issue): Promise<IssueDoc[]> {
   return [...docs, ...extra];
 }
 
-const DOC_TEMPLATES: Record<string, string> = {
-  decision: ["# 決定ログ", "", "## 決定", "", "- ", "", "## 未解決の問い", "", "- ", ""].join("\n"),
-  qa: ["# QA", "", "## テストケース", "", "- [ ] ", "", "## 状態", "", "- ", ""].join("\n"),
-  handoff: [
-    "# 共有",
-    "",
-    "- URL: ",
-    "- 変更点: ",
-    "- 検討した決定: ",
-    "- 未解決の問い: ",
-    "- 既知の制約: ",
-    "",
-  ].join("\n"),
-  note: ["# ", "", ""].join("\n"),
-};
-
 /**
  * Create a document under docs/ from a template — the SECONDARY, manual path
- * (normally the agent writes docs via chat). Returns the new doc's path. Never
- * overwrites an existing file.
+ * (normally the agent writes docs via chat). The scaffold follows the maker's
+ * locale (DEC-108). Returns the new doc's path. Never overwrites an existing file.
  */
 export async function createDocument(issue: Issue, type: string): Promise<string> {
   const safe = /^[a-z0-9][a-z0-9-]*$/.test(type) ? type : "note";
   const path = `${documentsDir(issue)}/${safe}.md`;
-  await writeFile(path, DOC_TEMPLATES[safe] ?? DOC_TEMPLATES.note);
+  await writeFile(path, docTemplate(safe) || docTemplate("note"));
   return path;
 }
 
@@ -966,31 +953,15 @@ export async function appendThreadEvent(
 // Open-PR finalize (DEC-015) — the PR body builder.
 // ---------------------------------------------------------------------------
 
-/** Human-readable label per thread event type (for the PR activity summary). */
-const THREAD_LABELS: Record<ThreadEventType, string> = {
-  implement: "Implement 開始",
-  rerun: "再 Implement",
-  resume: "セッション再開",
-  sync: "main を同期",
-  accept: "Commit（branch に確定）",
-  merge: "main に merge",
-  pr_opened: "PR を作成",
-  discard: "破棄",
-  design_feedback: "デザインFB",
-  clarify: "Clarify（確認）",
-  verify: "Verify（受入基準を採点）",
-  variant: "Design 別案 / 採用",
-  checkpoint: "チェックポイント保存",
-  rollback: "チェックポイントに戻す",
-};
-
-/** Render the durable thread as a compact bulleted activity log. */
+/** Render the durable thread as a compact bulleted activity log (PR body). Event
+ * labels follow the maker's locale via the shared issuesPage.threadEvent keys
+ * (DEC-108); the free-text note is still as the agent wrote it (deferred). */
 function summarizeThread(thread: ThreadEvent[]): string {
-  if (!thread.length) return "- （記録なし）";
+  if (!thread.length) return `- ${tt("issuesPage.noRecords")}`;
   return thread
     .map((e) => {
       const when = e.at.slice(0, 19).replace("T", " ");
-      const what = THREAD_LABELS[e.type] ?? e.type;
+      const what = tt(`issuesPage.threadEvent.${e.type}`);
       return `- ${when} — ${what}${e.note ? `（${e.note}）` : ""}`;
     })
     .join("\n");

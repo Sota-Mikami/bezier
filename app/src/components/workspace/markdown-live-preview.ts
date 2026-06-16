@@ -25,6 +25,7 @@
 import { StateField, type Extension, type Range, type EditorState } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
+import { tt } from "@/lib/i18n";
 import { readFileBytes } from "@/lib/ipc";
 
 // --- Inline image rendering (DEC-043 #1) ---------------------------------
@@ -115,7 +116,7 @@ class ImageWidget extends WidgetType {
         img.src = url;
       } else {
         wrap.classList.add("cm-md-image-missing");
-        wrap.textContent = `🖼 ${this.alt || this.src.split("/").pop() || "画像"}（読み込めません）`;
+        wrap.textContent = `🖼 ${tt("imageInsert.cantLoad", { name: this.alt || this.src.split("/").pop() || tt("imageInsert.imageWord") })}`;
       }
     });
     wrap.appendChild(img);

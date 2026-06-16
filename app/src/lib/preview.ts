@@ -19,6 +19,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { readFile, writeFile } from "@/lib/ipc";
+import { tt } from "@/lib/i18n";
 
 /**
  * Which preview runner a repo uses (slice 2.7).
@@ -404,10 +405,10 @@ export async function ensureWorktreeTauriTarget(
       cloned: false,
       note:
         e instanceof Error && /not found/i.test(e.message)
-          ? "Rust ビルドキャッシュ (src-tauri/target) が本体リポジトリに無いため、初回ビルドはフルビルドになります（数分かかることがあります）。"
-          : `Rust ビルドキャッシュを clone できませんでした: ${
-              e instanceof Error ? e.message : String(e)
-            }`,
+          ? tt("previewServer.rustCacheMissing")
+          : tt("previewServer.rustCacheCloneFailed", {
+              msg: e instanceof Error ? e.message : String(e),
+            }),
     };
   }
 }

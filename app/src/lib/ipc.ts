@@ -11,6 +11,7 @@ import {
   message as tauriMessage,
 } from "@tauri-apps/plugin-dialog";
 import type { Frontmatter } from "@/lib/frontmatter";
+import { tt } from "@/lib/i18n";
 
 /**
  * Native confirm dialog. WKWebView's `window.confirm()` is unreliable inside
@@ -267,7 +268,7 @@ export async function pickImageFiles(): Promise<string[]> {
     multiple: true,
     filters: [
       {
-        name: "画像",
+        name: tt("imageInsert.pickerName"),
         extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp"],
       },
     ],

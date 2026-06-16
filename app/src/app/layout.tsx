@@ -22,8 +22,9 @@ const FONT_MONO =
 
 export const metadata: Metadata = {
   title: "Bezier — Hold the handles",
+  // Build-time app metadata (static export) — kept in English, the default locale.
   description:
-    "プロダクトデザイナー & PdM のためのエージェント・ワークベンチ。ハンドルを握る。曲線はエージェントが描く。",
+    "An agent workbench for product designers & PdMs. Hold the handles; the agent draws the curve.",
 };
 
 // Apply the saved theme preference (light / dark / system) BEFORE paint so there

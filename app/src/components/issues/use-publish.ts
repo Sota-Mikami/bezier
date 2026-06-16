@@ -385,9 +385,7 @@ export function usePublish(
             if (/Not authenticated|vercel login|No existing credentials/i.test(logAccRef.current)) {
               setLog((l) => l + tt("publishFlow.loginHint"));
             } else if (!resolved) {
-              setLog(
-                (l) => l + "\n[Bezier] デプロイ URL を取得できませんでした（exit 0 でも URL なし）。",
-              );
+              setLog((l) => l + tt("publishFlow.noDeployUrl"));
             }
             setStatus("error");
             finish(null);

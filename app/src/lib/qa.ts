@@ -52,7 +52,9 @@ export function parseSpecCriteria(specMd: string): QaItem[] {
     const scenario = m[2].trim();
     let note = "";
     const next = lines[i + 1] ?? "";
-    const g = /^\s+-\s*根拠[:：]\s*(.*)$/.exec(next);
+    // The agent's evidence line follows its locale (DEC-108): "根拠:" (ja) or
+    // "evidence:" (en). Match either so parsing is resilient to either language.
+    const g = /^\s+-\s*(?:根拠|evidence)[:：]\s*(.*)$/i.exec(next);
     if (g) note = g[1].trim();
     out.push({
       id: String(++n),

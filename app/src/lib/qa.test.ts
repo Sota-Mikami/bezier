@@ -27,6 +27,18 @@ test("parseSpecCriteria: extracts checkbox criteria + their 根拠 line", () => 
   assert.equal(items[1].note, "");
 });
 
+test("parseSpecCriteria: also parses the English 'evidence:' line (DEC-108)", () => {
+  const spec = [
+    "## Acceptance criteria",
+    "- [x] Can log in",
+    "  - evidence: implemented in `src/auth/login.tsx`",
+  ].join("\n");
+  const items = parseSpecCriteria(spec);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].scenario, "Can log in");
+  assert.equal(items[0].note, "implemented in `src/auth/login.tsx`");
+});
+
 test("parseSpecCriteria: no criteria → empty", () => {
   assert.deepEqual(parseSpecCriteria("# Spec\n\nただの本文。"), []);
 });

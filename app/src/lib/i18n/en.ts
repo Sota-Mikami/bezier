@@ -86,9 +86,13 @@ export const en = {
     saveFailed: "Couldn't save the image: {msg}",
     loadFailed: "Couldn't load the image: {msg}",
     errorTitle: "Image insert error",
+    pickerName: "Images",
+    imageWord: "image",
+    cantLoad: "{name} (can't load)",
   },
 
   publishFlow: {
+    noDeployUrl: "\n[Bezier] Couldn't get the deploy URL (exit 0 but no URL).",
     vercelNotFound: "vercel CLI not found. Install it with `npm i -g vercel`, then run `vercel login`.",
     invalidEnvJson: "[Bezier] .bezier/publish-env.json is invalid JSON. Fix or delete it.",
     injectedPublic: "[Bezier] Injected {n} public value(s) (NEXT_PUBLIC_/VITE_). Server secrets are NOT injected — set them in your Vercel project settings if needed.\n",
@@ -104,6 +108,8 @@ export const en = {
     nodeModulesFailed: "{msg} — couldn't prepare node_modules, so the dev server can't start.",
     processExited: "The dev server process exited. Check the log below.",
     noResponse: "{target} didn't respond within {sec} seconds. Check the dev command and port.",
+    rustCacheMissing: "The Rust build cache (src-tauri/target) isn't in the main repo, so the first build is a full build (it can take a few minutes).",
+    rustCacheCloneFailed: "Couldn't clone the Rust build cache: {msg}",
   },
 
   journey: {
@@ -293,6 +299,7 @@ export const en = {
     resizeHandleTitle: "Drag to resize width (double-click to reset)",
     updating: "Updating",
     titleEditorAria: "Issue title",
+    noRecords: "(no records)",
     threadEvent: {
       implement: "Started Implement",
       rerun: "Re-ran Implement",
