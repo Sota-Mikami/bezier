@@ -9,13 +9,12 @@
 // from the old Design tab's strip). Reorder by drag; delete with ×.
 
 import * as React from "react";
-import { Code2, Plus, X, Loader2, ArrowRightCircle } from "lucide-react";
+import { Code2, Plus, X, Loader2 } from "lucide-react";
 
 import { listDocuments, createDocument, type IssueDoc } from "@/lib/issues";
 import {
   listVariants,
   readVariant,
-  readAdoptedDesign,
   nextVariantIds,
   type Variant,
 } from "@/lib/variants";
@@ -23,7 +22,6 @@ import { removePath, confirmDialog } from "@/lib/ipc";
 import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
-import { Button } from "@/components/ui/button";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
@@ -60,7 +58,6 @@ export function IssueDesign({
   const [variants, setVariants] = React.useState<Variant[]>([]);
   const [selected, setSelected] = React.useState<string | null>(null);
   const [htmlByPath, setHtmlByPath] = React.useState<{ path: string; html: string } | null>(null);
-  const [adopted, setAdopted] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
   const onChangeRef = React.useRef(onChange);
   React.useEffect(() => {
@@ -87,7 +84,6 @@ export function IssueDesign({
         prevVariantIds.current = ids;
       })
       .catch(() => {});
-    void readAdoptedDesign(issue).then(setAdopted).catch(() => {});
   }, [issue]);
   React.useEffect(() => {
     refresh();
@@ -282,22 +278,20 @@ export function IssueDesign({
         )}
         {selectedItem?.kind === "variant" && (
           <div className="flex h-full min-h-0 flex-col">
-            <div className="flex h-9 shrink-0 items-center justify-end border-b px-3">
-              <Button
-                size="sm"
-                className="h-6 gap-1.5 px-2.5 text-[11px]"
-                disabled={!!session.action}
-                onClick={() => void session.handlePickVariant(selectedItem.variant.id)}
-                title={t("design.adoptTooltip")}
+            {/* Filename header (DF-2) — matches the md docs' header, instead of the
+                old "Adopt this" button. HTML is now a free visual artifact, not a
+                single design to "adopt"; you implement a direction by asking in
+                chat ("go with NN's nav + 01's layout"). */}
+            <header className="flex h-9 shrink-0 items-center gap-2 border-b px-4">
+              <Code2 className="size-3.5 shrink-0 text-sky-500/80" />
+              <span className="truncate text-sm font-medium">{selectedItem.label}</span>
+              <span
+                className="truncate font-mono text-[11px] text-muted-foreground"
+                title={selectedItem.variant.path}
               >
-                {session.action === "variant" ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <ArrowRightCircle className="size-3" />
-                )}
-                {adopted === selectedItem.variant.id ? t("design.reImplement") : t("design.adoptThis")}
-              </Button>
-            </div>
+                {selectedItem.variant.file}
+              </span>
+            </header>
             <div className="relative min-h-0 flex-1 bg-background">
               <iframe
                 key={`frame-${selectedItem.key}`}
