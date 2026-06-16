@@ -290,7 +290,9 @@ const JA_HANDOFF: HandoffPhrases = {
   docs: (issueDir) => [
     `- 永続的なドキュメント（決定ログ・QA/テストケース・共有メモ・調査メモ等）は \`${issueDir}/docs/\` に Markdown で置く。Bezier の Docs タブが自動で一覧表示する。`,
     "- この BEZIER.md が docs/ の**索引兼「使い方」**。新しい docs を作ったら、ここに1行追記して何のファイルかを示す。",
-    "- spec.md は軸。それ以外は必要に応じて presence-driven に作る（無ければ作らない・無理に増やさない）。",
+    "- spec.md は軸。それ以外は必要に応じて presence-driven に作る（無ければ作らない・無理に増やさない）。**spec.md にログや長い調査結果を貼らない**（spec が太ると判断が鈍る）。",
+    "- **調査・比較した時**（フォント・ライブラリ・参考・方向性など）は、チャットに選択肢を並べて終わりにせず、`docs/<topic>.md` に短いレポート（選択肢・トレードオフ・**推奨**）を書いてリンクする。maker が読んで判断できるように。",
+    "- `docs/verify-log.md` は **Bezier が自動生成**（毎ターンの変更スコープ＋機微領域フラグ）。自分で作成・編集しない。",
   ],
   titleHeader: "## タイトル",
   titleRule:
@@ -310,6 +312,7 @@ const JA_HANDOFF: HandoffPhrases = {
     "  - `/bezier:spec` — spec.md を読み直して実装と同期する",
     "  - `/bezier:states` — 画面のエッジ状態（Empty/Error/Focus…）を洗い出し受入基準に落とす",
     "  - `/bezier:alt3` — デザイン別案を3つ（グレースケールのワイヤー）",
+    "  - `/bezier:research` — 調査・比較を docs/ に短いレポートとして残す（推奨を添える）",
     "  - `/bezier:precommit` — 型・lint・動作を事前チェックして報告する",
   ],
 
@@ -421,7 +424,9 @@ const EN_HANDOFF: HandoffPhrases = {
   docs: (issueDir) => [
     `- Put durable documents (decision logs, QA / test cases, handoff notes, research notes, etc.) as Markdown under \`${issueDir}/docs/\`. Bezier's Docs tab lists them automatically.`,
     "- This BEZIER.md is the **index and how-to** for docs/. When you add a new doc, append one line here noting what it is.",
-    "- spec.md is the backbone; create the rest presence-driven, only as needed (don't create what isn't needed, don't pad).",
+    "- spec.md is the backbone; create the rest presence-driven, only as needed (don't create what isn't needed, don't pad). **Don't paste logs or long research into spec.md** (a bloated spec dulls judgment).",
+    "- **When you research or compare options** (fonts, libraries, references, directions), don't just list choices in chat — write a short report to `docs/<topic>.md` (options · trade-offs · **recommendation**) and link it, so the maker can read and decide.",
+    "- `docs/verify-log.md` is **auto-maintained by Bezier** (per-turn change scope + sensitive-area flags). Don't create or edit it yourself.",
   ],
   titleHeader: "## Title",
   titleRule:
@@ -441,6 +446,7 @@ const EN_HANDOFF: HandoffPhrases = {
     "  - `/bezier:spec` — re-read spec.md and sync it with the implementation",
     "  - `/bezier:states` — enumerate a screen's edge states (Empty / Error / Focus…) and turn them into acceptance criteria",
     "  - `/bezier:alt3` — three design variants (grayscale wireframes)",
+    "  - `/bezier:research` — capture an investigation/comparison as a short report in docs/ (with a recommendation)",
     "  - `/bezier:precommit` — pre-check types / lint / behavior and report",
   ],
 
@@ -663,6 +669,23 @@ const JA_COMMANDS: PackCommand[] = [
     ].join("\n"),
   },
   {
+    name: "research",
+    description: "調査・比較を docs/ に短いレポートとして残す（推奨を添える）",
+    body: [
+      "$ARGUMENTS について調査・比較し、結果を **`docs/<topic>.md` の短いレポート**にまとめてください（引数が無ければ、いま検討中のトピックについて）。チャットに選択肢を並べて終わりにしない — maker が**読んで判断できる**ように残すのが目的。",
+      "",
+      "レポートに含める:",
+      "- **問い / 文脈**（何を決めたいか）",
+      "- **選択肢**（各案の要点）と **トレードオフ**（何を取り、何を捨てるか）",
+      "- 必要なら比較表",
+      "- **推奨**（どれを・なぜ）。判断材料が足りなければ、足りないものを明記",
+      "",
+      "- 出典・参照リンクがあれば併記する。",
+      "- まだ実装はしない。書いたら **要約とファイルへのリンクをチャットで1行**返す。",
+      "- spec.md には貼らない（spec を太らせない）。決定が固まったら spec 側は「受入基準」や「やらないこと」に**結論だけ**反映する。",
+    ].join("\n"),
+  },
+  {
     name: "precommit",
     description: "型・lint・動作を事前チェックして結果を報告",
     body: [
@@ -733,6 +756,23 @@ const EN_COMMANDS: PackCommand[] = [
       "- Follow Bezier's `design/` convention so they **line up on the Design board**.",
       "- Add a **one-line trade-off** to each (what it gains, what it gives up).",
       "- Don't implement yet. Implementation starts once a direction is chosen.",
+    ].join("\n"),
+  },
+  {
+    name: "research",
+    description: "Capture an investigation/comparison as a short report in docs/ (with a recommendation)",
+    body: [
+      "Research/compare $ARGUMENTS and capture the result as a **short report in `docs/<topic>.md`** (if there are no arguments, use the topic under discussion). Don't just list choices in chat — the point is to leave something the maker can **read and decide** from.",
+      "",
+      "Include in the report:",
+      "- **Question / context** (what you're trying to decide)",
+      "- **Options** (the gist of each) and **trade-offs** (what each gives up)",
+      "- A comparison table if useful",
+      "- A **recommendation** (which / why). If you lack what you'd need to decide, say what's missing",
+      "",
+      "- Cite sources / reference links where relevant.",
+      "- Don't implement yet. When done, reply with **a one-line summary + a link to the file** in chat.",
+      "- Don't paste it into spec.md (keep the spec lean). Once a decision lands, reflect only the **conclusion** into the spec's acceptance criteria / “won't do”.",
     ].join("\n"),
   },
   {

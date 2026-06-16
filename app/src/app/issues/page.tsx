@@ -64,7 +64,7 @@ import type { ImplementSession } from "@/components/issues/implement-session-typ
 import { useT, tt, type MsgKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { gitStatus } from "@/lib/git";
-import { collectEvidence, syncVerifyBlock } from "@/lib/verify";
+import { collectEvidence, appendVerifyEntry } from "@/lib/verify";
 
 // Live change visualization (DEC-012 §7).
 // How often we poll the worktree's git status to detect the agent writing CODE
@@ -720,11 +720,12 @@ function IssueWorkbench({
     }
   }, [session.agentState, root, issue.id, setIssue, tryAutoTitle]);
 
-  // Verify → Spec (DEC-071/072): when an Implement turn settles, auto-collect the
-  // OBJECTIVE machine evidence (change scope + sensitive-area flags, from git —
-  // the part the agent can't fudge) into spec.md's managed 検証ログ block. The
-  // per-criterion *grounds* come from the agent itself (Implement handoff writes
-  // them under each 受入基準). The maker reads both in the Spec and self-scores.
+  // Verify log (DEC-071/072 · DF-8): when an Implement turn settles, auto-collect
+  // the OBJECTIVE machine evidence (change scope + sensitive-area flags, from git
+  // — the part the agent can't fudge) and append it to docs/verify-log.md (NOT
+  // spec.md, so the spec the maker + agent re-read stays "why / what / DoD"). The
+  // per-criterion *grounds* still come from the agent under each 受入基準 in the
+  // spec. The maker reads both and self-scores.
   const prevAgentForVerify = React.useRef(session.agentState);
   React.useEffect(() => {
     const was = prevAgentForVerify.current;
@@ -733,7 +734,7 @@ function IssueWorkbench({
     if (!wt) return;
     if (was === "running" && session.agentState !== "running") {
       void collectEvidence(wt, Date.now())
-        .then((e) => syncVerifyBlock(issue, e))
+        .then((e) => appendVerifyEntry(issue, e))
         .catch(() => {});
     }
   }, [session.agentState, session.ref?.path, issue]);

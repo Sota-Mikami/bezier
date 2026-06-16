@@ -68,9 +68,29 @@ function fmtTime(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** Render the evidence as the body of the managed block (plain markdown). The
- * copy follows the maker's UI locale (DEC-108). */
-export function renderEvidenceBlock(e: VerifyEvidence): string {
+// The verification log now lives in its OWN doc (DF-8) — not spec.md — so the
+// spec the maker reads (and the agent RE-READS each turn) stays "why / what /
+// DoD" only, and machine logs don't bloat it / dilute the agent's output. The
+// doc is one file under docs/ (shown in the Docs tab), newest entry first, with
+// a per-turn HISTORY (CEO pick) so you can trace when each area was touched.
+const VERIFY_DOC_STEM = "verify-log";
+const DOC_MARK = "<!-- bezier:verify-log -->";
+
+/** Path of the per-issue verification-log doc (docs/verify-log.md). */
+export function verifyDocPath(issue: Pick<Issue, "dir">): string {
+  return `${issue.dir}/docs/${VERIFY_DOC_STEM}.md`;
+}
+
+/** The doc's fixed header (title + how-to + marker). Everything AFTER the marker
+ * is the entry history. Localized to the maker's UI locale (DEC-108). */
+function docHeader(): string {
+  const p = verifyPhrases();
+  const title = p.blockHeader.replace(/^#+\s*/, "");
+  return [`# ${title}`, "", p.makerChecks, "", DOC_MARK].join("\n");
+}
+
+/** One turn's evidence as a dated entry (newest goes on top). */
+function renderEntry(e: VerifyEvidence): string {
   const p = verifyPhrases();
   const scope =
     e.files.length === 0 ? p.noChanges : p.scope(e.files.length, e.added, e.removed);
@@ -91,24 +111,41 @@ export function renderEvidenceBlock(e: VerifyEvidence): string {
           "</details>",
         ];
   return [
-    VERIFY_MARK_START,
-    p.blockHeader,
-    p.lastUpdated(fmtTime(e.at)),
+    `## ${fmtTime(e.at)}`,
     "",
     `- ${p.scopeLabel}: ${scope}`,
     `- ${p.sensLabel}: ${sens}`,
     ...fileList,
-    "",
-    p.makerChecks,
-    VERIFY_MARK_END,
   ].join("\n");
 }
 
-/** Write/replace the managed 検証ログ block in spec.md (idempotent). */
-export async function syncVerifyBlock(
+/**
+ * Append a turn's evidence to docs/verify-log.md (newest first), keeping the
+ * history (DF-8). Turns that changed nothing are skipped (no log noise). Also
+ * migrates away the legacy in-spec block if an older issue still carries one.
+ */
+export async function appendVerifyEntry(
   issue: Pick<Issue, "dir">,
   e: VerifyEvidence,
 ): Promise<void> {
+  await stripLegacySpecBlock(issue); // one-time cleanup for pre-DF-8 issues
+  if (e.files.length === 0) return; // nothing changed → nothing to log
+  const path = verifyDocPath(issue);
+  let prev = "";
+  try {
+    const existing = await readFile(path);
+    const i = existing.indexOf(DOC_MARK);
+    prev = (i >= 0 ? existing.slice(i + DOC_MARK.length) : existing).trim();
+  } catch {
+    /* new doc */
+  }
+  const entry = renderEntry(e);
+  const doc = `${docHeader()}\n\n${entry}${prev ? `\n\n${prev}` : ""}\n`;
+  await writeFile(path, doc);
+}
+
+/** Remove the legacy "## 検証ログ" block from spec.md if present (pre-DF-8). */
+async function stripLegacySpecBlock(issue: Pick<Issue, "dir">): Promise<void> {
   const path = slotPath(issue, "spec");
   let text: string;
   try {
@@ -120,10 +157,9 @@ export async function syncVerifyBlock(
     `\\n*${escapeReg(VERIFY_MARK_START)}[\\s\\S]*?${escapeReg(VERIFY_MARK_END)}\\n*`,
     "g",
   );
-  const without = text.replace(re, "\n");
-  const block = renderEvidenceBlock(e);
-  const next = `${without.replace(/\s*$/, "")}\n\n${block}\n`;
-  if (next !== text) await writeFile(path, next);
+  if (!re.test(text)) return;
+  const next = `${text.replace(re, "\n").replace(/\s*$/, "")}\n`;
+  await writeFile(path, next);
 }
 
 function escapeReg(s: string): string {
