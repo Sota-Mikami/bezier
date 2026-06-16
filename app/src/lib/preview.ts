@@ -457,6 +457,17 @@ export function cloneDir(src: string, dst: string): Promise<void> {
 }
 
 /**
+ * Symlink the MAIN repo's gitignored local env files (`.env`, `.env.local`, …,
+ * at root + workspace/package subdirs) into the worktree at the same relative
+ * paths, so a worktree dev server / codegen reads the same env as the real repo
+ * (DEC-112). No secret duplication; only mirrors files ABSENT in the worktree.
+ * Returns the mirrored relative paths. (Rust `mirror_worktree_env`)
+ */
+export function mirrorWorktreeEnv(root: string, worktreePath: string): Promise<string[]> {
+  return invoke<string[]>("mirror_worktree_env", { root, worktreePath });
+}
+
+/**
  * Ensure the worktree's package has a real node_modules. A fresh git worktree
  * omits it (gitignored). We CLONE (CoW copy) the MAIN repo's node_modules rather
  * than symlink it: Next.js/Turbopack reject a node_modules symlink that points

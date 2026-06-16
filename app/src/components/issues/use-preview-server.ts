@@ -44,6 +44,7 @@ import {
   repoNodeVersion,
   withRepoNode,
   ensureWorktreeNodeModules,
+  mirrorWorktreeEnv,
   ensureWorktreeTauriTarget,
   depsInstallLaunch,
   detectInstall,
@@ -462,6 +463,17 @@ export function usePreviewServer(
             tt("previewServer.nodeModulesFailed", { msg: e instanceof Error ? e.message : String(e) }),
           );
           return;
+        }
+        // Mirror the repo's gitignored local env (.env*) into the worktree so a
+        // dev server / codegen reads the same env as the real repo (DEC-112).
+        // Best-effort — an env-less repo just gets nothing mirrored.
+        try {
+          const env = await mirrorWorktreeEnv(root, worktreePath);
+          if (env.length) {
+            setLog((l) => `${l}[Bezier] mirrored env: ${env.join(", ")}\n`);
+          }
+        } catch {
+          /* best-effort */
         }
       }
 

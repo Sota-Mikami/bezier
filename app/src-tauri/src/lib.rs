@@ -2427,6 +2427,107 @@ fn clone_dir(src: String, dst: String) -> Result<(), String> {
     Ok(())
 }
 
+// ============================================================================
+// Worktree env mirror (DEC-112) — a fresh git worktree omits gitignored local
+// env files (`.env`, `.env.local`, …), so a dev server / codegen that reads them
+// fails (e.g. fs-student-web's run-p codegen: "FIREBASE_API_KEY_DEV is not set").
+// We SYMLINK each local env file from the MAIN repo into the worktree at the same
+// relative path — no secret duplication, stays in sync. Only mirror files ABSENT
+// in the worktree (i.e. gitignored locals); never shadow a tracked .env.
+// ============================================================================
+
+const ENV_SKIP_DIRS: &[&str] = &[
+    "node_modules",
+    "target",
+    ".next",
+    "dist",
+    "build",
+    "out",
+    ".turbo",
+    "coverage",
+    ".vercel",
+    ".cache",
+    ".git",
+];
+
+/// A local env FILE name: `.env` or `.env.<anything>` (.env.local / .env.dev /
+/// .env.development.local / .env.production / .env.staging / …).
+fn is_env_file_name(name: &str) -> bool {
+    name == ".env" || name.starts_with(".env.")
+}
+
+/// Collect env files under `dir` (relative to `base`), bounded depth, skipping
+/// heavy/hidden dirs. Env files themselves are dotfiles (kept); hidden DIRS are
+/// skipped to bound the walk (env files live at root or in workspace/package dirs,
+/// never in hidden dirs).
+fn collect_env_files(dir: &Path, base: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    if depth > 5 {
+        return;
+    }
+    let rd = match fs::read_dir(dir) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    for entry in rd.flatten() {
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if ft.is_dir() {
+            if name.starts_with('.') || ENV_SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            collect_env_files(&entry.path(), base, depth + 1, out);
+        } else if (ft.is_file() || ft.is_symlink()) && is_env_file_name(&name) {
+            if let Ok(rel) = entry.path().strip_prefix(base) {
+                out.push(rel.to_path_buf());
+            }
+        }
+    }
+}
+
+/// Symlink the MAIN repo's local env files into `worktree_path` at the same
+/// relative paths. Returns the mirrored relative paths (for the log). Best-effort
+/// per file; a missing source / existing tracked file is skipped, a stale symlink
+/// is refreshed. Traversal-guarded.
+#[tauri::command]
+fn mirror_worktree_env(root: String, worktree_path: String) -> Result<Vec<String>, String> {
+    let root_p = Path::new(&root);
+    let wt_p = Path::new(&worktree_path);
+    reject_traversal(root_p)?;
+    reject_traversal(wt_p)?;
+
+    let mut files = Vec::new();
+    collect_env_files(root_p, root_p, 0, &mut files);
+
+    let mut mirrored = Vec::new();
+    for rel in files {
+        let src = root_p.join(&rel);
+        let link = wt_p.join(&rel);
+        // Don't shadow a tracked env already in the worktree; refresh a prior link.
+        if let Ok(meta) = link.symlink_metadata() {
+            if meta.file_type().is_symlink() {
+                let _ = fs::remove_file(&link);
+            } else {
+                continue;
+            }
+        }
+        if let Some(parent) = link.parent() {
+            if !parent.exists() {
+                let _ = fs::create_dir_all(parent);
+            }
+        }
+        #[cfg(unix)]
+        {
+            if std::os::unix::fs::symlink(&src, &link).is_ok() {
+                mirrored.push(rel.to_string_lossy().into_owned());
+            }
+        }
+    }
+    Ok(mirrored)
+}
+
 /// The Bezier app-data directory (e.g. ~/Library/Application Support/
 /// com.bezier.app on macOS). Created if absent. Used to host git worktrees
 /// OUTSIDE the user's repo — a worktree nested inside the repo makes tools that
@@ -2752,6 +2853,7 @@ pub fn run() {
             find_free_port,
             symlink,
             clone_dir,
+            mirror_worktree_env,
             app_data_dir,
             home_dir,
             uninstall_bezier_commands,
