@@ -163,8 +163,12 @@ function IssuesView() {
   }
   // Repo open, no issue → the "Live (現状)" view: run & see the current app, the
   // orient step before framing an Issue (DEC-109). The issue list lives in the
-  // sidebar (DEC-021).
-  return <RepoLive root={root} />;
+  // sidebar (DEC-021). KEYED by root so switching repos fully remounts with fresh
+  // preview state — otherwise the previous repo's running server (its url/status)
+  // leaks into the next repo's view (two repos showed the SAME Live). Each repo's
+  // dev-server pty is keyed independently, so both keep running in the background;
+  // remounting just reattaches to the right one.
+  return <RepoLive key={root} root={root} />;
 }
 
 // Read-only preview of a trashed issue (DEC-030): its spec / body / activity log
