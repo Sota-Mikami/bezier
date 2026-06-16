@@ -3,8 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-// Landing = Issues (the spine, 要件 §1). The old "Design Issues" demo list lives
-// in git history; the Repo IDE workspace is reachable from the nav (/workspace).
+// Landing = Issues (the spine, 要件 §1). The old "Design Issues" demo list and
+// the standalone /workspace Repo-IDE surface live in git history (removed once
+// the product became issue-centric).
 export default function Home() {
   const router = useRouter();
   useEffect(() => {
