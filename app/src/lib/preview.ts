@@ -507,9 +507,10 @@ function shq(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-/** The Node version this repo wants: `.nvmrc` (explicit dev pin) → `engines.node`,
- *  or null. Ranges (e.g. ">=18") are returned as-is; `nvm use` falls back when it
- *  can't resolve them. */
+/** The Node version this repo wants: `.nvmrc` → `.node-version` (both explicit dev
+ *  pins; the latter is used by nodenv/fnm/asdf and common in mikan repos like
+ *  fs-student-web) → `engines.node`, or null. Ranges (e.g. ">=18") are returned
+ *  as-is; `nvm use` falls back when it can't resolve them. */
 export async function repoNodeVersion(dir: string): Promise<string | null> {
   const base = stripTrailingSlash(dir);
   try {
@@ -517,6 +518,13 @@ export async function repoNodeVersion(dir: string): Promise<string | null> {
     if (v) return v.replace(/^v/, "");
   } catch {
     /* no .nvmrc */
+  }
+  try {
+    // `.node-version` may carry a leading `v` or a bare semver (e.g. "24.16.0").
+    const v = (await readFile(`${base}/.node-version`)).trim();
+    if (v) return v.replace(/^v/, "");
+  } catch {
+    /* no .node-version */
   }
   try {
     const pkg = JSON.parse(await readFile(`${base}/package.json`)) as {
