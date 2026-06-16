@@ -64,10 +64,26 @@ export function IssueDesign({
     onChangeRef.current = onChange;
   }, [onChange]);
   const prevVariantIds = React.useRef<Set<string> | null>(null);
+  const prevDocKeys = React.useRef<Set<string> | null>(null);
 
-  // Auto-discover docs + design explorations (poll; the agent writes both).
+  // Auto-discover docs + design explorations (poll; the agent writes both). A
+  // freshly-WRITTEN doc or design auto-opens + pulses the area, so when the agent
+  // generates one (e.g. a research report), you land on it (mirrors variants).
   const refresh = React.useCallback(() => {
-    void listDocuments(issue).then(setDocs);
+    void listDocuments(issue).then((list) => {
+      setDocs(list);
+      const keys = new Set(list.map((d) => d.path));
+      const prev = prevDocKeys.current;
+      if (prev) {
+        // Spec is created automatically on open — never steal focus for it.
+        const fresh = list.filter((d) => !prev.has(d.path) && d.type !== "spec");
+        if (fresh.length) {
+          setSelected(fresh[fresh.length - 1].path);
+          onChangeRef.current?.();
+        }
+      }
+      prevDocKeys.current = keys;
+    });
     void listVariants(issue)
       .then((list) => {
         setVariants(list);
