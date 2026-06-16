@@ -48,6 +48,12 @@ export function useReadiness(
   const [busy, setBusy] = React.useState<ReadinessId | "all" | null>(null);
   const [log, setLog] = React.useState("");
   const unlistenRef = React.useRef<UnlistenFn[]>([]);
+  // Mirror `busy` into a ref so the focus listener can skip re-probing mid-fix
+  // without re-subscribing on every busy change.
+  const busyRef = React.useRef(busy);
+  React.useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
 
   const appendLog = React.useCallback((s: string) => {
     setLog((l) => {
@@ -56,8 +62,12 @@ export function useReadiness(
     });
   }, []);
 
-  // Called from the fix handlers to refresh the checklist after a fix runs.
+  // Re-read the repo's state (after an in-app fix, on window focus, or the manual
+  // "re-check" button). Drops the nvm memo first so a Node installed OUTSIDE
+  // Bezier (e.g. in a terminal) is reflected immediately — the filesystem checks
+  // (node_modules / .env) are already live.
   const reprobe = React.useCallback(async () => {
+    invalidateNvmCache();
     const next = await probeReadiness(root, packageDir).catch(() => [] as ReadinessItem[]);
     setItems(next);
     setLoaded(true);
@@ -79,6 +89,27 @@ export function useReadiness(
       cancelled = true;
     };
   }, [root, packageDir]);
+
+  // Re-read when the window regains focus / becomes visible — so coming back from
+  // a terminal where the maker just installed deps or Node clears stale blockers
+  // without a manual step. Throttled, and skipped while a fix is running.
+  React.useEffect(() => {
+    const last = { t: 0 };
+    const onFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (busyRef.current) return;
+      const now = Date.now();
+      if (now - last.t < 1500) return; // bursty focus events fire repeatedly
+      last.t = now;
+      void reprobe();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [reprobe]);
 
   // Run a fix in a throwaway pty, streaming to the log; resolves with the exit
   // code (1 on spawn failure).

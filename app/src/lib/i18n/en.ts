@@ -148,6 +148,7 @@ export const en = {
     readyIntro: "A couple of things to set up before it can run.",
     readyAll: "Set up everything",
     readyRunAnyway: "Run anyway",
+    recheck: "Re-check",
     itemNode: "Needs Node {version} (not installed)",
     itemNodeFix: "Install Node {version}",
     itemNodeWhat: "Installs it via nvm — won't affect your other projects.",

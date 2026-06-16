@@ -340,9 +340,20 @@ function ReadinessChecklist({
   onOpenTerminal: () => void;
 }) {
   const t = useT();
+  const [rechecking, setRechecking] = React.useState(false);
   const needs = readiness.items.filter((i) => i.status === "needs");
   // Can "set up everything" only if ≥1 item is actually auto-fixable.
   const autoFixable = needs.filter((i) => !(i.id === "node" && i.nvmMissing));
+
+  const recheck = async () => {
+    if (rechecking || readiness.busy) return;
+    setRechecking(true);
+    try {
+      await readiness.reprobe();
+    } finally {
+      setRechecking(false);
+    }
+  };
 
   return (
     <div className="flex w-full max-w-md flex-col gap-3">
@@ -376,14 +387,29 @@ function ReadinessChecklist({
             {t("live.readyAll")}
           </Button>
         )}
-        <button
-          type="button"
-          onClick={onRunAnyway}
-          disabled={!!readiness.busy}
-          className="text-[11px] text-muted-foreground/70 underline-offset-2 hover:underline disabled:opacity-50"
-        >
-          {t("live.readyRunAnyway")}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void recheck()}
+            disabled={!!readiness.busy || rechecking}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground/70 underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            {rechecking ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <RotateCcw className="size-3" />
+            )}
+            {t("live.recheck")}
+          </button>
+          <button
+            type="button"
+            onClick={onRunAnyway}
+            disabled={!!readiness.busy}
+            className="text-[11px] text-muted-foreground/70 underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            {t("live.readyRunAnyway")}
+          </button>
+        </div>
       </div>
 
       {setup?.any && (

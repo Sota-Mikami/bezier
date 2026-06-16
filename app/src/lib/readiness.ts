@@ -61,13 +61,20 @@ async function nvmInstalled(): Promise<string[]> {
 }
 
 /** Whether an installed version satisfies the repo's pin. Ranges (>=, ^, ~, *,
- *  x, |) can't be checked cheaply → treated as satisfied (don't false-flag). An
- *  exact x.y.z needs an exact match; a major / major.minor matches by prefix. */
+ *  x, |) can't be checked cheaply → treated as satisfied (don't false-flag).
+ *  An exact x.y.z pin is satisfied by any installed version of the SAME MAJOR:
+ *  the run path (`withRepoNode` → `nvm use … || nvm use … || true`) already falls
+ *  back to a compatible Node, so demanding the exact patch would false-block a
+ *  working setup (e.g. an installed 24.15.0 against a 24.14.1 pin). Major /
+ *  major.minor pins match by prefix. */
 function nodeSatisfied(want: string, installed: string[]): boolean {
   const w = want.trim().replace(/^v/, "");
   if (!w || /[<>=^~|*\sx]/i.test(w)) return true;
   const parts = w.split(".");
-  if (parts.length >= 3) return installed.includes(w);
+  if (parts.length >= 3) {
+    const major = parts[0];
+    return installed.some((v) => v === w || v.startsWith(`${major}.`));
+  }
   return installed.some((v) => v === w || v.startsWith(`${w}.`));
 }
 

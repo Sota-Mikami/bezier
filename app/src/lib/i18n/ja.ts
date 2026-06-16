@@ -147,6 +147,7 @@ export const ja: Messages = {
     readyIntro: "起動する前に、いくつか整えます。",
     readyAll: "全部準備する",
     readyRunAnyway: "それでも起動する",
+    recheck: "再チェック",
     itemNode: "Node {version} が必要（未インストール）",
     itemNodeFix: "Node {version} を入れる",
     itemNodeWhat: "nvm で入れます。他のプロジェクトには影響しません。",
