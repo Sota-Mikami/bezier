@@ -221,6 +221,16 @@ export function AppSidebar() {
     [root, switchTo, router],
   );
 
+  // Go to a repo's Live (現状) view: make it the active repo and clear any issue
+  // selection so the main pane shows the repo home (DEC-109).
+  const selectLive = React.useCallback(
+    (repoPath: string) => {
+      if (repoPath !== root) switchTo(repoPath);
+      router.push("/issues");
+    },
+    [root, switchTo, router],
+  );
+
   // Create a new draft issue in a SPECIFIC repo and open it (DEC-043 #6). Used by
   // the per-repo "+" button so multi-repo users pick the target explicitly.
   const createIssueIn = React.useCallback(
@@ -566,6 +576,7 @@ export function AppSidebar() {
                   statusByKey={statusByKey}
                   previewKeys={previewKeys}
                   onToggle={() => toggleRepo(r.path)}
+                  onSelectLive={() => selectLive(r.path)}
                   onSelectIssue={(id) => selectIssue(r.path, id)}
                   onDeleteIssue={(id) => void handleDeleteIssueRow(r.path, id)}
                   onShowAll={() => setShowAll((p) => new Set(p).add(r.path))}
@@ -633,6 +644,7 @@ function RepoGroup({
   statusByKey,
   previewKeys,
   onToggle,
+  onSelectLive,
   onSelectIssue,
   onDeleteIssue,
   onShowAll,
@@ -655,6 +667,7 @@ function RepoGroup({
   statusByKey: Map<string, AgentStatus>;
   previewKeys: Set<string>;
   onToggle: () => void;
+  onSelectLive: () => void;
   onSelectIssue: (id: string) => void;
   onDeleteIssue: (id: string) => void;
   onShowAll: () => void;
@@ -753,6 +766,13 @@ function RepoGroup({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-48">
               <DropdownMenuItem
+                onClick={onSelectLive}
+                className="cursor-pointer gap-2 text-xs"
+              >
+                <MonitorPlay className="size-3.5" />
+                {t("live.title")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 onClick={onNewIssue}
                 className="cursor-pointer gap-2 text-xs"
               >
@@ -794,6 +814,22 @@ function RepoGroup({
 
       {open && (
         <div className="ml-3 border-l pl-2">
+          {/* Live (現状) — the repo's "home": run & see the current app, the
+              orient step before framing an Issue (DEC-109). Always above issues. */}
+          <button
+            type="button"
+            onClick={onSelectLive}
+            title={t("live.title")}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-sidebar-accent",
+              active && !selectedId
+                ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                : "text-foreground/80",
+            )}
+          >
+            <MonitorPlay className="size-3 shrink-0 text-emerald-600/70 dark:text-emerald-400/70" />
+            <span className="truncate">{t("live.title")}</span>
+          </button>
           {!issues ? (
             <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" /> {t("common.loading")}
