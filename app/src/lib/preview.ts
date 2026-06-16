@@ -490,19 +490,20 @@ export async function repoNodeVersion(dir: string): Promise<string | null> {
 
 /**
  * Wrap a dev/install command so it runs under the user's nvm with the repo's Node
- * version. Sources nvm explicitly (no rc-file dependency), `nvm use`s the pinned
- * version (falling back to `.nvmrc` in cwd, then the default, then the inherited
- * Node), then runs the command. No-op for users without nvm (the source is
- * guarded; `nvm use` failures are swallowed). The command runs in the user's
- * shell (zsh on macOS), which carries their normal PATH.
+ * version. Sources nvm explicitly (no rc-file dependency), then `nvm use`s in
+ * order: the pinned version → `.nvmrc` in cwd → **the latest installed nvm node**
+ * → the inherited Node. The `nvm use node` step is the key fallback: a repo that
+ * doesn't pin a Node (no `.nvmrc`/`engines`) must NOT run on a stale SYSTEM node
+ * (e.g. a /usr/local/bin/node 18 that fails Next 15's >=20.9 check) when the user
+ * has a modern node under nvm. No-op for users without nvm (failures swallowed).
  */
 export function withRepoNode(
   command: string,
   nodeVersion: string | null,
 ): { cmd: string; args: string[] } {
   const use = nodeVersion
-    ? `nvm use ${shq(nodeVersion)} >/dev/null 2>&1 || nvm use >/dev/null 2>&1 || true;`
-    : `nvm use >/dev/null 2>&1 || true;`;
+    ? `nvm use ${shq(nodeVersion)} >/dev/null 2>&1 || nvm use >/dev/null 2>&1 || nvm use node >/dev/null 2>&1 || true;`
+    : `nvm use >/dev/null 2>&1 || nvm use node >/dev/null 2>&1 || true;`;
   const preamble = `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1; ${use}`;
   return { cmd: "/bin/zsh", args: ["-c", `${preamble} ${command}`] };
 }
