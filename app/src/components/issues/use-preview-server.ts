@@ -42,6 +42,7 @@ import {
   withRepoNode,
   ensureWorktreeNodeModules,
   ensureWorktreeTauriTarget,
+  depsInstallLaunch,
   detectInstall,
   installCommand,
   type PreviewConfig,
@@ -329,25 +330,16 @@ export function usePreviewServer(
   // (no key), distinct from the dev server.
   const installDeps = React.useCallback(async () => {
     if (!worktreePath || installing) return;
-    const { manager, cwd } = await detectInstall(
+    // Detect manager/dir + build a non-interactive, repo-Node spawn (shared with
+    // the readiness checklist). Corepack prompt off so a pnpm repo doesn't
+    // deadlock on the read-only Live log.
+    const { cwd, displayCmd, launch } = await depsInstallLaunch(
       worktreePath,
       config?.packageDir ?? "",
-    ).catch(() => ({
-      manager: "npm" as const,
-      cwd: packageCwd(worktreePath, config?.packageDir ?? ""),
-    }));
-    const cmd = installCommand(manager);
-    // Run NON-INTERACTIVELY: the Live OUTPUT is a read-only log (no stdin), so an
-    // interactive prompt would deadlock. COREPACK_ENABLE_DOWNLOAD_PROMPT=0 makes
-    // Corepack auto-download pnpm/yarn instead of asking "Do you want to continue?
-    // [Y/n]" (the common pnpm-repo snag); harmless for npm/bun.
-    const runCmd = `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 ${cmd}`;
-    // Run under the repo's Node version (nvm/.nvmrc/engines), like the dev server.
-    const node = await repoNodeVersion(cwd).catch(() => null);
-    const launch = withRepoNode(runCmd, node);
+    );
     setInstalling(true);
     setError(null);
-    setLog((l) => `${l}\n[Bezier] ${cmd} …\n`);
+    setLog((l) => `${l}\n[Bezier] ${displayCmd} …\n`);
     try {
       const id = await ptySpawn({
         cwd,
@@ -368,7 +360,7 @@ export function usePreviewServer(
         offData();
         offExit();
         setInstalling(false);
-        setLog((l) => `${l}\n[Bezier] ${cmd} ${p.code === 0 ? "done." : `exited (${p.code}).`}\n`);
+        setLog((l) => `${l}\n[Bezier] ${displayCmd} ${p.code === 0 ? "done." : `exited (${p.code}).`}\n`);
       });
     } catch (e) {
       setInstalling(false);

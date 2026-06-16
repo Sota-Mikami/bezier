@@ -4,7 +4,32 @@
 > 起点バグ: fs-student-web（pnpm・Node24 pin・node_modules 無し）で `run-p not found → Corepack [Y/n] で固まる → Node 不一致` の cryptic 連鎖を踏んだ。
 > 関連: 既に実装済み = Node 尊重（`repoNodeVersion`/`withRepoNode`・`fa71ec0`）／Corepack 非対話化（`COREPACK_ENABLE_DOWNLOAD_PROMPT=0`）／Live の「依存をインストール」（DF-109）／Ship の Sync with main＋AI 衝突解決。
 
-## 核となる方針
+## 確定版 v2（ペルソナレビュー反映・2026-06-16）＋ 開発計画
+
+**方針転換（CEO 承認）**: 「**エージェントによる自律的な環境構築は Bezier の責任範囲外**」→ 廃止。Bezier は **①検出 ②境界が明確で低リスクな1クリック修正** までを持ち、複雑な setup は **ハンドオフ**（見せる・開く）に留める。任意コマンド実行・秘密・NDA/監査の責任は repo/ユーザー側。
+
+**ペルソナ4人レビューの must-fix を反映**（Mai/Kenji/Tom/Priya）:
+1. **「自動で進む」廃止** → 全 green で Run を**有効化するだけ**（自律実行しない）＋「完了→次へ」明示。
+2. **順序保証** → 複数⚠️は ［全部準備する］1ボタンで Node→依存→… を順に。各ステップに「**何が起きる**」1行。
+3. **各アクションに安全の一言**（「他プロジェクトに影響なし」「履歴が書き換わる・戻し方」）。
+4. **.env が最大の落とし穴** → コピーだけで green にしない（値未入力）＋「必要なキー（README/コメント由来）を表示・値は自分で」。
+5. **衝突 AI 解決は確認＋変更差分提示**（勝手にコードを書き換えない）。
+6. **lockfile 鮮度チェック**（`node_modules` 有＝green の罠／pnpm `--frozen` 落ち）。
+7. **nvm 無しは案内**（素通りにしない）／**pull か merge を選ばせない**（merge 既定）。
+8. **準備済み repo は完全素通り・ノータイム**／**repo バッジを前倒し**（俯瞰トリアージ）。
+
+**C「複雑 setup」改訂 = ハンドオフのみ**: `setup`/`bootstrap` script・Docker・README "Getting Started" を**検出して見せる** → ［README を開く］/［ターミナルを開く（自分で実行）］。旧 ［エージェントに環境構築を任せる］は**廃止**。
+
+### 開発計画（フェーズ）
+- **Phase 1（最優先・今着手）— 環境 readiness チェックリスト（Live）**: 検出（Node 未インストール／依存 無し／.env 無し）＋1クリック修正（nvm install／依存 install／.env テンプレコピー）＋［全部準備する］順序実行＋「何が起きる」1行＋全 green で Run 有効化（自律実行しない）＋安全（nvm 無し案内・.env 秘密は触らない・ブロックしない）。**起点バグ（fs-student-web）を即潰す**。
+- **Phase 1.5** — lockfile 鮮度チェック（node_modules 有でも lockfile より古ければ要 reinstall）。
+- **Phase 2 — 鮮度（git）**: 裏 fetch →「N 遅れ」→ ［最新化する］（merge 既定・dirty 事前提示・衝突は確認＋差分＝Ship 流用）＋ Issue 作成時の base 最新化提示。
+- **Phase 3 — ハンドオフ**: setup script/Docker/README 検出 → 開くだけ。
+- **Phase 4 — サイドバー repo バッジ**（⚠️準備／🔄更新）＝俯瞰トリアージ。
+
+---
+
+## 核となる方針（初版・参考）
 
 **reactive な cryptic 失敗 → proactive な「準備ガイド」**。repo を開いた／Live を Run／Issue を作る瞬間に**軽い readiness 判定**を走らせ、足りない物を**名前付き・1クリック・ターミナル不要**の修正として出す。非エンジニア（maker）でも詰まらない。判定で拾えない長い尻尾は**エージェントに任せる**（Bezier の強み）。
 

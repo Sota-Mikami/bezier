@@ -8,7 +8,17 @@
 // will add annotate → "これを Issue に" (turn an observation into a new Issue).
 
 import * as React from "react";
-import { Play, Loader2, RotateCcw, ExternalLink, Square, MonitorPlay, Download } from "lucide-react";
+import {
+  Play,
+  Loader2,
+  RotateCcw,
+  ExternalLink,
+  Square,
+  MonitorPlay,
+  Download,
+  TriangleAlert,
+  Wand2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { openExternal } from "@/lib/ipc";
@@ -16,6 +26,8 @@ import { useT } from "@/lib/i18n";
 import { repoName } from "@/lib/workspace-root";
 import { cn } from "@/lib/utils";
 import { usePreviewServer } from "./use-preview-server";
+import { useReadiness, type ReadinessController } from "./use-readiness";
+import type { ReadinessItem } from "@/lib/readiness";
 
 // Resizable OUTPUT panel (matches the Issue-detail divider, DEC-033): persisted
 // height in px + its floor. Default ≈ the old max-h-44 (11rem).
@@ -27,7 +39,10 @@ export function RepoLive({ root }: { root: string }) {
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, log, installing, installCmd, start, stop, installDeps } = live;
+  const { status, url, error, log, installing, installCmd, config, start, stop, installDeps } = live;
+  // Repo readiness (DEC-111): detect "cloned but not set up" before Run fails
+  // cryptically, and offer bounded one-click fixes (Node / deps / .env).
+  const readiness = useReadiness(root, config?.packageDir ?? "");
 
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
@@ -71,6 +86,9 @@ export function RepoLive({ root }: { root: string }) {
 
   const src = url ? url.replace(/\/+$/, "") + (path.startsWith("/") ? path : `/${path}`) : null;
   const ready = status === "ready" && !!src;
+  // OUTPUT shows readiness-fix output while preparing, else the dev-server log.
+  const panelLog = readiness.log.trim() ? readiness.log : log;
+  const panelBusy = installing || !!readiness.busy;
 
   const commitPath = () => {
     let p = pathDraft.trim();
@@ -141,61 +159,69 @@ export function RepoLive({ root }: { root: string }) {
         ) : (
           <div className="flex h-full flex-col">
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
-                <MonitorPlay className="size-5 text-muted-foreground" />
-              </div>
-              <p className="max-w-sm text-sm text-muted-foreground">{t("live.desc")}</p>
-              <Button
-                size="sm"
-                className="gap-1.5"
-                disabled={status === "starting" || installing}
-                onClick={() => void start()}
-              >
-                {status === "starting" ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Play className="size-3.5" />
-                )}
-                {status === "starting"
-                  ? t("live.starting")
-                  : error
-                    ? t("live.retry")
-                    : t("live.cta")}
-              </Button>
-
-              {/* On failure (commonly missing node_modules) → offer a one-click
-                  install so a maker never needs the terminal (DEC-109). */}
-              {error && (
-                <div className="flex flex-col items-center gap-2">
-                  <p className="max-w-md text-xs text-destructive">{error}</p>
-                  <p className="max-w-md text-[11px] text-muted-foreground/70">{t("live.depsHint")}</p>
+              {!readiness.loaded ? (
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              ) : readiness.ready ? (
+                <>
+                  <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
+                    <MonitorPlay className="size-5 text-muted-foreground" />
+                  </div>
+                  <p className="max-w-sm text-sm text-muted-foreground">{t("live.desc")}</p>
                   <Button
                     size="sm"
-                    variant="outline"
                     className="gap-1.5"
-                    disabled={installing}
-                    onClick={() => void installDeps()}
+                    disabled={status === "starting" || installing}
+                    onClick={() => void start()}
                   >
-                    {installing ? (
+                    {status === "starting" ? (
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : (
-                      <Download className="size-3.5" />
+                      <Play className="size-3.5" />
                     )}
-                    {installing
-                      ? t("live.installing")
-                      : t("live.installDeps", { cmd: installCmd ?? "npm install" })}
+                    {status === "starting"
+                      ? t("live.starting")
+                      : error
+                        ? t("live.retry")
+                        : t("live.cta")}
                   </Button>
-                </div>
-              )}
 
-              {!error && (
-                <p className="max-w-sm text-[11px] text-muted-foreground/70">{t("live.newHint")}</p>
+                  {/* A dev-server failure that slipped past the readiness check
+                      (e.g. a bad dev command) → keep the one-click install escape. */}
+                  {error && (
+                    <div className="flex flex-col items-center gap-2">
+                      <p className="max-w-md text-xs text-destructive">{error}</p>
+                      <p className="max-w-md text-[11px] text-muted-foreground/70">{t("live.depsHint")}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        disabled={installing}
+                        onClick={() => void installDeps()}
+                      >
+                        {installing ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Download className="size-3.5" />
+                        )}
+                        {installing
+                          ? t("live.installing")
+                          : t("live.installDeps", { cmd: installCmd ?? "npm install" })}
+                      </Button>
+                    </div>
+                  )}
+
+                  {!error && (
+                    <p className="max-w-sm text-[11px] text-muted-foreground/70">{t("live.newHint")}</p>
+                  )}
+                </>
+              ) : (
+                <ReadinessChecklist readiness={readiness} onRunAnyway={() => void start()} />
               )}
             </div>
 
-            {/* Dev-server / install output — so a failure is never a dead end.
-                Height is draggable from the top edge (DEC-033 parity). */}
-            {(log.trim() || installing) && (
+            {/* Dev-server / readiness-fix output — so a failure is never a dead
+                end. Height is draggable from the top edge (DEC-033 parity). */}
+            {(panelLog.trim() || panelBusy) && (
               <div
                 className="flex shrink-0 flex-col border-t"
                 style={{ height: logHeight }}
@@ -214,7 +240,7 @@ export function RepoLive({ root }: { root: string }) {
                   {t("live.logLabel")}
                 </div>
                 <pre className="min-h-0 flex-1 overflow-auto bg-muted/30 px-3 pb-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
-                  {log.trim() || "…"}
+                  {panelLog.trim() || "…"}
                 </pre>
               </div>
             )}
@@ -222,6 +248,121 @@ export function RepoLive({ root }: { root: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+// "Get this repo ready" (DEC-111): the items that need attention, each with a
+// plain "what happens" line + a one-click fix, a "set up everything" button (in
+// Node→deps→env order), and a non-blocking "run anyway" escape.
+function ReadinessChecklist({
+  readiness,
+  onRunAnyway,
+}: {
+  readiness: ReadinessController;
+  onRunAnyway: () => void;
+}) {
+  const t = useT();
+  const needs = readiness.items.filter((i) => i.status === "needs");
+  // Can "set up everything" only if ≥1 item is actually auto-fixable.
+  const autoFixable = needs.filter((i) => !(i.id === "node" && i.nvmMissing));
+
+  return (
+    <div className="flex w-full max-w-md flex-col gap-3">
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
+          <Wand2 className="size-5 text-muted-foreground" />
+        </div>
+        <p className="text-sm font-medium">{t("live.readyTitle")}</p>
+        <p className="text-xs text-muted-foreground">{t("live.readyIntro")}</p>
+      </div>
+
+      <ul className="flex flex-col gap-2 text-left">
+        {needs.map((item) => (
+          <ReadinessRow key={item.id} item={item} readiness={readiness} />
+        ))}
+      </ul>
+
+      <div className="flex flex-col items-center gap-1.5">
+        {autoFixable.length > 1 && (
+          <Button
+            size="sm"
+            className="gap-1.5"
+            disabled={!!readiness.busy}
+            onClick={() => void readiness.fixAll()}
+          >
+            {readiness.busy === "all" ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Wand2 className="size-3.5" />
+            )}
+            {t("live.readyAll")}
+          </Button>
+        )}
+        <button
+          type="button"
+          onClick={onRunAnyway}
+          disabled={!!readiness.busy}
+          className="text-[11px] text-muted-foreground/70 underline-offset-2 hover:underline disabled:opacity-50"
+        >
+          {t("live.readyRunAnyway")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ReadinessRow({
+  item,
+  readiness,
+}: {
+  item: ReadinessItem;
+  readiness: ReadinessController;
+}) {
+  const t = useT();
+  const busy = readiness.busy === item.id || readiness.busy === "all";
+  const v = item.nodeVersion ?? "";
+
+  let label: string;
+  let what = "";
+  let fixLabel: string | null = null;
+  if (item.id === "node") {
+    if (item.nvmMissing) {
+      label = t("live.itemNodeNoNvm", { version: v });
+    } else {
+      label = t("live.itemNode", { version: v });
+      what = t("live.itemNodeWhat");
+      fixLabel = t("live.itemNodeFix", { version: v });
+    }
+  } else if (item.id === "deps") {
+    label = t("live.itemDeps");
+    what = t("live.itemDepsWhat");
+    fixLabel = t("live.itemDepsFix");
+  } else {
+    label = t("live.itemEnv", { template: item.envTemplate ?? ".env.example" });
+    what = t("live.itemEnvWhat", { template: item.envTemplate ?? ".env.example" });
+    fixLabel = t("live.itemEnvFix");
+  }
+
+  return (
+    <li className="flex items-start gap-2 rounded-md border bg-background p-2.5">
+      <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium leading-tight">{label}</p>
+        {what && <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{what}</p>}
+      </div>
+      {fixLabel && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 shrink-0 gap-1.5 text-[11px]"
+          disabled={!!readiness.busy}
+          onClick={() => void readiness.fix(item.id)}
+        >
+          {busy ? <Loader2 className="size-3 animate-spin" /> : <Download className="size-3" />}
+          {fixLabel}
+        </Button>
+      )}
+    </li>
   );
 }
 

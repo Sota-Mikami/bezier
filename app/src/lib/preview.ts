@@ -469,6 +469,33 @@ export function withRepoNode(
   return { cmd: "/bin/zsh", args: ["-c", `${preamble} ${command}`] };
 }
 
+const NVM_SOURCE = `export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1;`;
+
+/** A spawn that installs a Node version via the user's nvm (readiness fix). */
+export function nvmInstallLaunch(version: string): { cmd: string; args: string[] } {
+  const v = version.trim().replace(/^v/, "");
+  return { cmd: "/bin/zsh", args: ["-c", `${NVM_SOURCE} nvm install ${shq(v)}`] };
+}
+
+/**
+ * Resolve a dependency-install spawn: detect the manager + dir (lockfile-aware,
+ * monorepo-aware), run it non-interactively (Corepack prompt off) under the
+ * repo's Node. Shared by the Live install button and the readiness checklist.
+ */
+export async function depsInstallLaunch(
+  worktreePath: string,
+  packageDir: string,
+): Promise<{ cwd: string; displayCmd: string; launch: { cmd: string; args: string[] } }> {
+  const { manager, cwd } = await detectInstall(worktreePath, packageDir).catch(() => ({
+    manager: "npm" as const,
+    cwd: packageCwd(worktreePath, packageDir),
+  }));
+  const displayCmd = installCommand(manager);
+  const node = await repoNodeVersion(cwd).catch(() => null);
+  const launch = withRepoNode(`COREPACK_ENABLE_DOWNLOAD_PROMPT=0 ${displayCmd}`, node);
+  return { cwd, displayCmd, launch };
+}
+
 /** Outcome of ensuring the worktree's Rust build cache. */
 export interface TargetCloneResult {
   /** True if the worktree now has a cloned `target` (incremental build). */
