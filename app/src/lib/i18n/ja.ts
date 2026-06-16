@@ -392,7 +392,7 @@ export const ja: Messages = {
     after: "変更後",
     running: "実行中",
     addressed: "対応済み",
-    composerPlaceholder: "この箇所への修正指示を書く…  (⌘Enter で送信)",
+    composerPlaceholder: "ここをどう変えたい？ 見えている言葉も添えて（例:「送信」ボタン）…  ⌘Enter",
     noInstruction: "(指示なし)",
     draft: "下書き",
     kind: {

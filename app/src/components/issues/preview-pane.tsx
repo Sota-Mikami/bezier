@@ -59,12 +59,14 @@ function statusLabel(status: PreviewStatus): string {
 // The "build" annotation surface (DEC-056): pins on the live preview become fix
 // requests against the worktree CODE. Element-pick is available (cooperating
 // preview); sending needs a worktree.
-function buildAnnotationSurface(session: ImplementSession): AnnotationSurface {
+function buildAnnotationSurface(session: ImplementSession, route: string): AnnotationSurface {
   return {
     key: "build",
     canSend: !!session.ref,
     cannotSendMessage: tt("preview.cannotSendNoWorktree"),
-    buildPrompt: (lines, shot) => previewFeedbackPrompt(lines, shot),
+    // Name the screen being annotated so the agent knows WHICH page (it locates
+    // the code itself — we don't prescribe how). DEC-108 / precise-mode v1.
+    buildPrompt: (lines, shot) => previewFeedbackPrompt(route, lines, shot),
     send: (p, n) => session.sendDesignFeedback(p, n),
   };
 }
@@ -435,7 +437,7 @@ export function PreviewPane({
                 {session && annotating && (
                   <AnnotationLayer
                     session={session}
-                    surface={buildAnnotationSurface(session)}
+                    surface={buildAnnotationSurface(session, path)}
                   />
                 )}
                 {/* A phone notch in portrait — purely decorative (DEC-074). */}

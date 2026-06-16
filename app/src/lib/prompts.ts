@@ -38,6 +38,7 @@ interface PromptPhrases {
   // --- preview "build" surface ---
   previewHeader: string;
   previewIntro: string;
+  previewScreen: (route: string) => string;
 
   // --- md doc / Map / QA surfaces ---
   docHeader: (label: string) => string;
@@ -80,6 +81,7 @@ const JA: PromptPhrases = {
   previewHeader: "## デザインフィードバック",
   previewIntro:
     "プレビュー上の注釈への修正依頼です。下記の番号付き指示に従い、この worktree 内の UI を修正してください。",
+  previewScreen: (route) => `対象画面: \`${route}\``,
 
   docHeader: (label) => `## ドキュメント「${label}」への注釈`,
   docIntro: (docPath) =>
@@ -133,6 +135,7 @@ const EN: PromptPhrases = {
   previewHeader: "## Design feedback",
   previewIntro:
     "These are fix requests for the annotations on the preview. Follow the numbered instructions below and fix the UI inside this worktree.",
+  previewScreen: (route) => `Screen shown: \`${route}\``,
 
   docHeader: (label) => `## Annotations on the “${label}” document`,
   docIntro: (docPath) =>
@@ -185,9 +188,9 @@ function feedbackBody(p: PromptPhrases, header: string[], lines: string[], shot:
   ].join("\n");
 }
 
-export function previewFeedbackPrompt(lines: string[], shot: string | null): string {
+export function previewFeedbackPrompt(route: string, lines: string[], shot: string | null): string {
   const p = promptPhrases();
-  return feedbackBody(p, [p.previewHeader, p.previewIntro], lines, shot);
+  return feedbackBody(p, [p.previewHeader, p.previewIntro, p.previewScreen(route)], lines, shot);
 }
 
 export function docFeedbackPrompt(label: string, docPath: string, lines: string[], shot: string | null): string {

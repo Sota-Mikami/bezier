@@ -393,7 +393,7 @@ export const en = {
     after: "After",
     running: "Running",
     addressed: "Done",
-    composerPlaceholder: "Describe the fix for this spot…  (⌘Enter to send)",
+    composerPlaceholder: "What should change here? Mention what you see (e.g. the “Submit” button)…  ⌘Enter",
     noInstruction: "(no instruction)",
     draft: "Draft",
     kind: {
