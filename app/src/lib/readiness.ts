@@ -140,13 +140,10 @@ export async function probeReadiness(
 
   // Deps: node_modules present in the run dir — and, if so, not stale vs the
   // lockfile (Phase 1.5). Both the missing and the stale case fix via reinstall.
-  let hasNodeModules = false;
-  try {
-    const entries = await listDir(dir);
-    hasNodeModules = entries.some((e) => e.isDir && e.name === "node_modules");
-  } catch {
-    /* dir unreadable — leave false */
-  }
+  // NB: probe node_modules with `pathMtime` (a direct metadata call), NOT
+  // `listDir` — `list_dir` filters out SKIP_DIRS (node_modules/target/.next/out),
+  // so listing would NEVER see an installed node_modules (false "not installed").
+  const hasNodeModules = (await pathMtime(`${dir}/node_modules`).catch(() => null)) !== null;
   if (!hasNodeModules) {
     items.push({ id: "deps", status: "needs" });
   } else if (await depsStale(dir).catch(() => false)) {
