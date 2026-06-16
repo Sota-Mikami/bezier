@@ -49,6 +49,7 @@ import { purgeTrashed } from "@/lib/issue-actions";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { IssueDesign } from "@/components/issues/issue-design";
 import { BuildReview } from "@/components/issues/build-review";
+import { RepoLive } from "@/components/issues/repo-live";
 import { AnnotationModeProvider, AnnotationToggle } from "@/components/issues/annotation-mode";
 import { IssueShare } from "@/components/issues/issue-share";
 import {
@@ -158,31 +159,10 @@ function IssuesView() {
   if (selectedId) {
     return <IssueDetail key={selectedId} root={root} id={selectedId} />;
   }
-  return <EmptyLanding />;
-}
-
-// Shown when a repo is open but no issue is selected — the issue list lives in
-// the left sidebar now (DEC-021), so the main pane just invites picking / New.
-function EmptyLanding() {
-  const t = useT();
-  return (
-    <div className="flex h-full flex-col">
-      <Header title={t("issuesPage.headerIssues")} />
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-        <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
-          <CircleDot className="size-5 text-muted-foreground" />
-        </div>
-        <div className="space-y-1">
-          <div className="text-base font-medium">{t("issuesPage.selectIssueTitle")}</div>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            {t("issuesPage.selectIssueDescPrefix")}{" "}
-            <span className="font-medium">New</span>
-            {t("issuesPage.selectIssueDescSuffix")}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+  // Repo open, no issue → the "Live (現状)" view: run & see the current app, the
+  // orient step before framing an Issue (DEC-109). The issue list lives in the
+  // sidebar (DEC-021).
+  return <RepoLive root={root} />;
 }
 
 // Read-only preview of a trashed issue (DEC-030): its spec / body / activity log

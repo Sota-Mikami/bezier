@@ -120,6 +120,18 @@ export const ja: Messages = {
     rustCacheCloneFailed: "Rust ビルドキャッシュを clone できませんでした: {msg}",
   },
 
+  live: {
+    title: "現状 (Live)",
+    cta: "現状を見る",
+    desc: "今のアプリを起動して、気になる所から Issue を作りましょう。",
+    starting: "起動中…",
+    routePlaceholder: "/route",
+    reload: "再読み込み",
+    openExternal: "ブラウザで開く",
+    stop: "停止",
+    newHint: "または左のサイドバーから Issue を選ぶ／New で作成。",
+  },
+
   journey: {
     specEmpty: "*(spec はまだありません)*",
     openApp: "アプリを開く →",

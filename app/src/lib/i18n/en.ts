@@ -121,6 +121,18 @@ export const en = {
     rustCacheCloneFailed: "Couldn't clone the Rust build cache: {msg}",
   },
 
+  live: {
+    title: "Live (current)",
+    cta: "Run the current app",
+    desc: "Start the current app and notice what to change — then turn it into an Issue.",
+    starting: "Starting…",
+    routePlaceholder: "/route",
+    reload: "Reload",
+    openExternal: "Open in browser",
+    stop: "Stop",
+    newHint: "Or pick an Issue from the sidebar, or create a New one.",
+  },
+
   journey: {
     specEmpty: "*(no spec yet)*",
     openApp: "Open the app →",

@@ -330,14 +330,20 @@ export function usePreviewServer(
 
       // A fresh worktree has no node_modules (gitignored) — clone it from the
       // main repo before launching, else `npm run dev` fails on missing deps.
-      try {
-        await ensureWorktreeNodeModules(root, worktreePath, cfg.packageDir);
-      } catch (e) {
-        setStatus("error");
-        setError(
-          tt("previewServer.nodeModulesFailed", { msg: e instanceof Error ? e.message : String(e) }),
-        );
-        return;
+      // The "live" repo-root preview (worktreePath === root, DEC-109) runs in the
+      // user's REAL repo, which already has node_modules — never clone into itself
+      // / mutate the real repo.
+      const isLive = worktreePath === root;
+      if (!isLive) {
+        try {
+          await ensureWorktreeNodeModules(root, worktreePath, cfg.packageDir);
+        } catch (e) {
+          setStatus("error");
+          setError(
+            tt("previewServer.nodeModulesFailed", { msg: e instanceof Error ? e.message : String(e) }),
+          );
+          return;
+        }
       }
 
       // The tauri runner ALSO clones the Rust build cache (src-tauri/target) so
@@ -347,7 +353,7 @@ export function usePreviewServer(
       const launchPort = freePort;
       if (isTauri) {
         const rel = srcTauriRelRef.current;
-        if (rel) {
+        if (rel && !isLive) {
           const res = await ensureWorktreeTauriTarget(root, worktreePath, rel);
           if (!res.cloned && res.note) {
             setLog((l) => `${l}[Bezier] ${res.note}\n`);
