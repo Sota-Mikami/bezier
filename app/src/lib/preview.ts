@@ -409,6 +409,13 @@ export async function ensureWorktreeNodeModules(
   await cloneDir(src, dst);
 }
 
+/** True when `<dir>/package.json` is readable — a runnable package lives there.
+ *  Used to catch a mis-set package directory before the confusing node_modules
+ *  clone error fires (a stale `packageDir` pointing at a dir that doesn't exist). */
+export async function hasPackageJson(dir: string): Promise<boolean> {
+  return fileExists(dir, "package.json");
+}
+
 /** Outcome of ensuring the worktree's Rust build cache. */
 export interface TargetCloneResult {
   /** True if the worktree now has a cloned `target` (incremental build). */

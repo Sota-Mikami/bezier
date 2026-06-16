@@ -117,8 +117,10 @@ export const ja: Messages = {
   previewServer: {
     devCommandUnset: "dev コマンドが未設定です。設定欄でコマンドを入力して保存してください。",
     nodeModulesFailed: "{msg} — node_modules を用意できなかったため dev server を起動できません。",
+    packageDirMissing: "パッケージディレクトリ「{dir}」に package.json がありません（このリポジトリに存在しない可能性）。設定で空にしてリポジトリのルートを使うか、正しいサブフォルダを指定してください。",
     processExited: "dev server プロセスが終了しました。下のログを確認してください。",
     noResponse: "{sec} 秒以内に {target} が応答しませんでした。dev コマンドとポートを確認してください。",
+    imageAttached: "画像を添付 · {name}",
     rustCacheMissing: "Rust ビルドキャッシュ (src-tauri/target) が本体リポジトリに無いため、初回ビルドはフルビルドになります（数分かかることがあります）。",
     rustCacheCloneFailed: "Rust ビルドキャッシュを clone できませんでした: {msg}",
   },

@@ -37,6 +37,7 @@ import {
   httpPing,
   findFreePort,
   packageCwd,
+  hasPackageJson,
   ensureWorktreeNodeModules,
   ensureWorktreeTauriTarget,
   detectInstall,
@@ -401,6 +402,15 @@ export function usePreviewServer(
       // user's REAL repo, which already has node_modules — never clone into itself
       // / mutate the real repo.
       const isLive = worktreePath === root;
+      // Guard a mis-set package directory (e.g. a stale "app" for a repo whose
+      // package.json is at the root) — otherwise the node_modules clone fails with
+      // a confusing "run npm install in <dir>/node_modules" pointing at a dir that
+      // doesn't exist. Tell the maker the real fix instead.
+      if (cfg.packageDir && !(await hasPackageJson(packageCwd(root, cfg.packageDir)))) {
+        setStatus("error");
+        setError(tt("previewServer.packageDirMissing", { dir: cfg.packageDir }));
+        return;
+      }
       if (!isLive) {
         try {
           await ensureWorktreeNodeModules(root, worktreePath, cfg.packageDir);

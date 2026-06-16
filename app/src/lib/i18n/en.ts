@@ -118,8 +118,10 @@ export const en = {
   previewServer: {
     devCommandUnset: "The dev command isn't set. Enter and save a command in settings.",
     nodeModulesFailed: "{msg} — couldn't prepare node_modules, so the dev server can't start.",
+    packageDirMissing: "No package.json in the package directory “{dir}” (it may not exist in this repo). Clear it in Settings to use the repo root, or set the right subfolder.",
     processExited: "The dev server process exited. Check the log below.",
     noResponse: "{target} didn't respond within {sec} seconds. Check the dev command and port.",
+    imageAttached: "Image attached · {name}",
     rustCacheMissing: "The Rust build cache (src-tauri/target) isn't in the main repo, so the first build is a full build (it can take a few minutes).",
     rustCacheCloneFailed: "Couldn't clone the Rust build cache: {msg}",
   },

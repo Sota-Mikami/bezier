@@ -26,7 +26,9 @@ import {
   commandExists,
   type UnlistenFn,
 } from "@/lib/pty";
+import { Paperclip } from "lucide-react";
 import { appDataDir, writeFileBytes } from "@/lib/ipc";
+import { tt } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export interface TerminalPaneProps {
@@ -86,14 +88,16 @@ const IMG_EXT: Record<string, string> = {
   "image/tiff": "tiff",
 };
 
-async function attachImageToPty(blob: Blob, mime: string, pid: string, stamp: string): Promise<void> {
+async function attachImageToPty(blob: Blob, mime: string, pid: string, stamp: string): Promise<string> {
   const ext = IMG_EXT[mime] ?? "png";
+  const name = `paste-${stamp}.${ext}`;
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  const path = `${await appDataDir()}/bezier-pastes/paste-${stamp}.${ext}`;
+  const path = `${await appDataDir()}/bezier-pastes/${name}`;
   await writeFileBytes(path, bytes);
   // The controlled path has no spaces; a trailing space separates it from the
   // next token the user types.
   await ptyWrite(pid, `${path} `);
+  return name;
 }
 
 /** Find the first image in a clipboard/drag payload, or null. */
@@ -144,6 +148,15 @@ export default function TerminalPane({
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
+  // Transient "image attached" confirmation (TQ-2): pasting an image only types a
+  // path, so without this the maker isn't sure it worked until the LLM replies.
+  const [imgHint, setImgHint] = useState<string | null>(null);
+  const imgHintTimer = useRef<number | null>(null);
+  const flashImgHint = useRef((name: string) => {
+    setImgHint(name);
+    if (imgHintTimer.current) window.clearTimeout(imgHintTimer.current);
+    imgHintTimer.current = window.setTimeout(() => setImgHint(null), 2800);
+  });
   // Keep the latest onExit in a ref — the pty effect captures its closure once
   // (mount-keyed), so reading through a ref avoids a stale callback without
   // re-spawning the pty when the parent re-renders. Synced in a layout effect
@@ -372,7 +385,9 @@ export default function TerminalPane({
         if (!img) return; // text → let xterm handle it
         e.preventDefault();
         e.stopPropagation();
-        void attachImageToPty(img.blob, img.mime, pid, `${Date.now()}-${++pasteSeq}`);
+        void attachImageToPty(img.blob, img.mime, pid, `${Date.now()}-${++pasteSeq}`)
+          .then((name) => flashImgHint.current(name))
+          .catch(() => {});
       };
       const onDragOver = (e: DragEvent) => {
         if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
@@ -382,7 +397,9 @@ export default function TerminalPane({
         if (!img) return;
         e.preventDefault();
         e.stopPropagation();
-        void attachImageToPty(img.blob, img.mime, pid, `${Date.now()}-${++pasteSeq}`);
+        void attachImageToPty(img.blob, img.mime, pid, `${Date.now()}-${++pasteSeq}`)
+          .then((name) => flashImgHint.current(name))
+          .catch(() => {});
       };
       // Copy (TQ-3): xterm's selection is a canvas selection, NOT a DOM one, so
       // the native Edit › Copy / ⌘C copies nothing. Fill the clipboard from
@@ -474,6 +491,12 @@ export default function TerminalPane({
       {exitCode !== undefined && (
         <span className="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs text-zinc-400">
           exited{exitCode === null ? "" : ` (${exitCode})`}
+        </span>
+      )}
+      {imgHint && (
+        <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1.5 rounded-md bg-emerald-600/90 px-2 py-1 text-xs font-medium text-white shadow">
+          <Paperclip className="size-3" />
+          {tt("previewServer.imageAttached", { name: imgHint })}
         </span>
       )}
     </div>
