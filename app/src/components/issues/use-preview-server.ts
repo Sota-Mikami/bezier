@@ -335,6 +335,11 @@ export function usePreviewServer(
       cwd: packageCwd(worktreePath, config?.packageDir ?? ""),
     }));
     const cmd = installCommand(manager);
+    // Run NON-INTERACTIVELY: the Live OUTPUT is a read-only log (no stdin), so an
+    // interactive prompt would deadlock. COREPACK_ENABLE_DOWNLOAD_PROMPT=0 makes
+    // Corepack auto-download pnpm/yarn instead of asking "Do you want to continue?
+    // [Y/n]" (the common pnpm-repo snag); harmless for npm/bun.
+    const runCmd = `COREPACK_ENABLE_DOWNLOAD_PROMPT=0 ${cmd}`;
     setInstalling(true);
     setError(null);
     setLog((l) => `${l}\n[Bezier] ${cmd} …\n`);
@@ -342,7 +347,7 @@ export function usePreviewServer(
       const id = await ptySpawn({
         cwd,
         cmd: "/bin/sh",
-        args: ["-c", cmd],
+        args: ["-c", runCmd],
         cols: 120,
         rows: 40,
       });
