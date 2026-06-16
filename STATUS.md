@@ -1,4 +1,4 @@
-<!-- 最終更新: 2026-06-16 / DEC-111 repo readiness Phase 1+1.5 実装·本番反映済(Node未/依存無/.env無 検出+1クリック修正·lockfile鮮度) / DEC-108 i18n 全部日英(agentプロンプト·共有·活動ログまで描画時) / DEC-107 i18n基盤(en既定·型でパリティ·言語切替) / DEC-106 CPを履歴ドロワーへ / 中央IA確定(Design/Prototype 2エリア·Map·グローバル注釈モード) / DEC-105 Document View・状態=受入基準・Clarify=skillマーケット・Implement=Preview -->
+<!-- 最終更新: 2026-06-16 / DEC-111 repo readiness Phase 1〜4 全実装·本番反映済(検出+1クリック修正·lockfile鮮度·git鮮度ff-onlyバナー·setupハンドオフ·サイドバーrepoバッジ) / DEC-108 i18n 全部日英(agentプロンプト·共有·活動ログまで描画時) / DEC-107 i18n基盤(en既定·型でパリティ·言語切替) / DEC-106 CPを履歴ドロワーへ / 中央IA確定(Design/Prototype 2エリア·Map·グローバル注釈モード) / DEC-105 Document View・状態=受入基準・Clarify=skillマーケット・Implement=Preview -->
 # Bezier — 現在地
 
 > **新しいチャットへ**: まずこの「オンボーディング・サマリ」(§0〜§5) を読めば、**何のサービスで・何を目指し・今何ができ・次に何を検討しているか**が分かる。詳細な意思決定は `playbook/decisions-log.md`（DEC-###・逆時系列）、憲章は `COMPANY.md`、時系列の作業ログは本ファイルの §6 以降（過去の append ログ）。
@@ -35,8 +35,12 @@
 - **dev に反映済み（2026-06-16 までの全部）**: 中央IA確定（Design/Prototype 2エリア・Map・グローバル注釈モード）・チェックポイントを履歴ドロワーへ（DEC-106）・**i18n 全部日英（DEC-107/108）**。さらに前回分の共有 UX 一新（DEC-100/101/102）・Merge 確認/main 保護（DEC-099）・パスワード保護。各段 tsc/eslint/vitest(23)/build green。
 - **i18n の要点（DEC-107/108）**: 依存ライブラリなしの型付き i18n（`src/lib/i18n/`・en 既定・型で全言語の鍵パリティ）。Agent 向け文言は `src/lib/prompts.ts` に en/ja co-located（将来の多言語同時チューニング＋eval を見据えた配置・[[prompt-tuning-multilingual-eval]]）。活動ログの自由ノートは**描画時**ローカライズ（書込時に言語凍結しない）。
 - **🐛 共有失敗の修正（DEC-102・既出）**: 大文字 ULID dir→Vercel 400 を `bezier-share/<小文字 id>` で修正済み。
-- **✅ 本番 `.app` 反映済（2026-06-16 19:46 ビルド）**: IA確定 / Map / 注釈モード / CP移設 / i18n全部日英 に加え、**repo readiness（DEC-111 Phase 1+1.5）**まで `/Applications/Bezier.app` に反映済み。日常使いの `.app` が最新。再ビルド時は `npm run tauri -- build --bundles app` → `/Applications` に cp -R（[[bezier-prod-app-for-daily-use]]）。
-- **新機能（DEC-111 Phase 1+1.5）= 環境 readiness（Live）**: clone 直後の repo を Live で開くと、cryptic な dev-server 失敗の前に**軽い検出**（Node 未インストール=`.nvmrc`/`engines` pin・依存 無し・lockfile より古い依存・.env 無し）→ **名前付き1クリック修正**（nvm install／依存 install／.env テンプレを**そのままコピー**＝秘密値は触らない）＋［全部準備する］順序実行。全 green で Run 有効化（自律実行はしない）／nvm 無しは案内のみ／［それでも起動する］でブロックしない。**起点バグ（fs-student-web の run-p→Corepack→Node 連鎖）を源流で解消**。残: Phase 2 git 鮮度 / 3 setup・README ハンドオフ / 4 サイドバー repo バッジ（`playbook/research/2026-06-16_repo-readiness-design.md`）。
+- **✅ 本番 `.app` 反映済（2026-06-16 20:24 ビルド）**: IA確定 / Map / 注釈モード / CP移設 / i18n全部日英 に加え、**repo readiness（DEC-111 Phase 1〜4 全部）**まで `/Applications/Bezier.app` に反映済み。日常使いの `.app` が最新。再ビルド時は `npm run tauri -- build --bundles app` → `/Applications` へ `ditto`（[[bezier-prod-app-for-daily-use]]・`rm -rf /Applications` は権限拒否されるので ditto で in-place 置換）。
+- **新機能（DEC-111 Phase 1〜4 完了）= repo readiness**: clone 直後/放置中の repo を非エンジニアでも安全に開始できる。`playbook/research/2026-06-16_repo-readiness-design.md` が SSOT。
+  - **P1+1.5（Live の準備チェックリスト）**: cryptic な dev-server 失敗の前に検出（Node pin 未インストール・依存 無し・lockfile より古い依存・.env 無し）→ 名前付き1クリック修正（nvm install／依存 install／.env テンプレを**そのままコピー**＝秘密値は触らない）＋［全部準備する］。全 green で Run 有効化（自律実行しない）／［それでも起動する］でブロックしない。**起点バグ（fs-student-web の run-p→Corepack→Node 連鎖）を源流で解消**。
+  - **P2（git 鮮度）**: 裏 fetch →「N 遅れ」の**非ブロッキングバナー**（Run を妨げない）→ ［最新化する］＝**安全な fast-forward のみ**（衝突しない・未保存を消さない）。枝分かれは自動マージせず案内＋フォルダを開く。Issue 作成時に soft 確認。
+  - **P3（セットアップ・ハンドオフ）**: repo 独自の setup（script/Docker/README 節）を検出して**開くだけ**（［README/ターミナル/Dockerfile を開く］・自動実行しない）。
+  - **P4（サイドバー repo バッジ）**: 各 repo に ⚠️準備／🔄更新。active は即時・他は cheap・no-network。Node でない repo は誤検出ゲート済み。
 
 ## §4. 次に検討する機能（backlog・`playbook/ideas-backlog.md` が正本）
 - **共有体験(§F)**: プリセット（クライアント用/ハンドオフ用・ブランド別）/ 送る前プレビュー / 空の層はトグル非表示 / アクセス制御（ドメイン・viewer セッション）/ env を OAuth Connect で easy×secure / multi-host（Netlify/Coolify）/ **実アプリ自体の保護**（Vercel Pro Deployment Protection か OIDC）。
