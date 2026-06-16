@@ -7,8 +7,9 @@
 import * as React from "react";
 import { X, Keyboard } from "lucide-react";
 
-import { SHORTCUTS } from "@/lib/shortcuts";
+import { buildShortcuts } from "@/lib/shortcuts";
 import { KbdKeys } from "@/components/ui/kbd";
+import { useT } from "@/lib/i18n";
 
 const OPEN_EVENT = "bezier:open-shortcuts";
 
@@ -30,6 +31,7 @@ function isTyping(): boolean {
 }
 
 export function ShortcutsDialog() {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -62,7 +64,7 @@ export function ShortcutsDialog() {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="キーボードショートカット"
+      aria-label={t("shortcuts.dialogTitle")}
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
     >
       <div
@@ -72,11 +74,11 @@ export function ShortcutsDialog() {
       <div className="relative z-10 flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
           <Keyboard className="size-4 text-muted-foreground" />
-          <span className="text-sm font-medium">キーボードショートカット</span>
+          <span className="text-sm font-medium">{t("shortcuts.dialogTitle")}</span>
           <button
             type="button"
             onClick={() => setOpen(false)}
-            aria-label="閉じる"
+            aria-label={t("common.close")}
             className="ml-auto flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <X className="size-4" />
@@ -84,7 +86,7 @@ export function ShortcutsDialog() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="gap-6 sm:columns-2">
-            {SHORTCUTS.map((g) => (
+            {buildShortcuts(t).map((g) => (
               <section key={g.title} className="mb-5 break-inside-avoid">
                 <h3 className="mb-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
                   {g.title}

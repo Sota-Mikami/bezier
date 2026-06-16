@@ -5,6 +5,7 @@
 // at generation time to escaped, safe HTML; raw HTML in Spec never executes in
 // the shared page.
 
+import { tt } from "@/lib/i18n";
 import type { Checkpoint } from "./git";
 import type { JourneyLayers } from "./settings";
 
@@ -88,10 +89,10 @@ iframe.view{position:fixed;inset:0;width:100%;height:100%;border:0;background:va
   <div class="card">
     <span class="badge"><span class="dot"></span>Made with Bezier</span>
     <h1>${safeTitle}</h1>
-    <p class="lead">このページはパスワードで保護されています。</p>
+    <p class="lead">${esc(tt("journey.pwProtected"))}</p>
     <form id="f">
-      <input id="pw" type="password" placeholder="パスワード" autocomplete="current-password" autofocus>
-      <button type="submit">開く</button>
+      <input id="pw" type="password" placeholder="${escAttr(tt("journey.pwPlaceholder"))}" autocomplete="current-password" autofocus>
+      <button type="submit">${esc(tt("journey.pwOpen"))}</button>
     </form>
     <div class="err" id="err"></div>
   </div>
@@ -113,7 +114,7 @@ document.getElementById("f").addEventListener("submit",function(e){
   tryDecrypt(document.getElementById("pw").value).then(function(html){
     var f=document.createElement("iframe");f.className="view";f.srcdoc=html;
     document.body.innerHTML="";document.body.appendChild(f);
-  }).catch(function(){err.textContent="パスワードが違います。";btn.disabled=false;});
+  }).catch(function(){err.textContent=${JSON.stringify(tt("journey.pwWrong"))};btn.disabled=false;});
 });
 </script>
 </body>
@@ -139,7 +140,7 @@ function inlineMd(s: string): string {
 }
 
 function renderSafeMarkdown(md: string): string {
-  const lines = (md || "*(spec はまだありません)*").replace(/\r\n/g, "\n").split("\n");
+  const lines = (md || tt("journey.specEmpty")).replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let inCode = false;
   let code: string[] = [];
@@ -207,9 +208,9 @@ export function buildJourneyHtml(data: JourneyData): string {
   const specHtml = renderSafeMarkdown(data.specMd);
 
   const appSection = appUrl
-    ? `<a class="cta" href="${esc(appUrl)}" target="_blank" rel="noopener">アプリを開く →</a>
+    ? `<a class="cta" href="${esc(appUrl)}" target="_blank" rel="noopener">${esc(tt("journey.openApp"))}</a>
        <iframe class="frame" src="${esc(appUrl)}" title="app preview" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>`
-    : `<p class="muted">まだアプリは公開されていません。「共有」で公開すると、ここに表示されます。</p>`;
+    : `<p class="muted">${esc(tt("journey.appNotPublished"))}</p>`;
 
   const history = data.checkpoints.length
     ? data.checkpoints
@@ -218,14 +219,14 @@ export function buildJourneyHtml(data: JourneyData): string {
             `<li><code>${esc(c.short)}</code><span>${esc(c.subject)}</span><time>${fmtDate(c.iso)}</time></li>`,
         )
         .join("\n")
-    : `<li class="muted">履歴はまだありません。</li>`;
+    : `<li class="muted">${esc(tt("journey.noHistory"))}</li>`;
 
   const designSection = data.designHtml
     ? `<iframe class="design" sandbox="" title="design" srcdoc="${escAttr(data.designHtml)}"></iframe>`
     : "";
   const implLink = data.prUrl ?? githubBranchUrl(data.repoUrl, data.branch);
   const implSection = implLink
-    ? `<a class="link" href="${esc(implLink)}" target="_blank" rel="noopener">${data.prUrl ? "PR を見る" : "GitHub で見る"} →</a>`
+    ? `<a class="link" href="${esc(implLink)}" target="_blank" rel="noopener">${esc(data.prUrl ? tt("journey.viewPr") : tt("journey.viewGithub"))} →</a>`
     : "";
 
   const badge = `<span class="badge"><span class="dot"></span>Made with Bezier</span>`;
@@ -238,11 +239,11 @@ export function buildJourneyHtml(data: JourneyData): string {
     impl: true,
   };
   const sections = [
-    L.app ? `<h2>アプリ</h2>\n  ${appSection}` : "",
+    L.app ? `<h2>${esc(tt("journey.secApp"))}</h2>\n  ${appSection}` : "",
     L.spec ? `<h2>Spec</h2>\n  <div class="spec" id="spec">${specHtml}</div>` : "",
-    L.design && designSection ? `<h2>デザイン</h2>\n  ${designSection}` : "",
+    L.design && designSection ? `<h2>${esc(tt("journey.secDesign"))}</h2>\n  ${designSection}` : "",
     L.impl
-      ? `<h2>実装</h2>\n  ${implSection}\n  <ul class="history">${history}</ul>`
+      ? `<h2>${esc(tt("journey.secImpl"))}</h2>\n  ${implSection}\n  <ul class="history">${history}</ul>`
       : "",
   ]
     .filter(Boolean)
@@ -291,13 +292,13 @@ footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);color:v
     <h1>${safeTitle}</h1>
     ${badge}
   </header>
-  <p class="lead">「出来上がり」だけでなく、どう作ったかの記録です。</p>
+  <p class="lead">${esc(tt("journey.footerLead"))}</p>
 
   ${sections}
 
   <footer>
     ${badge}
-    <span>このページは Bezier が生成しました</span>
+    <span>${esc(tt("journey.madeBy"))}</span>
   </footer>
 </div>
 </body>

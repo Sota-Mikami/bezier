@@ -50,5 +50,6 @@ test("buildJourneyHtml rejects non-https app URLs", () => {
   });
 
   assert.equal(html.includes("javascript:alert(1)"), false);
-  assert.match(html, /まだアプリは公開されていません/);
+  // A rejected (non-https) URL must produce no "open app" CTA (locale-independent).
+  assert.equal(html.includes('class="cta"'), false);
 });
