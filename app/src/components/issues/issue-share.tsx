@@ -25,63 +25,72 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { copyText } from "@/lib/clipboard";
 import { openExternal } from "@/lib/ipc";
-import { useSettings } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import {
+  listShareItems,
+  readShareConfig,
+  writeShareConfig,
+  toggleShare,
+  isShared,
+  gatherJourneyData,
+  type ShareConfig,
+  type ShareItems,
+} from "@/lib/share";
 
 import type { ImplementSession } from "./implement-session-types";
 
-// "共有 ▾" — one entry point next to Checkpoints/Ship (CEO: it belongs near
-// ship, not in the Design preview controls). The maker picks WHAT to share with
-// toggle pills (アプリ / Spec / デザイン / 実装), hits one button, and gets one
-// shareable URL. Selecting アプリ publishes the live app first, then the page
-// embeds the fresh build (DEC-094/098). No "journey" jargon — just "共有する内容".
+// "共有 ▾" — the share entry by Ship. DF-5: the maker picks WHICH of this issue's
+// Design docs/wireframes and Prototype tabs (Preview / Map / QA) to share, with
+// checkboxes (default = everything). The shared page mirrors the maker's Issue
+// detail (Design / Prototype segmented control + tabs), showing only what's on.
+// Selecting Preview or Map publishes the live app first so the page can embed it.
 export function IssueShare({ session }: { session: ImplementSession }) {
-  const { ref, publish, journey } = session;
-  const { settings, update } = useSettings();
+  const { ref, issue, publish, journey } = session;
   const t = useT();
-  const layers = settings.journeyLayers;
-  // Password protection (DEC-102). Ephemeral — kept in component state (persists
-  // while you're on the issue) but NEVER written to disk; you re-enter it if you
-  // leave and come back. Avoids storing a plaintext password.
+  const [items, setItems] = React.useState<ShareItems | null>(null);
+  const [cfg, setCfg] = React.useState<ShareConfig>({ exclude: [] });
+  // Password protection (DEC-102). Ephemeral — never written to disk.
   const [pwOn, setPwOn] = React.useState(false);
   const [pw, setPw] = React.useState("");
   const [pwReveal, setPwReveal] = React.useState(false);
-  if (!ref) return null;
+
+  // Load the shareable items + saved selection for this issue.
+  React.useEffect(() => {
+    let cancelled = false;
+    void Promise.all([listShareItems(issue), readShareConfig(issue)]).then(
+      ([its, c]) => {
+        if (cancelled) return;
+        setItems(its);
+        setCfg(c);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [issue]);
 
   const busy = publish.status === "building" || journey.status === "building";
-  // Share targets = Spec / Design / Preview only (CEO, DEC-101). The dev record
-  // (Diff/code/history) is dropped. Labels reuse the app's OWN words (the
-  // Spec/Design/Implement tabs) — renaming would split the vocabulary and
-  // confuse the operator. The fix for "何のことか分からない" is the one-line
-  // description (drawn from the tab tooltips), not a new name.
-  const shareItems: { key: keyof typeof layers; label: string; desc: string }[] =
-    [
-      {
-        key: "app",
-        label: t("share.layerAppLabel"),
-        desc: t("share.layerAppDesc"),
-      },
-      {
-        key: "design",
-        label: t("share.layerDesignLabel"),
-        desc: t("share.layerDesignDesc"),
-      },
-      {
-        key: "spec",
-        label: t("share.layerSpecLabel"),
-        desc: t("share.layerSpecDesc"),
-      },
-    ];
-  const anySelected = shareItems.some((it) => layers[it.key]);
 
-  // One action: publish the live app (when included) → build + deploy the share
-  // page embedding that fresh URL → one link.
+  const toggle = (key: string) => {
+    const next = toggleShare(cfg, key);
+    setCfg(next);
+    void writeShareConfig(issue, next);
+  };
+
+  const allItems = items ? [...items.design, ...items.prototype] : [];
+  const anySelected = allItems.some((it) => isShared(cfg, it.key));
+  const previewOn = isShared(cfg, "preview");
+  const mapOn = isShared(cfg, "map");
   const pwMissing = pwOn && !pw.trim();
+
+  // Publish the live app (only when Preview or Map is shared), then gather the
+  // SELECTED content and hand it to the share builder.
   const runShare = async () => {
     if (busy || !anySelected || pwMissing) return;
-    const appUrl = layers.app ? await publish.publish() : null;
-    await journey.share({ appUrl, password: pwOn ? pw : null });
+    const appUrl = previewOn || mapOn ? await publish.publish() : null;
+    const data = await gatherJourneyData(issue, appUrl, cfg);
+    await journey.share({ ...data, password: pwOn ? pw : null });
   };
 
   const phase =
@@ -93,14 +102,52 @@ export function IssueShare({ session }: { session: ImplementSession }) {
           ? t("share.phaseError")
           : null;
   const ready = journey.status === "ready" && !!journey.url && !busy;
-  // On failure, surface the actual reason (the last lines of whichever step
-  // errored) so it isn't a dead-end "失敗しました" (CEO hit a silent failure).
   const errorLog =
     publish.status === "error"
       ? publish.log
       : journey.status === "error"
         ? journey.log
         : "";
+
+  if (!ref) return null;
+
+  const renderGroup = (label: string, group: { key: string; label: string }[]) =>
+    group.length === 0 ? null : (
+      <div className="mt-1">
+        <div className="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+          {label}
+        </div>
+        <div className="flex flex-col gap-0.5">
+          {group.map((it) => {
+            const on = isShared(cfg, it.key);
+            return (
+              <button
+                key={it.key}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggle(it.key)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition",
+                  on ? "bg-foreground/[0.06]" : "hover:bg-muted",
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center rounded border transition",
+                    on
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border",
+                  )}
+                >
+                  {on && <Check className="size-3" />}
+                </span>
+                <span className="min-w-0 truncate text-xs">{it.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
 
   return (
     <DropdownMenu>
@@ -137,51 +184,18 @@ export function IssueShare({ session }: { session: ImplementSession }) {
           </DropdownMenuGroup>
         )}
 
-        <div className="px-1 pb-1 text-[11px] font-medium text-muted-foreground">
+        <div className="px-1 text-[11px] font-medium text-muted-foreground">
           {t("share.chooseContent")}
         </div>
-        <div className="flex flex-col gap-0.5">
-          {shareItems.map((it) => {
-            const on = layers[it.key];
-            return (
-              <button
-                key={it.key}
-                type="button"
-                aria-pressed={on}
-                onClick={() =>
-                  update({ journeyLayers: { ...layers, [it.key]: !on } })
-                }
-                className={cn(
-                  "flex w-full items-start gap-2 rounded-md px-1.5 py-1.5 text-left transition",
-                  on ? "bg-foreground/[0.06]" : "hover:bg-muted",
-                )}
-              >
-                <span
-                  className={cn(
-                    "mt-px flex size-4 shrink-0 items-center justify-center rounded border transition",
-                    on
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border",
-                  )}
-                >
-                  {on && <Check className="size-3" />}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium leading-tight">
-                    {it.label}
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-                    {it.desc}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {!layers.spec && (
-          <div className="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
-            {t("share.specOmittedWarning")}
+        {!items ? (
+          <div className="flex items-center gap-1.5 px-1.5 py-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" /> {t("common.loading")}
           </div>
+        ) : (
+          <>
+            {renderGroup(t("share.groupDesign"), items.design)}
+            {renderGroup(t("share.groupPrototype"), items.prototype)}
+          </>
         )}
 
         <DropdownMenuSeparator />
@@ -222,9 +236,6 @@ export function IssueShare({ session }: { session: ImplementSession }) {
               autoComplete="new-password"
               autoFocus
               onChange={(e) => setPw(e.target.value)}
-              // base-ui Menu captures keystrokes (typeahead) + pointer for its own
-              // navigation, so an input inside the popup can't be typed into. Stop
-              // these from bubbling to the menu so the field works normally.
               onKeyDown={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
               placeholder={t("share.passwordPlaceholder")}
@@ -240,11 +251,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
               onPointerDown={(e) => e.stopPropagation()}
               className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:text-foreground"
             >
-              {pwReveal ? (
-                <EyeOff className="size-3.5" />
-              ) : (
-                <Eye className="size-3.5" />
-              )}
+              {pwReveal ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
             </button>
           </div>
         )}
@@ -264,9 +271,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         </button>
 
         {phase && (
-          <div className="px-1 pt-1.5 text-[11px] text-muted-foreground">
-            {phase}
-          </div>
+          <div className="px-1 pt-1.5 text-[11px] text-muted-foreground">{phase}</div>
         )}
         {errorLog && (
           <pre className="mt-1 max-h-28 overflow-auto rounded border bg-destructive/5 px-2 py-1 text-[10px] leading-snug whitespace-pre-wrap text-muted-foreground">

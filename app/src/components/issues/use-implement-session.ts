@@ -221,16 +221,7 @@ export function useImplementSession(
     issue.id,
   );
   const publish = usePublish(root, ref ? workDir(ref.path) : null, issue.id);
-  const journey = useJourney(
-    root,
-    issue.id,
-    issue.dir,
-    issue.title,
-    checkpoints,
-    publish.url,
-    prUrl,
-    ref?.branch ?? null,
-  );
+  const journey = useJourney(root, issue.id, issue.title);
 
   // Embedded terminal (one at a time). termCwd/termSpawn/termNonce mirror the
   // /workspace pattern; pendingInput is written once the pty is ready.

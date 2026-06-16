@@ -17,12 +17,16 @@ import {
   resolveCommand,
   type UnlistenFn,
 } from "@/lib/pty";
-import { readFile, writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
+import { writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
 import { getSettings } from "@/lib/settings";
-import { buildJourneyHtml, buildGatePage, type EncryptedBlob } from "@/lib/journey";
-import { gitRemoteUrl, type Checkpoint } from "@/lib/git";
-import { listVariants, readVariant, readAdoptedDesign } from "@/lib/variants";
+import {
+  buildJourneyHtml,
+  buildGatePage,
+  type EncryptedBlob,
+  type JourneyDesignTab,
+  type JourneyProtoTab,
+} from "@/lib/journey";
 
 export type JourneyStatus = "idle" | "building" | "ready" | "error";
 
@@ -31,13 +35,14 @@ export interface JourneyController {
   url: string | null;
   log: string;
   /**
-   * Generate + deploy the share page → shareable URL. `opts.appUrl` overrides
-   * the embedded live-app URL — the unified "共有" flow publishes the app first,
-   * then passes the fresh URL here so the page embeds the just-deployed build.
-   * `opts.password` (DEC-102) gates the page behind client-side encryption.
+   * Generate + deploy the share page → shareable URL. The caller (the share UI)
+   * gathers the SELECTED content (DF-5: which Design docs/wireframes + Prototype
+   * tabs) and passes it here; this hook just builds + deploys. `opts.password`
+   * (DEC-102) gates the page behind client-side encryption.
    */
-  share: (opts?: {
-    appUrl?: string | null;
+  share: (opts: {
+    design: JourneyDesignTab[];
+    prototype: JourneyProtoTab[];
     password?: string | null;
   }) => Promise<void>;
   clear: () => Promise<void>;
@@ -94,12 +99,7 @@ const PTY_PREFIX = "journey:";
 export function useJourney(
   root: string,
   issueId: string,
-  issueDir: string | null,
   title: string,
-  checkpoints: Checkpoint[],
-  appUrl: string | null,
-  prUrl: string | null,
-  branch: string | null,
 ): JourneyController {
   const [status, setStatus] = React.useState<JourneyStatus>("idle");
   const [url, setUrl] = React.useState<string | null>(null);
@@ -134,16 +134,14 @@ export function useJourney(
   }, [detach, ptyKey]);
 
   const share = React.useCallback(
-    async (opts?: { appUrl?: string | null; password?: string | null }) => {
+    async (opts: {
+      design: JourneyDesignTab[];
+      prototype: JourneyProtoTab[];
+      password?: string | null;
+    }) => {
     if (busyRef.current) return;
     busyRef.current = true;
-    // The caller (unified share flow) may hand us a freshly-published app URL;
-    // otherwise fall back to the hook's appUrl.
-    const effectiveAppUrl =
-      opts && Object.prototype.hasOwnProperty.call(opts, "appUrl")
-        ? (opts.appUrl ?? null)
-        : appUrl;
-    const password = opts?.password?.trim() || "";
+    const password = opts.password?.trim() || "";
     try {
       const bin = await resolveCommand("vercel").catch(() => "");
       if (!bin) {
@@ -152,49 +150,11 @@ export function useJourney(
         return;
       }
 
-      // Per-share section toggles (DEC-094). Only gather what's enabled.
-      // CEO (DEC-101): the share targets are Spec / Design / Preview only — the
-      // dev record (Diff/code/commit history) is NOT shared. Force `impl` off
-      // here so a stale saved `impl:true` can't leak it.
-      const layers = { ...getSettings().journeyLayers, impl: false };
-
-      const specMd =
-        layers.spec && issueDir
-          ? await readFile(`${issueDir}/spec.md`).catch(() => "")
-          : "";
-
-      // Design: embed the adopted wireframe (else the first), if any.
-      let designHtml: string | null = null;
-      if (layers.design && issueDir) {
-        try {
-          const variants = await listVariants({ dir: issueDir });
-          if (variants.length) {
-            const adopted = await readAdoptedDesign({ dir: issueDir }).catch(
-              () => null,
-            );
-            const chosen = variants.find((v) => v.id === adopted) ?? variants[0];
-            designHtml = await readVariant(chosen.path).catch(() => null);
-          }
-        } catch {
-          /* no design folder */
-        }
-      }
-
-      // Implementation: PR link if opened, else a GitHub branch link.
-      const repoUrl = layers.impl
-        ? await gitRemoteUrl(root).catch(() => "")
-        : "";
-
+      // The caller already gathered the SELECTED content (DF-5); just render it.
       let pageHtml = buildJourneyHtml({
         title,
-        specMd,
-        checkpoints,
-        appUrl: effectiveAppUrl,
-        layers,
-        designHtml,
-        prUrl,
-        repoUrl: repoUrl || null,
-        branch,
+        design: opts.design,
+        prototype: opts.prototype,
       });
 
       // Password protection (DEC-102): encrypt the whole page client-side; the
@@ -295,18 +255,7 @@ export function useJourney(
     } finally {
       busyRef.current = false;
     }
-  }, [
-    root,
-    issueId,
-    issueDir,
-    title,
-    checkpoints,
-    appUrl,
-    prUrl,
-    branch,
-    ptyKey,
-    detach,
-  ]);
+  }, [root, issueId, title, ptyKey, detach]);
 
   // Unmount: detach listeners (let any in-flight deploy finish).
   React.useEffect(() => {
