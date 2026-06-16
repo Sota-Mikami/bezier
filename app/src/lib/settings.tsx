@@ -153,7 +153,8 @@ export interface Settings {
 }
 
 export const DEFAULT_CONNECTIONS: PublishConnection[] = [
-  { id: "default", label: "個人 (bezier)", scope: "bezier" },
+  // A stored default; the user renames it freely. Kept in English (default locale).
+  { id: "default", label: "Personal (bezier)", scope: "bezier" },
 ];
 
 export const DEFAULT_SETTINGS: Settings = {

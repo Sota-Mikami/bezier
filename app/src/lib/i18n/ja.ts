@@ -90,6 +90,15 @@ export const ja: Messages = {
     cantLoad: "{name}（読み込めません）",
   },
 
+  threadNote: {
+    chatStarted: "チャット開始",
+    variantGenerated: "案 {ids} を生成",
+    variantGeneratedCtx: "案 {ids} を生成（{context}）",
+    variantAdopted: "案 {id} を採用 → Implement",
+    variantAdoptedStart: "案 {id} を採用 → Implement 開始",
+    conflicts: "衝突 {n} ファイル",
+  },
+
   publishFlow: {
     noDeployUrl: "\n[Bezier] デプロイ URL を取得できませんでした（exit 0 でも URL なし）。",
     vercelNotFound: "vercel CLI が見つかりません。`npm i -g vercel` でインストールし、`vercel login` してください。",

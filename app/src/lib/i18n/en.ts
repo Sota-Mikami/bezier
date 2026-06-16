@@ -91,6 +91,15 @@ export const en = {
     cantLoad: "{name} (can't load)",
   },
 
+  threadNote: {
+    chatStarted: "Chat started",
+    variantGenerated: "Generated variant {ids}",
+    variantGeneratedCtx: "Generated variant {ids} ({context})",
+    variantAdopted: "Adopted variant {id} → Implement",
+    variantAdoptedStart: "Adopted variant {id} → Implement started",
+    conflicts: "{n} conflicting files",
+  },
+
   publishFlow: {
     noDeployUrl: "\n[Bezier] Couldn't get the deploy URL (exit 0 but no URL).",
     vercelNotFound: "vercel CLI not found. Install it with `npm i -g vercel`, then run `vercel login`.",

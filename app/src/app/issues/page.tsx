@@ -1092,25 +1092,29 @@ function ThreadTimeline({ events }: { events: ThreadEvent[] }) {
   const ordered = [...events].reverse();
   return (
     <ul className="space-y-2">
-      {ordered.map((e, i) => (
-        <li
-          key={`${e.at}#${events.length - i}`}
-          className="flex items-start gap-2 text-[11px] text-muted-foreground"
-        >
-          <span className="mt-1 size-1.5 shrink-0 rounded-full bg-foreground/30" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="font-medium text-foreground/80">
-                {THREAD_EVENT_KEY[e.type] ? t(THREAD_EVENT_KEY[e.type]) : e.type}
-              </span>
-              <span className="shrink-0 font-mono text-[10px]">
-                {fmtDateTime(e.at)}
-              </span>
+      {ordered.map((e, i) => {
+        // Keyed notes resolve in the current locale (DEC-108); raw notes (sha) verbatim.
+        const note = e.noteKey ? t(e.noteKey as MsgKey, e.noteParams) : e.note;
+        return (
+          <li
+            key={`${e.at}#${events.length - i}`}
+            className="flex items-start gap-2 text-[11px] text-muted-foreground"
+          >
+            <span className="mt-1 size-1.5 shrink-0 rounded-full bg-foreground/30" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-foreground/80">
+                  {THREAD_EVENT_KEY[e.type] ? t(THREAD_EVENT_KEY[e.type]) : e.type}
+                </span>
+                <span className="shrink-0 font-mono text-[10px]">
+                  {fmtDateTime(e.at)}
+                </span>
+              </div>
+              {note && <div className="mt-0.5 truncate">{note}</div>}
             </div>
-            {e.note && <div className="mt-0.5 truncate">{e.note}</div>}
-          </div>
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 }

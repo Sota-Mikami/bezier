@@ -37,6 +37,7 @@ import {
   type WorktreeRef,
   type ThreadEvent,
   type ThreadEventType,
+  type ThreadNote,
 } from "@/lib/issues";
 import {
   gitIsRepo,
@@ -446,14 +447,24 @@ export function useImplementSession(
   const logEvent = React.useCallback(
     async (
       type: ThreadEventType,
-      note?: string,
+      note?: ThreadNote,
       extra?: Partial<Pick<ThreadEvent, "changedPaths" | "branch">>,
     ) => {
+      // A raw string note is a sha / message (verbatim); a {key, params} note is
+      // resolved in the reader's locale at render time (DEC-108).
+      const noteFields =
+        typeof note === "string"
+          ? note
+            ? { note }
+            : {}
+          : note
+            ? { noteKey: note.key, noteParams: note.params }
+            : {};
       try {
         const next = await appendThreadEvent(root, issue, {
           type,
           at: new Date().toISOString(),
-          ...(note ? { note } : {}),
+          ...noteFields,
           ...(extra ?? {}),
         });
         setThread(next);
@@ -665,7 +676,7 @@ export function useImplementSession(
         });
         setRef(newRef);
         launchAgent(selectedAgent, workDir(wt), { prompt: content });
-        void logEvent("implement", "チャット開始");
+        void logEvent("implement", { key: "threadNote.chatStarted" });
         void loadBehind(wt);
       } catch (e) {
         setError(errMsg(e));
@@ -746,7 +757,9 @@ export function useImplementSession(
         launchAgent(selectedAgent, cwd, { prompt: content, resume: !!ref });
         void logEvent(
           "variant",
-          `案 ${ids.join("/")} を生成${context ? `（${context}）` : ""}`,
+          context
+            ? { key: "threadNote.variantGeneratedCtx", params: { ids: ids.join("/"), context } }
+            : { key: "threadNote.variantGenerated", params: { ids: ids.join("/") } },
         );
       } catch (e) {
         setError(errMsg(e));
@@ -787,7 +800,7 @@ export function useImplementSession(
             prompt: pickPrompt,
             resume: true,
           });
-          void logEvent("variant", `案 ${id} を採用 → Implement`);
+          void logEvent("variant", { key: "threadNote.variantAdopted", params: { id } });
         } else {
           // Promote: pre-Build design → create the worktree, then build.
           if (!gitRepo) {
@@ -804,7 +817,7 @@ export function useImplementSession(
           onStatusChange("in-progress");
           setRef(newRef);
           launchAgent(selectedAgent, workDir(wt), { prompt: pickPrompt });
-          void logEvent("variant", `案 ${id} を採用 → Implement 開始`);
+          void logEvent("variant", { key: "threadNote.variantAdoptedStart", params: { id } });
           void loadBehind(wt);
         }
       } catch (e) {
@@ -1078,7 +1091,7 @@ export function useImplementSession(
       } else {
         setSyncConflicts(res.conflicts);
         setError(tt("session.syncConflict", { count: res.conflicts.length }));
-        void logEvent("sync", `衝突 ${res.conflicts.length} ファイル`);
+        void logEvent("sync", { key: "threadNote.conflicts", params: { n: res.conflicts.length } });
       }
     } catch (e) {
       setError(errMsg(e));

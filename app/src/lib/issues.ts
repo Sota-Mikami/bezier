@@ -21,7 +21,7 @@ import {
 } from "@/lib/ipc";
 import { splitFrontmatter } from "@/lib/markdown";
 import { getSettings, getSpecTemplate } from "@/lib/settings";
-import { tt } from "@/lib/i18n";
+import { tt, type MsgKey } from "@/lib/i18n";
 import {
   designConventionLines,
   bezierGuideDoc,
@@ -887,12 +887,21 @@ export type ThreadEventType =
   | "checkpoint"
   | "rollback";
 
+/** A note for a thread event: either a raw string (a sha / commit message —
+ * not translatable) or a STRUCTURED i18n ref ({key, params}) that's resolved in
+ * the reader's locale at RENDER time (DEC-108) — never frozen at write time. */
+export type ThreadNote = string | { key: MsgKey; params?: Record<string, string | number> };
+
 export interface ThreadEvent {
   type: ThreadEventType;
   /** ISO timestamp (new Date().toISOString()). */
   at: string;
-  /** Optional human note (e.g. a commit sha, conflict count). */
+  /** Optional raw note (e.g. a commit sha) — shown verbatim (back-compat). */
   note?: string;
+  /** Optional i18n note key, resolved at render time (DEC-108). */
+  noteKey?: string;
+  /** Params for noteKey. */
+  noteParams?: Record<string, string | number>;
   /**
    * Structured record for `accept` events (DEC-014/A): the paths committed and
    * the branch. This is the durable "what changed / where" that replaced
@@ -900,6 +909,13 @@ export interface ThreadEvent {
    */
   changedPaths?: string[];
   branch?: string;
+}
+
+/** Resolve a thread event's note in the current locale (DEC-108): the i18n key
+ * if present, else the raw string. Empty when neither. */
+export function threadNoteText(e: Pick<ThreadEvent, "note" | "noteKey" | "noteParams">): string {
+  if (e.noteKey) return tt(e.noteKey as MsgKey, e.noteParams);
+  return e.note ?? "";
 }
 
 /** <root>/.bezier/issues/<ulid>/thread.json — the durable activity log. */
@@ -962,7 +978,8 @@ function summarizeThread(thread: ThreadEvent[]): string {
     .map((e) => {
       const when = e.at.slice(0, 19).replace("T", " ");
       const what = tt(`issuesPage.threadEvent.${e.type}`);
-      return `- ${when} — ${what}${e.note ? `（${e.note}）` : ""}`;
+      const note = threadNoteText(e);
+      return `- ${when} — ${what}${note ? `（${note}）` : ""}`;
     })
     .join("\n");
 }
