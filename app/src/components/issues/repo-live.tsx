@@ -8,6 +8,7 @@
 // will add annotate → "これを Issue に" (turn an observation into a new Issue).
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import {
   Play,
   Loader2,
@@ -20,17 +21,35 @@ import {
   Wand2,
   ArrowDownToLine,
   FolderOpen,
+  FileText,
+  Container,
+  Terminal as TerminalIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { openExternal, openInEditor } from "@/lib/ipc";
 import { useT } from "@/lib/i18n";
 import { repoName } from "@/lib/workspace-root";
+import { packageCwd } from "@/lib/preview";
 import { cn } from "@/lib/utils";
 import { usePreviewServer } from "./use-preview-server";
 import { useReadiness, type ReadinessController } from "./use-readiness";
 import { useRepoFreshness, type RepoFreshness } from "./use-repo-freshness";
-import type { ReadinessItem } from "@/lib/readiness";
+import { useSetupSignals } from "./use-setup-signals";
+import type { ReadinessItem, SetupSignals } from "@/lib/readiness";
+import type { TerminalPaneProps } from "@/components/workspace/terminal";
+
+// xterm-backed terminal for the Phase 3 setup handoff — client-only (DOM + CSS),
+// dynamically imported (output: "export"). No `spawn` → bare login shell (nothing
+// auto-runs); no `sessionKey` → killed on unmount (no orphan pty).
+const TerminalPane = dynamic(() => import("@/components/workspace/terminal"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center">
+      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+    </div>
+  ),
+}) as React.ComponentType<TerminalPaneProps>;
 
 // Resizable OUTPUT panel (matches the Issue-detail divider, DEC-033): persisted
 // height in px + its floor. Default ≈ the old max-h-44 (11rem).
@@ -49,6 +68,11 @@ export function RepoLive({ root }: { root: string }) {
   // Repo freshness (DEC-111 Phase 2): is the default branch behind origin? Shown
   // as a non-blocking banner — never gates Run.
   const freshness = useRepoFreshness(root);
+  // Setup handoff (DEC-111 Phase 3): does the repo have its own setup story we
+  // should open (never run)? Plus a throwaway terminal for the maker to run it.
+  const packageDir = config?.packageDir ?? "";
+  const setup = useSetupSignals(root, packageDir);
+  const [showTerminal, setShowTerminal] = React.useState(false);
 
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
@@ -156,8 +180,13 @@ export function RepoLive({ root }: { root: string }) {
 
       <FreshnessBanner f={freshness} root={root} />
 
-      <div className={cn("relative min-h-0 flex-1", ready && "bg-white")}>
-        {ready ? (
+      <div className={cn("relative min-h-0 flex-1", ready && !showTerminal && "bg-white")}>
+        {showTerminal ? (
+          <SetupTerminal
+            cwd={packageCwd(root, packageDir)}
+            onClose={() => setShowTerminal(false)}
+          />
+        ) : ready ? (
           <iframe
             src={src!}
             title="live"
@@ -221,9 +250,26 @@ export function RepoLive({ root }: { root: string }) {
                   {!error && (
                     <p className="max-w-sm text-[11px] text-muted-foreground/70">{t("live.newHint")}</p>
                   )}
+
+                  {/* Even when ready, let the maker open the repo's own setup. */}
+                  {setup?.any && (
+                    <button
+                      type="button"
+                      onClick={() => setShowTerminal(true)}
+                      className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      {t("live.setupEscape")}
+                    </button>
+                  )}
                 </>
               ) : (
-                <ReadinessChecklist readiness={readiness} onRunAnyway={() => void start()} />
+                <ReadinessChecklist
+                  readiness={readiness}
+                  onRunAnyway={() => void start()}
+                  setup={setup}
+                  root={root}
+                  onOpenTerminal={() => setShowTerminal(true)}
+                />
               )}
             </div>
 
@@ -265,9 +311,15 @@ export function RepoLive({ root }: { root: string }) {
 function ReadinessChecklist({
   readiness,
   onRunAnyway,
+  setup,
+  root,
+  onOpenTerminal,
 }: {
   readiness: ReadinessController;
   onRunAnyway: () => void;
+  setup: SetupSignals | null;
+  root: string;
+  onOpenTerminal: () => void;
 }) {
   const t = useT();
   const needs = readiness.items.filter((i) => i.status === "needs");
@@ -314,6 +366,97 @@ function ReadinessChecklist({
         >
           {t("live.readyRunAnyway")}
         </button>
+      </div>
+
+      {setup?.any && (
+        <SetupHandoffCard signals={setup} root={root} onOpenTerminal={onOpenTerminal} />
+      )}
+    </div>
+  );
+}
+
+// Setup handoff (DEC-111 Phase 3): a repo's OWN setup (scripts/Docker/README) is
+// NOT Bezier's to run — we detect it and open it. Buttons only; nothing executes.
+function SetupHandoffCard({
+  signals,
+  root,
+  onOpenTerminal,
+}: {
+  signals: SetupSignals;
+  root: string;
+  onOpenTerminal: () => void;
+}) {
+  const t = useT();
+  const dockerFile = signals.docker[0];
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 text-left">
+      <p className="text-xs font-medium">{t("live.setupTitle")}</p>
+      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+        {t("live.setupIntro")}
+      </p>
+      {signals.scripts.length > 0 && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {t("live.setupScriptHint", { names: signals.scripts.map((s) => s.name).join(", ") })}
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {signals.readme && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-[11px]"
+            onClick={() => void openInEditor(signals.readme!.path).catch(() => {})}
+          >
+            <FileText className="size-3" />
+            {signals.readme.section
+              ? t("live.setupOpenReadmeSection", { section: signals.readme.section })
+              : t("live.setupOpenReadme")}
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 text-[11px]"
+          onClick={onOpenTerminal}
+        >
+          <TerminalIcon className="size-3" />
+          {t("live.setupOpenTerminal")}
+        </Button>
+        {dockerFile && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-[11px]"
+            onClick={() => void openInEditor(`${root}/${dockerFile}`).catch(() => {})}
+          >
+            <Container className="size-3" />
+            {t("live.setupOpenDockerfile")}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// A throwaway terminal for the maker to run setup themselves (DEC-111 Phase 3).
+// Bare login shell at the repo cwd — nothing auto-runs; killed on unmount.
+function SetupTerminal({ cwd, onClose }: { cwd: string; onClose: () => void }) {
+  const t = useT();
+  return (
+    <div className="flex h-full flex-col bg-background">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
+        <TerminalIcon className="size-3.5 text-muted-foreground" />
+        <span className="truncate font-mono text-[11px] text-muted-foreground">{cwd}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-auto rounded-md px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          {t("live.setupCloseTerminal")}
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        <TerminalPane cwd={cwd} />
       </div>
     </div>
   );

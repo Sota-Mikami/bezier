@@ -158,6 +158,15 @@ export const ja: Messages = {
     itemEnv: ".env がありません（{template} あり）",
     itemEnvFix: ".env を作って開く",
     itemEnvWhat: "{template} を .env にコピーして開きます。秘密値はご自身で入れてください。",
+    setupTitle: "このリポには独自のセットアップがあります",
+    setupIntro: "Bezier では自動実行しません。開いて、リポの手順に沿って進めてください。",
+    setupScriptHint: "セットアップ用スクリプト: {names}",
+    setupOpenReadme: "README を開く",
+    setupOpenReadmeSection: "README →「{section}」を開く",
+    setupOpenTerminal: "ターミナルを開く",
+    setupOpenDockerfile: "Dockerfile を開く",
+    setupCloseTerminal: "閉じる",
+    setupEscape: "自分でセットアップする",
   },
 
   freshness: {

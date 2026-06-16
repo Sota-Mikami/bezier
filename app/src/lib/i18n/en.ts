@@ -159,6 +159,15 @@ export const en = {
     itemEnv: "No .env yet ({template} is present)",
     itemEnvFix: "Create & open .env",
     itemEnvWhat: "Copies {template} → .env and opens it. Fill in any secrets yourself.",
+    setupTitle: "This repo has its own setup",
+    setupIntro: "Bezier won't run these for you — open them and follow the repo's steps.",
+    setupScriptHint: "Setup scripts: {names}",
+    setupOpenReadme: "Open README",
+    setupOpenReadmeSection: "Open README → {section}",
+    setupOpenTerminal: "Open a terminal",
+    setupOpenDockerfile: "Open Dockerfile",
+    setupCloseTerminal: "Close",
+    setupEscape: "Set it up yourself",
   },
 
   freshness: {
