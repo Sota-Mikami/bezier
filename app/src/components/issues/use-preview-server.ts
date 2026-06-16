@@ -34,6 +34,7 @@ import {
   buildDevCommand,
   buildTauriDevCommand,
   previewUrl,
+  parseDevServerUrl,
   httpPing,
   findFreePort,
   packageCwd,
@@ -58,7 +59,10 @@ export type PreviewStatus = "idle" | "starting" | "ready" | "error" | "stopped";
 
 const LOG_CAP = 20_000;
 const POLL_MS = 800;
-const READY_TIMEOUT_MS = 90_000;
+// Generous ceiling for heavy cold starts (first Next compile + codegen watchers,
+// monorepo run-p). A dead process fails fast via the pty-exit handler, so this only
+// bounds the still-compiling case.
+const READY_TIMEOUT_MS = 150_000;
 
 // --- Persistent preview registry (DEC-040) ---------------------------------
 // Preview dev servers now SURVIVE leaving an issue (like the agent pty, DEC-026)
@@ -209,6 +213,11 @@ export function usePreviewServer(
   const ptyIdRef = React.useRef<string | null>(null);
   const pollRef = React.useRef<number | null>(null);
   const unlistenRef = React.useRef<UnlistenFn[]>([]);
+  // The port the dev server ANNOUNCED in its output (stack-agnostic, overrides the
+  // assumed/forced port). null until detected; reset per start(). `urlBufRef` is a
+  // small rolling tail of stripped output so a URL split across chunks is caught.
+  const detectedPortRef = React.useRef<number | null>(null);
+  const urlBufRef = React.useRef("");
   // Detected runner + (for tauri) the worktree-relative Tauri crate dir, read in
   // start(). Kept in a ref so start()'s identity doesn't churn on detection.
   const runnerRef = React.useRef<RunnerKind>("web");
@@ -415,6 +424,8 @@ export function usePreviewServer(
       setError(null);
       setUrl(null);
       setStatus("starting");
+      detectedPortRef.current = null;
+      urlBufRef.current = "";
 
       // A free port per preview so concurrent dev servers never collide.
       const freePort = await findFreePort().catch(() => cfg.port);
@@ -498,10 +509,18 @@ export function usePreviewServer(
       unlistenRef.current.push(
         await onPtyData((p) => {
           if (p.id !== id) return;
+          const clean = stripAnsi(p.chunk);
           setLog((l) => {
-            const next = l + stripAnsi(p.chunk);
+            const next = l + clean;
             return next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next;
           });
+          // Detect the URL the dev server announced — the stack-agnostic readiness
+          // signal that the poll below targets (overriding the assumed port).
+          if (detectedPortRef.current === null && !isTauri) {
+            urlBufRef.current = (urlBufRef.current + clean).slice(-4000);
+            const found = parseDevServerUrl(urlBufRef.current);
+            if (found) detectedPortRef.current = found.port;
+          }
         }),
       );
       unlistenRef.current.push(
@@ -514,12 +533,11 @@ export function usePreviewServer(
         }),
       );
 
-      // Both runners poll the dev-server port. web -> point the iframe at it once
-      // it responds. tauri -> the inner Next dev server (beforeDevCommand) is up,
-      // so the Tauri window is now compiling/opening; flag "ready" (running) and
-      // never set an iframe url (PreviewPane renders the tauri view instead). The
-      // first Rust build keeps streaming into the log after this.
-      const target = previewUrl(launchPort);
+      // Both runners poll the dev-server port. web -> the port DETECTED from output
+      // (any stack/port/monorepo), falling back to the assumed/forced port until a
+      // URL appears; point the iframe there once it responds. tauri -> the assumed
+      // port (the inner Next dev server on beforeDevCommand); flag "ready" without
+      // an iframe url (PreviewPane renders the tauri view instead).
       const deadline = Date.now() + READY_TIMEOUT_MS;
       pollRef.current = window.setInterval(() => {
         // Superseded by a newer start / a stop -> abandon this poll.
@@ -527,6 +545,8 @@ export function usePreviewServer(
           clearTimers();
           return;
         }
+        const port = isTauri ? launchPort : detectedPortRef.current ?? launchPort;
+        const target = previewUrl(port);
         void httpPing(target)
           .catch(() => false)
           .then((up) => {
@@ -535,6 +555,9 @@ export function usePreviewServer(
               clearTimers();
               if (!isTauri) setUrl(target);
               setStatus("ready");
+              // Record the live port so reattach pings the right one.
+              const e = previewRegistry.get(previewKey);
+              if (e) e.port = port;
             } else if (Date.now() > deadline) {
               clearTimers();
               setStatus("error");

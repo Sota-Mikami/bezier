@@ -143,6 +143,8 @@ export const en = {
     retry: "Run again",
     logLabel: "Output",
     depsHint: "If it exited right away, the project's dependencies probably aren't installed.",
+    startFailedHint: "Couldn't confirm the dev server. Check the OUTPUT below — or run it yourself in a terminal.",
+    openTerminalManual: "Run in a terminal",
     resizeLog: "Drag to resize (double-click to reset)",
     readyTitle: "Get this repo ready",
     readyIntro: "A couple of things to set up before it can run.",

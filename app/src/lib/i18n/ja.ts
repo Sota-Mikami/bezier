@@ -142,6 +142,8 @@ export const ja: Messages = {
     retry: "もう一度起動",
     logLabel: "出力",
     depsHint: "すぐ終了した場合、プロジェクトの依存（node_modules）が未インストールの可能性が高いです。",
+    startFailedHint: "dev サーバーを確認できませんでした。下の OUTPUT を確認するか、ターミナルでご自身で起動してください。",
+    openTerminalManual: "ターミナルで起動",
     resizeLog: "ドラッグで高さ調整（ダブルクリックでリセット）",
     readyTitle: "この repo を準備する",
     readyIntro: "起動する前に、いくつか整えます。",

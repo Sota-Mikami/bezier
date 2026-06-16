@@ -245,23 +245,36 @@ export function RepoLive({ root }: { root: string }) {
                   {error && (
                     <div className="flex flex-col items-center gap-2">
                       <p className="max-w-md text-xs text-destructive">{error}</p>
-                      <p className="max-w-md text-[11px] text-muted-foreground/70">{t("live.depsHint")}</p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        disabled={installing}
-                        onClick={() => void installDeps()}
-                      >
-                        {installing ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Download className="size-3.5" />
-                        )}
-                        {installing
-                          ? t("live.installing")
-                          : t("live.installDeps", { cmd: installCmd ?? "npm install" })}
-                      </Button>
+                      <p className="max-w-md text-[11px] text-muted-foreground/70">{t("live.startFailedHint")}</p>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          disabled={installing}
+                          onClick={() => void installDeps()}
+                        >
+                          {installing ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Download className="size-3.5" />
+                          )}
+                          {installing
+                            ? t("live.installing")
+                            : t("live.installDeps", { cmd: installCmd ?? "npm install" })}
+                        </Button>
+                        {/* Hand off: let the maker run the dev server themselves in a
+                            terminal at the repo cwd (any stack Bezier can't auto-run). */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          onClick={() => setShowTerminal(true)}
+                        >
+                          <TerminalIcon className="size-3.5" />
+                          {t("live.openTerminalManual")}
+                        </Button>
+                      </div>
                     </div>
                   )}
 

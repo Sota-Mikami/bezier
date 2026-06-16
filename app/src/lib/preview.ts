@@ -372,6 +372,26 @@ export function previewUrl(port: number): string {
 }
 
 /**
+ * Extract the port a dev server announced in its OUTPUT — the stack-agnostic
+ * readiness signal. Every web dev server prints its local URL ("Local:
+ * http://localhost:PORT") regardless of framework, hardcoded port, monorepo depth,
+ * multi-process runner, or auto-increment on a port clash. We only match loopback
+ * hosts (so a "Network: 192.168.x" line is ignored), take the LAST one (servers
+ * REPRINT the final port after incrementing), and skip Bezier's own dev port
+ * (3210). Returns null until a URL appears. Pass ANSI-stripped text.
+ */
+export function parseDevServerUrl(text: string): { port: number; url: string } | null {
+  const re = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):(\d{2,5})/gi;
+  let m: RegExpExecArray | null;
+  let port: number | null = null;
+  while ((m = re.exec(text)) !== null) {
+    const p = Number(m[1]);
+    if (p && p !== 3210) port = p; // last wins (reprinted after auto-increment)
+  }
+  return port === null ? null : { port, url: previewUrl(port) };
+}
+
+/**
  * TCP/HTTP readiness probe (Rust `http_ping`). Resolves true once the dev server
  * accepts a connection and writes a response; false otherwise. Never throws on
  * an unreachable target — it returns false.
