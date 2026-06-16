@@ -537,6 +537,221 @@ function handoff(locale: Locale = getSettings().locale): HandoffPhrases {
   return locale === "ja" ? JA_HANDOFF : EN_HANDOFF;
 }
 
+// --- verify evidence block (written into spec.md) -------------------------
+
+export type SensitiveKey = "env" | "auth" | "db" | "rls";
+
+interface VerifyPhrases {
+  sens: Record<SensitiveKey, string>;
+  noChanges: string;
+  scope: (n: number, added: number, removed: number) => string;
+  sensChanged: (areas: string) => string;
+  sensNone: string;
+  blockHeader: string;
+  lastUpdated: (time: string) => string;
+  scopeLabel: string;
+  sensLabel: string;
+  changedFiles: string;
+  moreFiles: (n: number) => string;
+  makerChecks: string;
+}
+
+const JA_VERIFY: VerifyPhrases = {
+  sens: { env: "env", auth: "認証", db: "DB/スキーマ", rls: "RLS/権限" },
+  noChanges: "変更なし",
+  scope: (n, a, r) => `${n} files ・ +${a} / -${r}`,
+  sensChanged: (areas) => `⚠️ **${areas}** を変更 — ここはあなたの目で確認`,
+  sensNone: "なし（auth/DB/env/権限への変更は検出されず）",
+  blockHeader: "## 検証ログ（Bezier が自動収集）",
+  lastUpdated: (t) => `_最終更新: ${t} ・ Implement ターン終了時に自動収集_`,
+  scopeLabel: "**変更スコープ**",
+  sensLabel: "**機微領域**",
+  changedFiles: "変更ファイル",
+  moreFiles: (n) => `…他 ${n} 件`,
+  makerChecks:
+    "> 受入基準のチェックは、上の証拠を見て **あなた（maker）が** 付けてください（AI は採点しません）。",
+};
+
+const EN_VERIFY: VerifyPhrases = {
+  sens: { env: "env", auth: "auth", db: "DB/schema", rls: "RLS/permissions" },
+  noChanges: "No changes",
+  scope: (n, a, r) => `${n} files · +${a} / -${r}`,
+  sensChanged: (areas) => `⚠️ **${areas}** changed — eyeball this yourself`,
+  sensNone: "None (no changes to auth / DB / env / permissions detected)",
+  blockHeader: "## Verification log (auto-collected by Bezier)",
+  lastUpdated: (t) => `_Last updated: ${t} · auto-collected when the Implement turn ends_`,
+  scopeLabel: "**Change scope**",
+  sensLabel: "**Sensitive areas**",
+  changedFiles: "Changed files",
+  moreFiles: (n) => `…and ${n} more`,
+  makerChecks:
+    "> You (the maker) tick the acceptance criteria by looking at the evidence above (the AI does not score).",
+};
+
+/** Phrases for the verify evidence block written into spec.md (DEC-108). */
+export function verifyPhrases(locale: Locale = getSettings().locale): VerifyPhrases {
+  return locale === "ja" ? JA_VERIFY : EN_VERIFY;
+}
+
+// --- the /bezier:* slash-command pack (installed to ~/.claude) ------------
+
+export interface PackCommand {
+  name: string;
+  description: string;
+  body: string;
+}
+
+const JA_COMMANDS: PackCommand[] = [
+  {
+    name: "verify",
+    description: "受入基準の直下に「根拠」を1行ずつ付す（採点はしない）",
+    body: [
+      "spec.md（worktree の外。`--add-dir` 済み）の受入基準を上から順に確認し、実装が済んでいる各基準の**直下に「根拠」を1行**付けてください。",
+      "",
+      "- 根拠 ＝ **どこに / どう実装したか・関連ファイル**。例: `  - 根拠: \\`src/auth/login.tsx\\` に実装。`",
+      "- **auth / DB・スキーマ / env / 権限** に触れた基準には ⚠️ を付けて明記する（要目視）。",
+      "- **PASS/FAIL の採点はしない**。採点は maker が根拠を見て行う。",
+      "",
+      "最後に変更点を簡潔に要約してください（commit は人間が Bezier の UI から行います）。",
+    ].join("\n"),
+  },
+  {
+    name: "spec",
+    description: "spec.md を読み直して実装と同期する",
+    body: [
+      "spec.md（`--add-dir` 済み）を読み直し、いまの会話・実装と**食い違う点**を洗い出してください。",
+      "",
+      "- 要件や意図が変わっていれば、**まず spec.md を更新**してから、その差分に合わせて実装を調整する（Spec⇆実装を常に同期）。",
+      "- 「受入基準」は**観察可能・チェック可能な文**に保つ。曖昧なものは具体化する。",
+      "- 「やらないこと」で境界も引く。",
+    ].join("\n"),
+  },
+  {
+    name: "states",
+    description: "画面のエッジ状態を洗い出し、受入基準に落とす（Empty/Error/Focus…）",
+    body: [
+      "$ARGUMENTS の画面/コンポーネントについて、**エッジ状態を洗い出し → 決定し → spec.md の受入基準として書く**（引数が無ければ、いま検討中の画面について）。デザイナー↔エンジニアの「Empty どうする？Focus は？」を、レビューでなく **いま spec で** 潰すのが目的。",
+      "",
+      "1. 画面を **アーキタイプ** に分類し、聞くべき状態を選ぶ:",
+      "   - リスト/テーブル: 空 / 読み込み中 / エラー / 1件のみ / 大量(ページング) / 長文省略 / 権限なし",
+      "   - フォーム: 初期 / 検証エラー / 送信中 / 成功 / サーバエラー / 未保存離脱",
+      "   - 詳細: 読み込み中 / 不在(404) / 権限なし / 編集中",
+      "   - ダッシュボード: 空 / 読み込み中 / 一部失敗 / 更新中",
+      "   - 認証/オンボーディング: 初期 / エラー / 処理中 / 成功遷移",
+      "   - 横断(操作状態): hover / focus / active / disabled / selected",
+      "2. 各状態に **既定の振る舞い案を1行** 添えて提示し、maker に「いる/いらない・内容」を確認する（勝手に確定しない）。",
+      "3. 合意した状態を **spec.md の「受入基準」に観察可能な文で追記** する。例: 「- Empty: 一覧が0件のとき、イラスト＋『最初のXを作成』CTAを表示」。",
+      "4. **アクセシビリティ最低線** は既定で含める: キーボード focus の可視リング / 主要操作のラベル / コントラスト。",
+      "",
+      "ここでは **実装しない** — 状態を決めて spec に書くところまで。実装後は /bezier:verify で各状態の根拠を確認する。",
+      "",
+      "（これは Bezier 既定の states チェックリスト。a11y厳格・モバイル優先・業種コンプラ等、チームの基準に合わせて編集／差し替え可能。）",
+    ].join("\n"),
+  },
+  {
+    name: "alt3",
+    description: "デザイン別案を3つ（グレースケールのワイヤー）",
+    body: [
+      "$ARGUMENTS の UI について、**方向性の異なるデザイン別案を3つ**、グレースケールのワイヤーで作ってください（引数が無ければ、いま検討中の画面について）。",
+      "",
+      "- Bezier の `design/` 規約に従い、**Design ボードに並ぶ形**で出力する。",
+      "- 各案に**トレードオフを1行**添える（何を取り、何を捨てたか）。",
+      "- まだ実装はしない。方向が選ばれてから実装に入る。",
+    ].join("\n"),
+  },
+  {
+    name: "precommit",
+    description: "型・lint・動作を事前チェックして結果を報告",
+    body: [
+      "コミット前チェックをしてください:",
+      "",
+      "1. 型チェック・lint を実行する。",
+      "2. 主要な変更が**実際に動く**かを確認する。",
+      "3. 結果（PASS/FAIL と、直したもの）を簡潔に報告する。",
+      "",
+      "**commit はしない** — 人間が Bezier の UI（Commit / Ship）から行います。",
+    ].join("\n"),
+  },
+];
+
+const EN_COMMANDS: PackCommand[] = [
+  {
+    name: "verify",
+    description: "Add a one-line “evidence” under each acceptance criterion (no scoring)",
+    body: [
+      "Go through the acceptance criteria in spec.md (outside the worktree; already `--add-dir`'d) top to bottom and, for each criterion that's implemented, add a one-line **“evidence” right under it**.",
+      "",
+      "- Evidence = **where / how you implemented it + related files**. e.g. `  - evidence: implemented in \\`src/auth/login.tsx\\`.`",
+      "- For criteria that touch **auth / DB·schema / env / permissions**, prefix with ⚠️ and call it out (needs a visual check).",
+      "- **Do not score PASS/FAIL.** The maker scores by reading the evidence.",
+      "",
+      "Finish with a brief summary of the changes (commits are made by a human from Bezier's UI).",
+    ].join("\n"),
+  },
+  {
+    name: "spec",
+    description: "Re-read spec.md and sync it with the implementation",
+    body: [
+      "Re-read spec.md (already `--add-dir`'d) and surface anything that's **out of sync** with the current conversation / implementation.",
+      "",
+      "- If the requirements or intent have changed, **update spec.md first**, then adjust the implementation to that diff (keep Spec and code in sync at all times).",
+      "- Keep the “acceptance criteria” as **observable, checkable statements**. Make vague ones concrete.",
+      "- Draw the boundary with “out of scope”.",
+    ].join("\n"),
+  },
+  {
+    name: "states",
+    description: "Enumerate a screen's edge states and turn them into acceptance criteria (Empty/Error/Focus…)",
+    body: [
+      "For the screen/component in $ARGUMENTS, **enumerate edge states → decide them → write them as acceptance criteria in spec.md** (if no argument, use the screen under discussion). The goal is to settle the designer↔engineer “what about Empty? Focus?” questions **now, in the spec** — not in review.",
+      "",
+      "1. Classify the screen into an **archetype** and pick the states to ask about:",
+      "   - List/table: empty / loading / error / single item / many (paging) / long-text truncation / no permission",
+      "   - Form: initial / validation error / submitting / success / server error / unsaved-leave",
+      "   - Detail: loading / not found (404) / no permission / editing",
+      "   - Dashboard: empty / loading / partial failure / refreshing",
+      "   - Auth/onboarding: initial / error / processing / success transition",
+      "   - Cross-cutting (interaction states): hover / focus / active / disabled / selected",
+      "2. Present each state with a **one-line default-behavior proposal** and check with the maker (need it or not / what) — don't decide unilaterally.",
+      "3. Add the agreed states **to spec.md's “acceptance criteria” as observable statements**. e.g. “- Empty: when the list has 0 items, show an illustration + a ‘Create your first X’ CTA”.",
+      "4. Include an **accessibility baseline** by default: a visible keyboard-focus ring / labels for primary actions / contrast.",
+      "",
+      "**Don't implement here** — just decide the states and write them into the spec. After implementing, confirm each state's evidence with /bezier:verify.",
+      "",
+      "(This is Bezier's default states checklist. Edit/replace it to match your team's bar — strict a11y, mobile-first, industry compliance, etc.)",
+    ].join("\n"),
+  },
+  {
+    name: "alt3",
+    description: "Three design variants (grayscale wireframes)",
+    body: [
+      "For the UI in $ARGUMENTS, make **three design variants in different directions**, as grayscale wireframes (if no argument, use the screen under discussion).",
+      "",
+      "- Follow Bezier's `design/` convention so they **line up on the Design board**.",
+      "- Add a **one-line trade-off** to each (what it gains, what it gives up).",
+      "- Don't implement yet. Implementation starts once a direction is chosen.",
+    ].join("\n"),
+  },
+  {
+    name: "precommit",
+    description: "Pre-check types / lint / behavior and report the result",
+    body: [
+      "Run a pre-commit check:",
+      "",
+      "1. Run the type check and lint.",
+      "2. Confirm the main changes **actually work**.",
+      "3. Report the result (PASS/FAIL and what you fixed) concisely.",
+      "",
+      "**Don't commit** — a human does that from Bezier's UI (Commit / Ship).",
+    ].join("\n"),
+  },
+];
+
+/** The built-in /bezier:* command pack for a locale (DEC-108). */
+export function commandPack(locale: Locale = getSettings().locale): PackCommand[] {
+  return locale === "ja" ? JA_COMMANDS : EN_COMMANDS;
+}
+
 /** The design-variant convention block (BEZIER.md sub-section / standalone). */
 export function designConventionLines(designDir: string): string[] {
   return handoff().designBlock(designDir);

@@ -555,6 +555,7 @@ export const en = {
   },
 
   commands: {
+    packInvalid: "This isn't a command-pack file.",
     savedMsg: "/bezier:{name} saved.",
     createdMsg: "/bezier:{name} created.",
     deletedMsg: "/bezier:{name} deleted.",

@@ -13,24 +13,26 @@ import { readFile, writeFile } from "@/lib/ipc";
 import { gitDiff, gitStatus, parseDiff, changedPathsFromStatus } from "@/lib/git";
 import { slotPath } from "@/lib/issues";
 import type { Issue } from "@/lib/issues";
+import { verifyPhrases, type SensitiveKey } from "@/lib/prompts";
 
 export const VERIFY_MARK_START = "<!-- bezier:verify:start -->";
 export const VERIFY_MARK_END = "<!-- bezier:verify:end -->";
 
 // File-path patterns that mean "you should eyeball this yourself" (Mai: auth /
-// DB schema / env are the things she won't trust a machine—or an agent—on).
-const SENSITIVE = [
-  { re: /(^|\/)\.?env(\.|$)|(^|\/)\.env/i, label: "env" },
-  { re: /auth|login|session|oauth|password|credential|token|secret|jwt/i, label: "認証" },
-  { re: /migrat|schema|drizzle|prisma|\.sql$|database|(^|\/)db(\/|\.)/i, label: "DB/スキーマ" },
-  { re: /(^|\/)(rls|policy|policies)(\/|\.|$)/i, label: "RLS/権限" },
-] as const;
+// DB schema / env are the things she won't trust a machine—or an agent—on). The
+// labels follow the UI locale (DEC-108) — resolved from the key at render time.
+const SENSITIVE: { re: RegExp; key: SensitiveKey }[] = [
+  { re: /(^|\/)\.?env(\.|$)|(^|\/)\.env/i, key: "env" },
+  { re: /auth|login|session|oauth|password|credential|token|secret|jwt/i, key: "auth" },
+  { re: /migrat|schema|drizzle|prisma|\.sql$|database|(^|\/)db(\/|\.)/i, key: "db" },
+  { re: /(^|\/)(rls|policy|policies)(\/|\.|$)/i, key: "rls" },
+];
 
 export interface VerifyEvidence {
   files: string[];
   added: number;
   removed: number;
-  sensitive: string[]; // distinct labels touched
+  sensitive: SensitiveKey[]; // distinct sensitive-area keys touched
   at: number; // epoch ms (stamped by the caller — Date.now is unavailable here)
 }
 
@@ -50,10 +52,10 @@ export async function collectEvidence(
     if (ln.kind === "add") added++;
     else if (ln.kind === "del") removed++;
   }
-  const sensitive: string[] = [];
+  const sensitive: SensitiveKey[] = [];
   for (const f of files) {
     for (const s of SENSITIVE) {
-      if (s.re.test(f) && !sensitive.includes(s.label)) sensitive.push(s.label);
+      if (s.re.test(f) && !sensitive.includes(s.key)) sensitive.push(s.key);
     }
   }
   return { files, added, removed, sensitive, at };
@@ -66,38 +68,38 @@ function fmtTime(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** Render the evidence as the body of the managed block (plain markdown). */
+/** Render the evidence as the body of the managed block (plain markdown). The
+ * copy follows the maker's UI locale (DEC-108). */
 export function renderEvidenceBlock(e: VerifyEvidence): string {
+  const p = verifyPhrases();
   const scope =
-    e.files.length === 0
-      ? "変更なし"
-      : `${e.files.length} files ・ +${e.added} / -${e.removed}`;
+    e.files.length === 0 ? p.noChanges : p.scope(e.files.length, e.added, e.removed);
   const sens =
     e.sensitive.length > 0
-      ? `⚠️ **${e.sensitive.join(" / ")}** を変更 — ここはあなたの目で確認`
-      : "なし（auth/DB/env/権限への変更は検出されず）";
+      ? p.sensChanged(e.sensitive.map((k) => p.sens[k]).join(" / "))
+      : p.sensNone;
   const fileList =
     e.files.length === 0
       ? []
       : [
           "",
-          "<details><summary>変更ファイル</summary>",
+          `<details><summary>${p.changedFiles}</summary>`,
           "",
           ...e.files.slice(0, 40).map((f) => `- \`${f}\``),
-          ...(e.files.length > 40 ? [`- …他 ${e.files.length - 40} 件`] : []),
+          ...(e.files.length > 40 ? [`- ${p.moreFiles(e.files.length - 40)}`] : []),
           "",
           "</details>",
         ];
   return [
     VERIFY_MARK_START,
-    "## 検証ログ（Bezier が自動収集）",
-    `_最終更新: ${fmtTime(e.at)} ・ Implement ターン終了時に自動収集_`,
+    p.blockHeader,
+    p.lastUpdated(fmtTime(e.at)),
     "",
-    `- **変更スコープ**: ${scope}`,
-    `- **機微領域**: ${sens}`,
+    `- ${p.scopeLabel}: ${scope}`,
+    `- ${p.sensLabel}: ${sens}`,
     ...fileList,
     "",
-    "> 受入基準のチェックは、上の証拠を見て **あなた（maker）が** 付けてください（AI は採点しません）。",
+    p.makerChecks,
     VERIFY_MARK_END,
   ].join("\n");
 }

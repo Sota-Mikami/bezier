@@ -554,6 +554,7 @@ export const ja: Messages = {
   },
 
   commands: {
+    packInvalid: "コマンドパックの形式ではありません。",
     savedMsg: "/bezier:{name} を保存しました。",
     createdMsg: "/bezier:{name} を作成しました。",
     deletedMsg: "/bezier:{name} を削除しました。",

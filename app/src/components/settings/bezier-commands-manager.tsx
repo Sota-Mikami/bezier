@@ -40,7 +40,7 @@ import {
   buildPack,
   readPack,
   writePack,
-  BEZIER_COMMANDS,
+  bezierCommands,
   type InstalledCommand,
 } from "@/lib/bezier-commands";
 import { useT } from "@/lib/i18n";
@@ -81,7 +81,7 @@ export function BezierCommandsManager() {
   const missingBuiltins = React.useMemo(() => {
     if (!list) return [];
     const have = new Set(list.map((c) => c.name));
-    return BEZIER_COMMANDS.filter((b) => !have.has(b.name));
+    return bezierCommands().filter((b) => !have.has(b.name));
   }, [list]);
 
   const startEdit = (c: InstalledCommand) => {

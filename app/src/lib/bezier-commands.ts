@@ -31,6 +31,8 @@ import {
   uninstallBezierCommands as ipcUninstall,
   removeBezierCommand as ipcRemoveCommand,
 } from "@/lib/ipc";
+import { tt } from "@/lib/i18n";
+import { commandPack } from "@/lib/prompts";
 
 interface BezierCommand {
   /** file stem → invoked as `/bezier:<name>` */
@@ -41,78 +43,11 @@ interface BezierCommand {
   body: string;
 }
 
-export const BEZIER_COMMANDS: BezierCommand[] = [
-  {
-    name: "verify",
-    description: "受入基準の直下に「根拠」を1行ずつ付す（採点はしない）",
-    body: [
-      "spec.md（worktree の外。`--add-dir` 済み）の受入基準を上から順に確認し、実装が済んでいる各基準の**直下に「根拠」を1行**付けてください。",
-      "",
-      "- 根拠 ＝ **どこに / どう実装したか・関連ファイル**。例: `  - 根拠: \\`src/auth/login.tsx\\` に実装。`",
-      "- **auth / DB・スキーマ / env / 権限** に触れた基準には ⚠️ を付けて明記する（要目視）。",
-      "- **PASS/FAIL の採点はしない**。採点は maker が根拠を見て行う。",
-      "",
-      "最後に変更点を簡潔に要約してください（commit は人間が Bezier の UI から行います）。",
-    ].join("\n"),
-  },
-  {
-    name: "spec",
-    description: "spec.md を読み直して実装と同期する",
-    body: [
-      "spec.md（`--add-dir` 済み）を読み直し、いまの会話・実装と**食い違う点**を洗い出してください。",
-      "",
-      "- 要件や意図が変わっていれば、**まず spec.md を更新**してから、その差分に合わせて実装を調整する（Spec⇆実装を常に同期）。",
-      "- 「受入基準」は**観察可能・チェック可能な文**に保つ。曖昧なものは具体化する。",
-      "- 「やらないこと」で境界も引く。",
-    ].join("\n"),
-  },
-  {
-    name: "states",
-    description: "画面のエッジ状態を洗い出し、受入基準に落とす（Empty/Error/Focus…）",
-    body: [
-      "$ARGUMENTS の画面/コンポーネントについて、**エッジ状態を洗い出し → 決定し → spec.md の受入基準として書く**（引数が無ければ、いま検討中の画面について）。デザイナー↔エンジニアの「Empty どうする？Focus は？」を、レビューでなく **いま spec で** 潰すのが目的。",
-      "",
-      "1. 画面を **アーキタイプ** に分類し、聞くべき状態を選ぶ:",
-      "   - リスト/テーブル: 空 / 読み込み中 / エラー / 1件のみ / 大量(ページング) / 長文省略 / 権限なし",
-      "   - フォーム: 初期 / 検証エラー / 送信中 / 成功 / サーバエラー / 未保存離脱",
-      "   - 詳細: 読み込み中 / 不在(404) / 権限なし / 編集中",
-      "   - ダッシュボード: 空 / 読み込み中 / 一部失敗 / 更新中",
-      "   - 認証/オンボーディング: 初期 / エラー / 処理中 / 成功遷移",
-      "   - 横断(操作状態): hover / focus / active / disabled / selected",
-      "2. 各状態に **既定の振る舞い案を1行** 添えて提示し、maker に「いる/いらない・内容」を確認する（勝手に確定しない）。",
-      "3. 合意した状態を **spec.md の「受入基準」に観察可能な文で追記** する。例: 「- Empty: 一覧が0件のとき、イラスト＋『最初のXを作成』CTAを表示」。",
-      "4. **アクセシビリティ最低線** は既定で含める: キーボード focus の可視リング / 主要操作のラベル / コントラスト。",
-      "",
-      "ここでは **実装しない** — 状態を決めて spec に書くところまで。実装後は /bezier:verify で各状態の根拠を確認する。",
-      "",
-      "（これは Bezier 既定の states チェックリスト。a11y厳格・モバイル優先・業種コンプラ等、チームの基準に合わせて編集／差し替え可能。）",
-    ].join("\n"),
-  },
-  {
-    name: "alt3",
-    description: "デザイン別案を3つ（グレースケールのワイヤー）",
-    body: [
-      "$ARGUMENTS の UI について、**方向性の異なるデザイン別案を3つ**、グレースケールのワイヤーで作ってください（引数が無ければ、いま検討中の画面について）。",
-      "",
-      "- Bezier の `design/` 規約に従い、**Design ボードに並ぶ形**で出力する。",
-      "- 各案に**トレードオフを1行**添える（何を取り、何を捨てたか）。",
-      "- まだ実装はしない。方向が選ばれてから実装に入る。",
-    ].join("\n"),
-  },
-  {
-    name: "precommit",
-    description: "型・lint・動作を事前チェックして結果を報告",
-    body: [
-      "コミット前チェックをしてください:",
-      "",
-      "1. 型チェック・lint を実行する。",
-      "2. 主要な変更が**実際に動く**かを確認する。",
-      "3. 結果（PASS/FAIL と、直したもの）を簡潔に報告する。",
-      "",
-      "**commit はしない** — 人間が Bezier の UI（Commit / Ship）から行います。",
-    ].join("\n"),
-  },
-];
+/** The built-in pack, in the maker's UI locale (DEC-108 · @/lib/prompts). The
+ * command NAMES/order are locale-independent; only description/body translate. */
+export function bezierCommands(): BezierCommand[] {
+  return commandPack();
+}
 
 /** `~/.claude/commands/bezier` — where the pack lives (claude's user command dir). */
 export function bezierCommandsDir(home: string): string {
@@ -123,12 +58,14 @@ function renderCommandFile(c: { description: string; body: string }): string {
   return [`---`, `description: ${c.description}`, `---`, ``, c.body, ``].join("\n");
 }
 
-/** The built-in command names (vs. the maker's own custom ones). */
-export const BUILTIN_NAMES: Set<string> = new Set(BEZIER_COMMANDS.map((c) => c.name));
+/** The built-in command names (vs. the maker's own custom ones). Names are
+ * locale-independent, so read them from any locale (en). */
+export const BUILTIN_NAMES: Set<string> = new Set(commandPack("en").map((c) => c.name));
 
-/** The Bezier default for a built-in (for "reset to default"); undefined if custom. */
+/** The Bezier default for a built-in (for "reset to default"); undefined if
+ * custom. Returns the current-locale default (DEC-108). */
 export function builtinDefault(name: string): BezierCommand | undefined {
-  return BEZIER_COMMANDS.find((c) => c.name === name);
+  return bezierCommands().find((c) => c.name === name);
 }
 
 /** A valid command name: a bare slug. Invoked as `/bezier:<name>`. */
@@ -177,8 +114,9 @@ export async function listInstalledCommands(home: string): Promise<InstalledComm
       /* skip unreadable */
     }
   }
+  const order = commandPack("en");
   const rank = (c: InstalledCommand) => {
-    const i = BEZIER_COMMANDS.findIndex((b) => b.name === c.name);
+    const i = order.findIndex((b) => b.name === c.name);
     return i < 0 ? 1000 : i;
   };
   out.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
@@ -238,7 +176,7 @@ export async function buildPack(home: string): Promise<string> {
 export function readPack(json: string): PackCommand[] {
   const parsed: unknown = JSON.parse(json);
   const raw = (parsed as { commands?: unknown } | null)?.commands;
-  if (!Array.isArray(raw)) throw new Error("コマンドパックの形式ではありません。");
+  if (!Array.isArray(raw)) throw new Error(tt("commands.packInvalid"));
   const out: PackCommand[] = [];
   for (const entry of raw) {
     const c = entry as Partial<PackCommand>;
@@ -296,8 +234,9 @@ export async function bezierCommandsStatus(home: string): Promise<BezierCommands
   } catch {
     // dir missing → nothing installed
   }
-  const present = BEZIER_COMMANDS.filter((c) => names.has(`${c.name}.md`)).length;
-  const total = BEZIER_COMMANDS.length;
+  const pack = bezierCommands();
+  const present = pack.filter((c) => names.has(`${c.name}.md`)).length;
+  const total = pack.length;
   const state: BezierCommandsState =
     present === 0 ? "none" : present === total ? "all" : "partial";
   return { state, present, total };
@@ -324,7 +263,7 @@ export async function installBezierCommands(
       // dir missing → write all
     }
   }
-  const toWrite = BEZIER_COMMANDS.filter(
+  const toWrite = bezierCommands().filter(
     (c) => opts?.overwrite || !present.has(`${c.name}.md`),
   );
   await Promise.all(
