@@ -646,6 +646,15 @@ export const ja: Messages = {
     copyUrl: "URL をコピー",
     open: "開く",
     openBuildLog: "ビルドログを Vercel で開く",
+    vercelEnvTitle: "Vercel に env を登録",
+    vercelEnvDesc:
+      "このリポジトリの .env（秘密含む）を Vercel プロジェクトに一度登録します。デプロイ先のアプリがビルド＆実行に必要な env を持てます。どの環境でデプロイするかは .env で指定（例: VITE_APP_ENV=dev）。",
+    vercelEnvButton: "Vercel に登録",
+    vercelEnvConfirm:
+      "このリポジトリの環境変数（秘密を含む）をあなたの Vercel プロジェクトに送信します。Vercel 上に保存され、毎回のデプロイで使われます。よろしいですか？",
+    vercelEnvDone: "Vercel プロジェクトに {n} 個の変数を登録しました（{failed} 件失敗）。",
+    vercelEnvLinkFailed:
+      "Vercel プロジェクトにリンクできませんでした。ログイン（vercel login）とアカウント/スコープを確認してください。",
   },
 
   commands: {

@@ -220,6 +220,29 @@ export function collectPublicEnv(root: string): Promise<[string, string][]> {
   return invoke<[string, string][]>("collect_public_env", { root });
 }
 
+/** Result of pushing the repo's env to a Vercel project. */
+export interface VercelSyncResult {
+  pushed: number;
+  failed: number;
+  linkFailed: boolean;
+}
+
+/**
+ * Register the repo's env (incl. SECRETS) on a Vercel project so every future
+ * deploy has it (DEC-114 Option B). Links `cwd` to `project`, then upserts each
+ * `.env` var (root + workspace subdirs) to the project's PRODUCTION target. CONSENT
+ * is the caller's responsibility — this sends env to the user's Vercel.
+ * -> invoke("vercel_sync_env", { cwd, project, scope, root })
+ */
+export function vercelSyncEnv(
+  cwd: string,
+  project: string,
+  scope: string,
+  root: string,
+): Promise<VercelSyncResult> {
+  return invoke<VercelSyncResult>("vercel_sync_env", { cwd, project, scope, root });
+}
+
 /**
  * Move/rename a file or directory. Guarded on the Rust side to paths under a
  * `.bezier` working store (used to shuffle issues into / out of the trash).

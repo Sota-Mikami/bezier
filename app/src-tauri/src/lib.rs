@@ -2602,6 +2602,150 @@ fn collect_public_env(root: String) -> Result<Vec<(String, String)>, String> {
     Ok(map.into_iter().collect())
 }
 
+/// Parse one `.env` line into ANY valid `(KEY, VALUE)` pair (public or secret), or
+/// None. A valid key is `[A-Za-z_][A-Za-z0-9_]*`. Tolerates `export ` + quotes.
+fn parse_env_line(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+    let body = line.strip_prefix("export ").unwrap_or(line).trim();
+    let eq = body.find('=')?;
+    if eq == 0 {
+        return None;
+    }
+    let k = body[..eq].trim();
+    let valid = k.bytes().enumerate().all(|(i, b)| {
+        b == b'_' || b.is_ascii_alphabetic() || (b.is_ascii_digit() && i != 0)
+    });
+    if !valid {
+        return None;
+    }
+    let mut v = body[eq + 1..].trim();
+    if v.len() >= 2
+        && ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\'')))
+    {
+        v = &v[1..v.len() - 1];
+    }
+    Some((k.to_string(), v.to_string()))
+}
+
+/// Strip the env vars that make a child CLI think it's a nested AI-agent session
+/// (so e.g. `vercel` doesn't switch to "agent guidance" mode and refuse to act).
+fn de_agent(cmd: &mut std::process::Command) {
+    for (key, _) in std::env::vars() {
+        if key == "CLAUDECODE"
+            || key == "AI_AGENT"
+            || key.starts_with("CLAUDE_CODE_")
+            || key.starts_with("CMUX_")
+        {
+            cmd.env_remove(&key);
+        }
+    }
+}
+
+/// Result of pushing the repo's env to a Vercel project.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VercelSyncResult {
+    pushed: usize,
+    failed: usize,
+    /// True if the project link step itself failed (nothing could be pushed).
+    link_failed: bool,
+}
+
+/// Register the repo's env on a Vercel PROJECT (DEC-114, Option B) so every future
+/// deploy has it — covering SECRET build/runtime env that per-deploy public-only
+/// injection can't. Links `cwd` to `project`, collects ALL env vars from the repo's
+/// `.env` files (root + workspace subdirs), and upserts each to the PRODUCTION
+/// target (`vercel env add … production --value … --force --yes`). Production avoids
+/// the preview git-branch prompt and pairs with a `--prod` deploy's stable URL.
+/// Agent env vars are stripped so vercel runs normally. CONSENT is the caller's job
+/// — this sends env (incl. secrets) to the user's Vercel.
+#[tauri::command]
+fn vercel_sync_env(
+    cwd: String,
+    project: String,
+    scope: String,
+    root: String,
+) -> Result<VercelSyncResult, String> {
+    let cwd_p = Path::new(&cwd);
+    let root_p = Path::new(&root);
+    reject_traversal(cwd_p)?;
+    reject_traversal(root_p)?;
+    let bin = resolve_command("vercel".to_string())?;
+    if bin.is_empty() {
+        return Err("vercel CLI not found on PATH".into());
+    }
+
+    // Ensure the project exists (idempotent — "already exists" is fine), so env can
+    // be registered even before the first deploy.
+    let mut add = std::process::Command::new(&bin);
+    de_agent(&mut add);
+    add.current_dir(cwd_p).args(["project", "add", &project]);
+    if !scope.is_empty() {
+        add.args(["--scope", &scope]);
+    }
+    let _ = add.output();
+
+    // Link cwd → the project so `env add` targets it.
+    let mut link = std::process::Command::new(&bin);
+    de_agent(&mut link);
+    link.current_dir(cwd_p)
+        .args(["link", "--project", &project, "--yes"]);
+    if !scope.is_empty() {
+        link.args(["--scope", &scope]);
+    }
+    let linked = matches!(link.output(), Ok(o) if o.status.success());
+    if !linked {
+        return Ok(VercelSyncResult {
+            pushed: 0,
+            failed: 0,
+            link_failed: true,
+        });
+    }
+
+    // Collect every env var (public + secret) from the repo's .env files.
+    let mut files = Vec::new();
+    collect_env_files(root_p, root_p, 0, &mut files);
+    files.sort_by_key(|p| p.components().count());
+    let mut map: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for rel in files {
+        if let Ok(txt) = fs::read_to_string(root_p.join(&rel)) {
+            for line in txt.lines() {
+                if let Some((k, v)) = parse_env_line(line) {
+                    map.insert(k, v);
+                }
+            }
+        }
+    }
+
+    let mut pushed = 0usize;
+    let mut failed = 0usize;
+    for (k, v) in &map {
+        let mut c = std::process::Command::new(&bin);
+        de_agent(&mut c);
+        c.current_dir(cwd_p).args([
+            "env", "add", k, "production", "--value", v, "--force", "--yes",
+        ]);
+        if !scope.is_empty() {
+            c.args(["--scope", &scope]);
+        }
+        c.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        match c.status() {
+            Ok(st) if st.success() => pushed += 1,
+            _ => failed += 1,
+        }
+    }
+    Ok(VercelSyncResult {
+        pushed,
+        failed,
+        link_failed: false,
+    })
+}
+
 /// The Bezier app-data directory (e.g. ~/Library/Application Support/
 /// com.bezier.app on macOS). Created if absent. Used to host git worktrees
 /// OUTSIDE the user's repo — a worktree nested inside the repo makes tools that
@@ -2929,6 +3073,7 @@ pub fn run() {
             clone_dir,
             mirror_worktree_env,
             collect_public_env,
+            vercel_sync_env,
             app_data_dir,
             home_dir,
             uninstall_bezier_commands,

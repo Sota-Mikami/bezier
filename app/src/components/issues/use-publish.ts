@@ -28,7 +28,14 @@ import {
 } from "@/lib/pty";
 import { readPreviewConfig, packageCwd } from "@/lib/preview";
 import { tt } from "@/lib/i18n";
-import { readFile, writeFile, removeVercelDir, collectPublicEnv } from "@/lib/ipc";
+import {
+  readFile,
+  writeFile,
+  removeVercelDir,
+  collectPublicEnv,
+  vercelSyncEnv,
+  type VercelSyncResult,
+} from "@/lib/ipc";
 import {
   getSettings,
   setSettings,
@@ -57,6 +64,11 @@ export interface PublishController {
    * share page.
    */
   publish: () => Promise<string | null>;
+  /**
+   * Register the repo's env (incl. SECRETS) on the Vercel project so deploys have
+   * it persistently (DEC-114 Option B). The CALLER must get explicit consent first.
+   */
+  syncEnv: () => Promise<VercelSyncResult>;
   /** Reset (and kill any in-flight deploy). */
   clear: () => Promise<void>;
   /** Named publish accounts (DEC-098). */
@@ -266,6 +278,22 @@ export function usePublish(
     setLog("");
   }, [detach, ptyKey, previewKey]);
 
+  // Register the repo's env on the Vercel project (Option B). Resolves the deploy
+  // cwd + project name + scope the same way publish() does, so it targets the SAME
+  // project the deploy uses. Consent is the caller's job.
+  const syncEnv = React.useCallback(async (): Promise<VercelSyncResult> => {
+    if (!worktreePath) return { pushed: 0, failed: 0, linkFailed: true };
+    const cfg = await readPreviewConfig(root).catch(() => null);
+    const cwd = packageCwd(worktreePath, cfg?.packageDir ?? "");
+    const s = getSettings();
+    const cid = s.repoConnections[root] ?? s.defaultConnectionId;
+    const conn =
+      s.publishConnections.find((c) => c.id === cid) ?? s.publishConnections[0];
+    const scope = conn?.scope ?? "";
+    const project = vercelProjectName(`${previewKey}-app`);
+    return vercelSyncEnv(cwd, project, scope, root);
+  }, [root, worktreePath, previewKey]);
+
   // Pull the dashboard "Inspect" URL out of the accumulated log once it appears.
   const captureInspect = React.useCallback(() => {
     if (inspectRef.current) return;
@@ -404,6 +432,10 @@ export function usePublish(
           cmd: bin,
           args: [
             "deploy",
+            // Production deployment → a STABLE `<project>.vercel.app` URL that
+            // survives re-deploys (so a share page stays valid), and it reads the
+            // project's PRODUCTION env (where "Vercel に env を登録" writes).
+            "--prod",
             "--yes",
             "--project",
             projectName,
@@ -553,6 +585,7 @@ export function usePublish(
     log,
     inspectUrl,
     publish,
+    syncEnv,
     clear,
     connections,
     connectionId,

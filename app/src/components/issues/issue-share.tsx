@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Check,
   ChevronDown,
+  Cloud,
   Copy,
   ExternalLink,
   Eye,
@@ -24,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { copyText } from "@/lib/clipboard";
-import { openExternal } from "@/lib/ipc";
+import { openExternal, confirmDialog, messageDialog } from "@/lib/ipc";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -83,6 +84,37 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   const previewOn = isShared(cfg, "preview");
   const mapOn = isShared(cfg, "map");
   const pwMissing = pwOn && !pw.trim();
+
+  // Option B (DEC-114): register the repo's env on the Vercel project ONCE, so the
+  // deployed app has the secret/build env it needs (e.g. fs-student-web's
+  // VITE_APP_ENV + Firebase keys) — persistently, not per-deploy. Explicit consent
+  // first, since this sends env (incl. secrets) to the user's Vercel.
+  const [syncing, setSyncing] = React.useState(false);
+  const runSyncEnv = async () => {
+    if (syncing) return;
+    const ok = await confirmDialog(t("share.vercelEnvConfirm"), {
+      title: t("share.vercelEnvTitle"),
+      okLabel: t("share.vercelEnvButton"),
+      cancelLabel: t("common.cancel"),
+    });
+    if (!ok) return;
+    setSyncing(true);
+    try {
+      const r = await publish.syncEnv();
+      await messageDialog(
+        r.linkFailed
+          ? t("share.vercelEnvLinkFailed")
+          : t("share.vercelEnvDone", { n: r.pushed, failed: r.failed }),
+        { title: t("share.vercelEnvTitle") },
+      );
+    } catch (e) {
+      await messageDialog(e instanceof Error ? e.message : String(e), {
+        title: t("share.vercelEnvTitle"),
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Publish the live app (only when Preview or Map is shared), then gather the
   // SELECTED content and hand it to the share builder.
@@ -252,6 +284,33 @@ export function IssueShare({ session }: { session: ImplementSession }) {
               className="absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition hover:text-foreground"
             >
               {pwReveal ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+            </button>
+          </div>
+        )}
+
+        {/* App deploy involved (Preview/Map) → offer the one-time env setup so the
+            deployed app actually works (not just builds). DEC-114 Option B. */}
+        {(previewOn || mapOn) && (
+          <div className="mt-2 rounded-md border bg-muted/30 p-2">
+            <div className="flex items-center gap-1 text-[11px] font-medium">
+              <Cloud className="size-3" />
+              {t("share.vercelEnvTitle")}
+            </div>
+            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+              {t("share.vercelEnvDesc")}
+            </p>
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={() => void runSyncEnv()}
+              className="mt-1.5 inline-flex items-center gap-1 rounded border bg-background px-2 py-1 text-[11px] transition hover:bg-muted disabled:opacity-50"
+            >
+              {syncing ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Cloud className="size-3" />
+              )}
+              {t("share.vercelEnvButton")}
             </button>
           </div>
         )}

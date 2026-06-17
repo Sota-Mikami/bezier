@@ -647,6 +647,15 @@ export const en = {
     copyUrl: "Copy URL",
     open: "Open",
     openBuildLog: "Open the build log on Vercel",
+    vercelEnvTitle: "Register env on Vercel",
+    vercelEnvDesc:
+      "Push this repo's .env (incl. secrets) to the Vercel project once, so the deployed app has the env it needs to build AND run. Choose which environment to deploy in your .env (e.g. VITE_APP_ENV=dev).",
+    vercelEnvButton: "Register on Vercel",
+    vercelEnvConfirm:
+      "Send this repo's environment variables — INCLUDING SECRETS — to your Vercel project? They're stored on your Vercel and used by every deploy.",
+    vercelEnvDone: "Registered {n} variable(s) on the Vercel project ({failed} failed).",
+    vercelEnvLinkFailed:
+      "Couldn't link the Vercel project. Make sure you're logged in (vercel login) and the account/scope is right.",
   },
 
   commands: {
