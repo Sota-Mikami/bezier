@@ -155,20 +155,30 @@ function IssuesView() {
     return <NoFolder onOpen={openRoot} />;
   }
 
-  if (trashId) {
-    return <TrashPreview key={trashId} root={root} id={trashId} />;
-  }
-  if (selectedId) {
-    return <IssueDetail key={selectedId} root={root} id={selectedId} />;
-  }
-  // Repo open, no issue → the "Live (現状)" view: run & see the current app, the
-  // orient step before framing an Issue (DEC-109). The issue list lives in the
-  // sidebar (DEC-021). KEYED by root so switching repos fully remounts with fresh
-  // preview state — otherwise the previous repo's running server (its url/status)
-  // leaks into the next repo's view (two repos showed the SAME Live). Each repo's
-  // dev-server pty is keyed independently, so both keep running in the background;
-  // remounting just reattaches to the right one.
-  return <RepoLive key={root} root={root} />;
+  // The repo's "Live (現状)" view (DEC-109): run & see the current app — the orient
+  // step before framing an Issue. KEYED by root so switching repos gives fresh
+  // preview state (else a prior repo's running server leaks into the next view).
+  //
+  // KEEP IT MOUNTED across navigation (perf): RepoLive's iframe hosts the running
+  // dev app. Route-swapping it away (the old behavior) destroyed that iframe, so
+  // every return to Live cold-reloaded the whole app — seconds of white. Now the
+  // issue / trash detail renders ON TOP and Live is merely hidden (display:none in
+  // WebKit keeps the iframe's browsing context alive — no reload). Its dev server
+  // already persisted (DEC-040); now the rendered page stays warm too, so toggling
+  // Live ⇆ Issue is instant.
+  const detail = trashId ? (
+    <TrashPreview key={trashId} root={root} id={trashId} />
+  ) : selectedId ? (
+    <IssueDetail key={selectedId} root={root} id={selectedId} />
+  ) : null;
+  return (
+    <div className="relative h-full min-h-0">
+      <div className={cn("absolute inset-0", detail && "hidden")}>
+        <RepoLive key={root} root={root} />
+      </div>
+      {detail && <div className="absolute inset-0">{detail}</div>}
+    </div>
+  );
 }
 
 // Read-only preview of a trashed issue (DEC-030): its spec / body / activity log
