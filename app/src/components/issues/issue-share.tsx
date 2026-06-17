@@ -128,7 +128,25 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         return;
       }
     }
-    const appUrl = needsApp ? await publish.publish() : null;
+    let appUrl = needsApp ? await publish.publish() : null;
+    // Self-heal: if the app deploy failed (most often a wrong env value the build
+    // rejected), feed the build error back to the agent so it re-decides, then
+    // retry once. "More AI" beats surfacing an opaque failure to the persona.
+    if (needsApp && !appUrl) {
+      const buildErr = publish.readLog();
+      if (buildErr.trim()) {
+        try {
+          setSetupPhase("deciding");
+          await publish.autoConfigure(buildErr);
+          setSetupPhase("registering");
+          await publish.syncEnv();
+          setSetupPhase(null);
+          appUrl = await publish.publish();
+        } catch {
+          setSetupPhase(null);
+        }
+      }
+    }
     const data = await gatherJourneyData(issue, appUrl, cfg);
     await journey.share({ ...data, password: pwOn ? pw : null });
   };

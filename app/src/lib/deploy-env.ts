@@ -42,11 +42,16 @@ const PROMPT = [
   "selects its environment / which backend each value targets).",
   "You CANNOT read .env / .env.* files — they are blocked; do NOT attempt to read",
   "them (not via Read, not via Bash/cat). Decide only from committed code.",
-  "Rules: prefer a 'development' or 'staging' environment, never 'local', never",
-  "'production'; include ONLY public (VITE_/NEXT_PUBLIC_) vars; never include any",
+  "CRITICAL — exact values: apps often VALIDATE a var against a FIXED set of allowed",
+  "strings (an enum, a union type, or a switch/case). You MUST find that validation",
+  "in the source and output the EXACT allowed string, copied VERBATIM — never an",
+  "abbreviation and never a guess. E.g. if the enum is `DEVELOPMENT = 'development'`,",
+  "output \"development\", NOT \"dev\". If unsure of the exact token, re-read the enum.",
+  "Choose the value that targets a real development or staging backend; never the",
+  "local/production one. Include ONLY public (VITE_/NEXT_PUBLIC_) vars; never any",
   "secret. If the app needs no public build env, return {}.",
-  'Output ONLY a single compact JSON object mapping each var to its value as the',
-  'FINAL line, e.g. {"VITE_APP_ENV":"development"}. No prose after the JSON.',
+  'Output ONLY a single compact JSON object mapping each var to its EXACT value as',
+  'the FINAL line, e.g. {"VITE_APP_ENV":"development"}. No prose after the JSON.',
 ].join(" ");
 
 /** Extract the public env map from the agent's final text (the last flat JSON
@@ -83,12 +88,20 @@ export function parseDeployEnvJson(text: string): Record<string, string> {
  * `{ VITE_APP_ENV: "development" }`), or `{}` if it can't decide / no agent. The pty
  * already strips nested-agent env vars; the deny rule blocks `.env`.
  */
-export async function resolveDeployEnv(repoDir: string): Promise<Record<string, string>> {
+export async function resolveDeployEnv(
+  repoDir: string,
+  failureContext?: string,
+): Promise<Record<string, string>> {
   const bin = await resolveCommand("claude").catch(() => "");
   if (!bin) return {};
   const key = `deployenv:${repoDir}`;
   const unlisten: UnlistenFn[] = [];
   let out = "";
+  // Self-heal: feed a prior deploy's build error back so the agent corrects its
+  // own choice (e.g. it output an invalid value and the build rejected it).
+  const prompt = failureContext?.trim()
+    ? `${PROMPT}\n\nA PREVIOUS deploy of this app FAILED with the error below. Read the code again and output the CORRECTED public env so the build passes (e.g. fix an invalid value to the EXACT one the code accepts). Error:\n${failureContext.replace(ANSI_RE, "").slice(-1600)}`
+    : PROMPT;
   try {
     await ptyKillKey(key).catch(() => {});
     const id = await ptySpawn({
@@ -96,7 +109,7 @@ export async function resolveDeployEnv(repoDir: string): Promise<Record<string, 
       cmd: bin,
       args: [
         "-p",
-        PROMPT,
+        prompt,
         "--allowedTools",
         "Read",
         "Grep",

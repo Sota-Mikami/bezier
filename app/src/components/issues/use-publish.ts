@@ -82,11 +82,13 @@ export interface PublishController {
   configured: boolean;
   /**
    * Decide the public deploy env via a HEADLESS agent (hard-blocked from .env, so no
-   * secret reaches the AI) and persist it — the persona never touches env. Returns
-   * the decided public vars (e.g. { VITE_APP_ENV: "development" }), or {} if it
-   * couldn't decide / no agent.
+   * secret reaches the AI) and persist it — the persona never touches env. Pass a
+   * prior build error to let the agent SELF-CORRECT its choice. Returns the decided
+   * public vars (e.g. { VITE_APP_ENV: "development" }), or {} if it couldn't decide.
    */
-  autoConfigure: () => Promise<Record<string, string>>;
+  autoConfigure: (failureContext?: string) => Promise<Record<string, string>>;
+  /** The latest deploy log (fresh, ref-backed) — for feeding a failure back to the agent. */
+  readLog: () => string;
   /** Reset (and kill any in-flight deploy). */
   clear: () => Promise<void>;
   /** Named publish accounts (DEC-098). */
@@ -360,8 +362,10 @@ export function usePublish(
 
   // Decide the deploy env via a headless agent (no secrets to the AI) + persist it
   // as the per-repo override. Idempotent-ish: re-running re-decides + overwrites.
-  const autoConfigure = React.useCallback(async (): Promise<Record<string, string>> => {
-    const decided = await resolveDeployEnv(root).catch(() => ({}));
+  const autoConfigure = React.useCallback(async (
+    failureContext?: string,
+  ): Promise<Record<string, string>> => {
+    const decided = await resolveDeployEnv(root, failureContext).catch(() => ({}));
     if (Object.keys(decided).length) {
       const merged = { ...(await readPublishEnv(root)), ...decided };
       await writePublishEnv(root, merged).catch(() => {});
@@ -372,6 +376,8 @@ export function usePublish(
     }
     return decided;
   }, [root]);
+
+  const readLog = React.useCallback(() => logAccRef.current, []);
 
   // The persona sets a value in the UI → update + persist as a per-repo override
   // (so deploy injection AND the Vercel sync use the SAME chosen value). No files.
@@ -669,6 +675,7 @@ export function usePublish(
     setEnvValue,
     configured,
     autoConfigure,
+    readLog,
     clear,
     connections,
     connectionId,
