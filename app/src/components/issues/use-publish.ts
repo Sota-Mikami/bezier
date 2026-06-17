@@ -97,6 +97,50 @@ export function vercelProjectName(base: string): string {
   return s || "app";
 }
 
+// Run a transient command to completion (no streaming), resolving on exit or a
+// safety timeout. Used to PRE-CREATE the Vercel project: `vercel deploy --project
+// <name>` only SELECTS an existing project — a missing name fails with a "different
+// team? use --scope" hint and NEVER creates it (unlike the journey page, which
+// auto-creates from its lowercase dir basename). So we `vercel project add <name>`
+// first. Best-effort: "already exists" / any failure is swallowed — the deploy
+// surfaces the real error if creation genuinely didn't happen.
+async function runToExit(opts: {
+  cwd: string;
+  cmd: string;
+  args: string[];
+  key: string;
+}): Promise<void> {
+  await ptyKillKey(opts.key).catch(() => {});
+  let id: string;
+  try {
+    id = await ptySpawn({ ...opts, cols: 80, rows: 24 });
+  } catch {
+    return; // couldn't spawn — best-effort; the deploy reports a real failure
+  }
+  const unlistens: UnlistenFn[] = [];
+  try {
+    await new Promise<void>((resolve) => {
+      // Safety ceiling so a hung command never blocks the deploy. `project add` is
+      // a quick network call, so onPtyExit fires well before this.
+      const timer = window.setTimeout(resolve, 30_000);
+      void onPtyExit((p) => {
+        if (p.id !== id) return;
+        window.clearTimeout(timer);
+        resolve(); // multiple calls are a no-op (the promise settles once)
+      }).then((u) => unlistens.push(u));
+    });
+  } finally {
+    for (const u of unlistens) {
+      try {
+        u();
+      } catch {
+        /* ignore */
+      }
+    }
+    await ptyKillKey(opts.key).catch(() => {});
+  }
+}
+
 // The last published URL is remembered per issue (localStorage) so it survives
 // leaving + returning to the issue — the Vercel deployment is immutable and
 // persists, so the saved URL stays valid (re-share updates it).
@@ -344,13 +388,21 @@ export function usePublish(
       setUrl(null);
       setStatus("building");
 
+      // Explicit lowercase project name (previewKey = the issue's UPPERCASE ULID):
+      // Vercel rejects an uppercase basename, so we name the project ourselves.
+      // `-app` keeps it distinct from the journey/share page's project. Pre-create
+      // it under the SAME scope, since `deploy --project` won't create it.
+      const projectName = vercelProjectName(`${previewKey}-app`);
+      await runToExit({
+        cwd,
+        cmd: bin,
+        args: ["project", "add", projectName, ...(scope ? ["--scope", scope] : [])],
+        key: `${ptyKey}:add`,
+      });
+
       let id: string;
       try {
         // Direct exec (no shell) so env VALUES can't be shell-injected.
-        // Explicit lowercase project name (previewKey = the issue's UPPERCASE
-        // ULID): override Vercel's basename derivation, which rejects uppercase.
-        // `-app` keeps it distinct from the journey/share page's project.
-        const projectName = vercelProjectName(`${previewKey}-app`);
         id = await ptySpawn({
           cwd,
           cmd: bin,
