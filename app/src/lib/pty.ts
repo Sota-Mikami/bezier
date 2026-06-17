@@ -16,6 +16,26 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type { UnlistenFn };
 
+/**
+ * Make a captured (ANSI-stripped) pty log read like the terminal did: render
+ * carriage-return overwrites (CLIs like vercel/pnpm redraw a spinner/progress on
+ * the SAME line via `\r`) and drop the braille spinner glyphs. Without this, every
+ * spinner frame is appended, so a deploy log becomes hundreds of repeated
+ * "Installing dependencies…" lines that bury the real error. Per `\n` line we keep
+ * only what's after the last `\r` (the final rendered state). Idempotent.
+ */
+export function renderProgress(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const cr = line.lastIndexOf("\r");
+      const rendered = cr >= 0 ? line.slice(cr + 1) : line;
+      // Strip leading braille spinner frames (U+2800–U+28FF) + their trailing space.
+      return rendered.replace(/[⠀-⣿]\s*/g, "");
+    })
+    .join("\n");
+}
+
 /** Options for spawning a pty-backed child process. */
 export interface PtySpawnOpts {
   /** Working directory the shell/agent is launched in (workspace root). */

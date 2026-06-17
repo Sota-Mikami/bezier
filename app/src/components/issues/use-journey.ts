@@ -15,6 +15,7 @@ import {
   onPtyData,
   onPtyExit,
   resolveCommand,
+  renderProgress,
   type UnlistenFn,
 } from "@/lib/pty";
 import { writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
@@ -223,7 +224,7 @@ export function useJourney(
           if (p.id !== id || idRef.current !== id) return;
           const clean = p.chunk.replace(ANSI_RE, "");
           setLog((l) => {
-            const n = l + clean;
+            const n = renderProgress(l + clean);
             return n.length > LOG_CAP ? n.slice(n.length - LOG_CAP) : n;
           });
           const a = accRef.current + clean;

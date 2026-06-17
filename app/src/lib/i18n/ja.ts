@@ -645,6 +645,7 @@ export const ja: Messages = {
     share: "共有する",
     copyUrl: "URL をコピー",
     open: "開く",
+    openBuildLog: "ビルドログを Vercel で開く",
   },
 
   commands: {

@@ -23,6 +23,7 @@ import {
   onPtyData,
   onPtyExit,
   resolveCommand,
+  renderProgress,
   type UnlistenFn,
 } from "@/lib/pty";
 import { readPreviewConfig, packageCwd } from "@/lib/preview";
@@ -44,6 +45,12 @@ export interface PublishController {
   /** Streamed build log (tail, capped) — surfaced on building/error. */
   log: string;
   /**
+   * Vercel's "Inspect" dashboard URL for the deployment, once seen. On a build
+   * failure the REAL error (e.g. a vite/tsc error) lives there, not in the CLI
+   * stream — so the share UI links to it.
+   */
+  inspectUrl: string | null;
+  /**
    * Build + deploy the worktree to Vercel. Resolves to the deployment URL when
    * the deploy finishes (or null on failure / no-op) so callers can chain — the
    * unified "共有" flow publishes the app, then embeds the resulting URL in the
@@ -63,6 +70,9 @@ export interface PublishController {
 const PUBLISH_PTY_PREFIX = "publish:";
 const PUBLISH_LOG_CAP = 40_000;
 const VERCEL_URL_RE = /https:\/\/[a-z0-9-]+\.vercel\.app/;
+// Vercel prints "Inspect: https://vercel.com/<scope>/<project>/<id>" early in a
+// deploy — the dashboard build log where a remote BUILD error actually appears.
+const INSPECT_RE = /https:\/\/vercel\.com\/[^\s'")]+/;
 const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]/g;
 
 // Vercel sets these itself; injecting them from .env would fight the build.
@@ -218,9 +228,11 @@ export function usePublish(
     loadPublishedUrl(previewKey),
   );
   const [log, setLog] = React.useState("");
+  const [inspectUrl, setInspectUrl] = React.useState<string | null>(null);
 
   const idRef = React.useRef<string | null>(null);
   const urlRef = React.useRef<string | null>(null);
+  const inspectRef = React.useRef<string | null>(null);
   // Accumulated (ANSI-stripped) output, capped — so the URL is still found even
   // if the pty splits it across two data chunks (CTO MF: per-chunk regex misses).
   const logAccRef = React.useRef("");
@@ -267,13 +279,25 @@ export function usePublish(
     detach();
     idRef.current = null;
     urlRef.current = null;
+    inspectRef.current = null;
     logAccRef.current = "";
     await ptyKillKey(ptyKey).catch(() => {});
     savePublishedUrl(previewKey, null);
     setStatus("idle");
     setUrl(null);
+    setInspectUrl(null);
     setLog("");
   }, [detach, ptyKey, previewKey]);
+
+  // Pull the dashboard "Inspect" URL out of the accumulated log once it appears.
+  const captureInspect = React.useCallback(() => {
+    if (inspectRef.current) return;
+    const m = INSPECT_RE.exec(logAccRef.current);
+    if (m) {
+      inspectRef.current = m[0];
+      setInspectUrl(m[0]);
+    }
+  }, []);
 
   const publish = React.useCallback(async (): Promise<string | null> => {
     if (!worktreePath || publishingRef.current) return null;
@@ -382,10 +406,12 @@ export function usePublish(
       detach();
       idRef.current = null;
       urlRef.current = null;
+      inspectRef.current = null;
       logAccRef.current = "";
       await ptyKillKey(ptyKey).catch(() => {});
       setLog(header);
       setUrl(null);
+      setInspectUrl(null);
       setStatus("building");
 
       // Explicit lowercase project name (previewKey = the issue's UPPERCASE ULID):
@@ -431,12 +457,13 @@ export function usePublish(
           if (p.id !== id || idRef.current !== id) return;
           const clean = p.chunk.replace(ANSI_RE, "");
           setLog((l) => {
-            const n = l + clean;
+            const n = renderProgress(l + clean);
             return n.length > PUBLISH_LOG_CAP ? n.slice(n.length - PUBLISH_LOG_CAP) : n;
           });
           const acc = logAccRef.current + clean;
           logAccRef.current =
             acc.length > PUBLISH_LOG_CAP ? acc.slice(acc.length - PUBLISH_LOG_CAP) : acc;
+          captureInspect();
           if (!urlRef.current) {
             // Scan the ACCUMULATED log so a chunk-split URL is still caught.
             const m = VERCEL_URL_RE.exec(logAccRef.current);
@@ -471,7 +498,7 @@ export function usePublish(
       publishingRef.current = false;
     }
     return done;
-  }, [root, worktreePath, ptyKey, previewKey, detach]);
+  }, [root, worktreePath, ptyKey, previewKey, detach, captureInspect]);
 
   // Unmount: detach listeners but DON'T kill — let the deploy finish in the
   // background (it's a keyed pty). The reattach effect below re-surfaces it.
@@ -505,21 +532,23 @@ export function usePublish(
       const clean = backlog.replace(ANSI_RE, "");
       logAccRef.current =
         clean.length > PUBLISH_LOG_CAP ? clean.slice(clean.length - PUBLISH_LOG_CAP) : clean;
-      setLog(logAccRef.current);
+      setLog(renderProgress(logAccRef.current));
       const m0 = VERCEL_URL_RE.exec(logAccRef.current);
       if (m0) urlRef.current = m0[0];
+      captureInspect();
       setStatus("building");
       listeners.push(
         await onPtyData((p) => {
           if (p.id !== tid || idRef.current !== tid) return;
           const c = p.chunk.replace(ANSI_RE, "");
           setLog((l) => {
-            const n = l + c;
+            const n = renderProgress(l + c);
             return n.length > PUBLISH_LOG_CAP ? n.slice(n.length - PUBLISH_LOG_CAP) : n;
           });
           const acc = logAccRef.current + c;
           logAccRef.current =
             acc.length > PUBLISH_LOG_CAP ? acc.slice(acc.length - PUBLISH_LOG_CAP) : acc;
+          captureInspect();
           if (!urlRef.current) {
             const mm = VERCEL_URL_RE.exec(logAccRef.current);
             if (mm) urlRef.current = mm[0];
@@ -552,6 +581,7 @@ export function usePublish(
     status,
     url,
     log,
+    inspectUrl,
     publish,
     clear,
     connections,

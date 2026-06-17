@@ -278,6 +278,18 @@ export function IssueShare({ session }: { session: ImplementSession }) {
             {errorLog.trim().split("\n").slice(-8).join("\n")}
           </pre>
         )}
+        {/* A remote BUILD failure's real error lives on Vercel's dashboard, not in
+            the CLI stream — link straight to it (DEC-114). */}
+        {publish.status === "error" && publish.inspectUrl && (
+          <button
+            type="button"
+            onClick={() => void openExternal(publish.inspectUrl!).catch(() => {})}
+            className="mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded border bg-background px-2 py-1 text-[11px] transition hover:bg-muted"
+          >
+            <ExternalLink className="size-3" />
+            {t("share.openBuildLog")}
+          </button>
+        )}
 
         {ready && (
           <div className="mt-2 rounded-md border bg-muted/40 p-1.5">

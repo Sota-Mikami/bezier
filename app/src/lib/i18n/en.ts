@@ -646,6 +646,7 @@ export const en = {
     share: "Share",
     copyUrl: "Copy URL",
     open: "Open",
+    openBuildLog: "Open the build log on Vercel",
   },
 
   commands: {
