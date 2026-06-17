@@ -46,6 +46,9 @@ export interface JourneyData {
   design: JourneyDesignTab[];
   /** Prototype tabs to show, in order (empty → no Prototype segment). */
   prototype: JourneyProtoTab[];
+  /** Pre-formatted generation date (e.g. "2026-06-17"), shown in the header so the
+   *  recipient knows how fresh this is. Omitted → no date shown. */
+  generatedAt?: string;
 }
 
 /** An AES-GCM ciphertext + the params needed to derive the key from a password.
@@ -242,6 +245,7 @@ function renderProtoTab(tab: JourneyProtoTab): string {
     const u = httpsOnly(tab.appUrl);
     return u
       ? `<a class="cta" href="${esc(u)}" target="_blank" rel="noopener">${esc(tt("journey.openApp"))}</a>
+       <p class="hint">${esc(tt("journey.openHint"))}</p>
        <iframe class="frame" src="${esc(u)}" title="app preview" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>`
       : `<p class="muted">${esc(tt("journey.appNotPublished"))}</p>`;
   }
@@ -264,7 +268,7 @@ function renderProtoTab(tab: JourneyProtoTab): string {
   const cells = tab.routes
     .map((rt) => {
       const r = rt.startsWith("/") ? rt : `/${rt}`;
-      return `<figure class="mapcell"><iframe src="${esc(base + r)}" title="${escAttr(r)}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe><figcaption>${esc(r)}</figcaption></figure>`;
+      return `<figure class="mapcell"><iframe src="${esc(base + r)}" title="${escAttr(r)}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms"></iframe><figcaption><a href="${esc(base + r)}" target="_blank" rel="noopener">${esc(r)} ↗</a></figcaption></figure>`;
     })
     .join("");
   return `<div class="mapgrid">${cells}</div>`;
@@ -329,10 +333,19 @@ export function buildJourneyHtml(data: JourneyData): string {
           segments.length > 1 ? `<nav class="segbar">${segLabels.join("")}</nav>` : ""
         }${segPanels.join("")}</div>`;
 
-  return buildPage(safeTitle, badge, body, cssRules.join("\n"));
+  const meta = data.generatedAt
+    ? `<span class="meta">${esc(tt("journey.generated", { date: data.generatedAt }))}</span>`
+    : "";
+  return buildPage(safeTitle, badge, body, cssRules.join("\n"), meta);
 }
 
-function buildPage(safeTitle: string, badge: string, body: string, tabCss: string): string {
+function buildPage(
+  safeTitle: string,
+  badge: string,
+  body: string,
+  tabCss: string,
+  meta: string,
+): string {
   return `<!doctype html>
 <html lang="ja">
 <head>
@@ -345,9 +358,10 @@ function buildPage(safeTitle: string, badge: string, body: string, tabCss: strin
 :root{--bg:#faf9f7;--fg:#1c1a17;--muted:#6b6660;--line:#e7e3dd;--accent:#1c1a17}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
-.wrap{max-width:860px;margin:0 auto;padding:40px 20px 80px}
-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wrap{max-width:860px;margin:0 auto;padding:40px 20px 80px;overflow-wrap:anywhere}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
 h1{font-size:24px;font-weight:650;letter-spacing:-.01em;margin:0}
+.meta{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 10px;text-decoration:none;white-space:nowrap}
 .badge .dot{width:9px;height:9px;border-radius:2px;background:var(--accent)}
 .lead{color:var(--muted);margin:6px 0 0}
@@ -375,6 +389,7 @@ h1{font-size:24px;font-weight:650;letter-spacing:-.01em;margin:0}
 .doc .chk{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border:1px solid var(--line);border-radius:4px;margin-right:7px;vertical-align:-3px;font-size:10px;line-height:1;color:transparent}
 .doc .chk.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .cta{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:8px}
+.hint{color:var(--muted);font-size:12px;margin:8px 0 0}
 .frame{display:block;width:100%;height:560px;margin-top:16px;border:1px solid var(--line);border-radius:10px;background:#fff}
 .design{display:block;width:100%;height:560px;border:1px solid var(--line);border-radius:10px;background:#fff}
 .qa{width:100%;border-collapse:collapse;font-size:13px}
@@ -383,9 +398,11 @@ h1{font-size:24px;font-weight:650;letter-spacing:-.01em;margin:0}
 .mapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 .mapcell{margin:0}
 .mapcell iframe{width:100%;height:200px;border:1px solid var(--line);border-radius:8px;background:#fff}
-.mapcell figcaption{font-size:12px;color:var(--muted);margin-top:4px;font-family:ui-monospace,monospace}
+.mapcell figcaption{font-size:12px;margin-top:4px;font-family:ui-monospace,monospace}
+.mapcell figcaption a{color:var(--muted);text-decoration:none}
+.mapcell figcaption a:hover{color:var(--fg)}
 .muted{color:var(--muted)}
-footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px 12px;flex-wrap:wrap}
 ${tabCss}
 </style>
 </head>
@@ -393,6 +410,7 @@ ${tabCss}
 <div class="wrap">
   <header>
     <h1>${safeTitle}</h1>
+    ${meta}
   </header>
   <p class="lead">${esc(tt("journey.footerLead"))}</p>
 

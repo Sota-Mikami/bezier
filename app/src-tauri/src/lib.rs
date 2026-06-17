@@ -2602,6 +2602,196 @@ fn collect_public_env(root: String) -> Result<Vec<(String, String)>, String> {
     Ok(map.into_iter().collect())
 }
 
+// Dirs never worth walking inside a build output (defensive — a built `dist`
+// normally has none of these).
+const PROXY_SKIP_DIRS: &[&str] = &["node_modules", ".git", ".vercel"];
+
+/// A RUNTIME text file whose CONTENT the browser loads/executes — the only files
+/// whose inlined origins matter for the same-origin API proxy (DEC-115). Source maps
+/// (`.map`) are skipped (not loaded at runtime).
+fn is_runtime_text_file(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".map") {
+        return false;
+    }
+    [".js", ".mjs", ".cjs", ".html", ".htm", ".css", ".json"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+}
+
+/// Extract `https://host[:port]` origins from `text` into `set`. A host must look
+/// like a real public domain (contains a dot + a 2+ letter alphabetic final label),
+/// which filters template junk like `https://${...}` / `https://%s`.
+fn collect_https_origins(text: &str, set: &mut std::collections::BTreeSet<String>) {
+    for (start, _) in text.match_indices("https://") {
+        let rest = &text[start + "https://".len()..];
+        let host: String = rest
+            .chars()
+            .take_while(|&c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':')
+            .collect();
+        let host = host.trim_end_matches(|c: char| c == ':' || c == '.' || c == '-');
+        if host.is_empty() {
+            continue;
+        }
+        let host_no_port = host.split(':').next().unwrap_or("");
+        let valid_tld = host_no_port
+            .rsplit('.')
+            .next()
+            .map(|tld| tld.len() >= 2 && tld.chars().all(|c| c.is_ascii_alphabetic()))
+            .unwrap_or(false);
+        if host_no_port.contains('.') && valid_tld {
+            set.insert(format!("https://{host}"));
+        }
+    }
+}
+
+fn scan_origins_walk(dir: &Path, depth: usize, set: &mut std::collections::BTreeSet<String>) {
+    if depth > 12 {
+        return;
+    }
+    let rd = match fs::read_dir(dir) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    for entry in rd.flatten() {
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if ft.is_dir() {
+            if PROXY_SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            scan_origins_walk(&entry.path(), depth + 1, set);
+        } else if ft.is_file() && is_runtime_text_file(&name) {
+            if let Ok(txt) = fs::read_to_string(entry.path()) {
+                collect_https_origins(&txt, set);
+            }
+        }
+    }
+}
+
+/// Scan a built static output dir for absolute `https://host` origins inlined in
+/// runtime files (`.js`/`.html`/`.css`/`.json`). Returns the unique set of
+/// `scheme://host` strings (no path). Used to DISCOVER an app's candidate backend
+/// origins so the share deploy can same-origin-proxy them (DEC-115). Traversal- and
+/// grant-checked (the worktree output is granted by publish()).
+#[tauri::command]
+fn scan_text_origins(
+    state: tauri::State<'_, PathGrantState>,
+    dir: String,
+) -> Result<Vec<String>, String> {
+    let base = Path::new(&dir);
+    reject_traversal(base)?;
+    ensure_granted(&state, base)?;
+    let mut set = std::collections::BTreeSet::new();
+    scan_origins_walk(base, 0, &mut set);
+    Ok(set.into_iter().collect())
+}
+
+fn rewrite_walk(dir: &Path, depth: usize, pairs: &[(String, String)], count: &mut usize) {
+    if depth > 12 {
+        return;
+    }
+    let rd = match fs::read_dir(dir) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    for entry in rd.flatten() {
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if ft.is_dir() {
+            if PROXY_SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            rewrite_walk(&entry.path(), depth + 1, pairs, count);
+        } else if ft.is_file() && is_runtime_text_file(&name) {
+            let path = entry.path();
+            let Ok(mut txt) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let mut changed = false;
+            for (from, to) in pairs {
+                if txt.contains(from.as_str()) {
+                    *count += txt.matches(from.as_str()).count();
+                    txt = txt.replace(from.as_str(), to);
+                    changed = true;
+                }
+            }
+            if changed {
+                let _ = fs::write(&path, txt);
+            }
+        }
+    }
+}
+
+/// Replace literal substrings across runtime files (`.js`/`.html`/`.css`/`.json`)
+/// under `dir`. `pairs` = `[(from, to)]`, applied LONGEST-`from`-first so one origin
+/// that's a prefix of another is handled correctly. Returns the total replacement
+/// count. Used to repoint an app's inlined backend origins to same-origin proxy
+/// prefixes before a static share deploy (DEC-115). Traversal- and grant-checked.
+#[tauri::command]
+fn rewrite_in_dir(
+    state: tauri::State<'_, PathGrantState>,
+    dir: String,
+    pairs: Vec<(String, String)>,
+) -> Result<usize, String> {
+    let base = Path::new(&dir);
+    reject_traversal(base)?;
+    ensure_granted(&state, base)?;
+    let mut pairs = pairs;
+    pairs.retain(|(f, _)| !f.is_empty());
+    pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    let mut count = 0usize;
+    rewrite_walk(base, 0, &pairs, &mut count);
+    Ok(count)
+}
+
+/// Quote a string as an AppleScript string literal (escape `\` and `"`, flatten
+/// newlines) so it can't break the `osascript` one-liner.
+fn applescript_quote(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' | '\r' => out.push(' '),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Fire a desktop notification (DEC-118 / heuristic #4) so the maker doesn't have to
+/// stare at the terminal to know an agent turn finished. macOS-native via `osascript`
+/// (no extra plugin/dep); best-effort + fire-and-forget. No-op off macOS.
+#[tauri::command]
+fn notify(title: String, body: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "display notification {} with title {}",
+            applescript_quote(&body),
+            applescript_quote(&title),
+        );
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .spawn()
+            .map_err(|e| format!("notify: {e}"))?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (title, body);
+    }
+    Ok(())
+}
+
 /// Parse one `.env` line into ANY valid `(KEY, VALUE)` pair (public or secret), or
 /// None. A valid key is `[A-Za-z_][A-Za-z0-9_]*`. Tolerates `export ` + quotes.
 fn parse_env_line(line: &str) -> Option<(String, String)> {
@@ -3081,6 +3271,9 @@ pub fn run() {
             clone_dir,
             mirror_worktree_env,
             collect_public_env,
+            scan_text_origins,
+            rewrite_in_dir,
+            notify,
             vercel_sync_env,
             app_data_dir,
             home_dir,

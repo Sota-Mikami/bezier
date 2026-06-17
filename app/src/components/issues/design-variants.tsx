@@ -30,6 +30,10 @@ export function designSurface(
         lines,
         shot,
       ),
-    send: (p, n) => revise(p, tt("designVariants.reviseNote", { id: pattern.id, note: n })),
+    // The variant path doesn't gate on a live agent, so it always "sends" (true).
+    send: (p, n) =>
+      revise(p, tt("designVariants.reviseNote", { id: pattern.id, note: n })).then(
+        () => true,
+      ),
   };
 }

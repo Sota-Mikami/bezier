@@ -76,8 +76,10 @@ export interface AnnotationSurface {
   cannotSendMessage: string;
   /** Build the agent prompt from the numbered instruction lines + screenshot. */
   buildPrompt: (lines: string[], shot: string | null) => string;
-  /** Send the batch to the agent (sendDesignFeedback / reviseDesignPattern). */
-  send: (promptText: string, note: string) => Promise<void>;
+  /** Send the batch to the agent (sendDesignFeedback / reviseDesignPattern).
+   *  Resolves false if the maker cancelled (e.g. declined to interrupt a live
+   *  agent) — the caller then leaves the annotations as unsent drafts. */
+  send: (promptText: string, note: string) => Promise<boolean>;
 }
 
 export function AnnotationLayer({
@@ -342,10 +344,12 @@ export function AnnotationLayer({
           ? [ph.overall(note.trim()), "", ...marks]
           : marks;
         const promptText = surface.buildPrompt(lines, shot);
-        await surface.send(
+        const sent = await surface.send(
           promptText,
           tt("annotations.annotationCount", { count: batch.length }),
         );
+        // Cancelled (e.g. declined to interrupt a live agent) — keep the drafts as-is.
+        if (!sent) return;
         setBatchNote("");
         sentTurnRef.current = true;
         sawRunningRef.current = false;

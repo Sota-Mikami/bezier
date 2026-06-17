@@ -9,7 +9,7 @@ import { readFile, writeFile } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
 import { listDocuments, type Issue } from "@/lib/issues";
 import { listVariants, readVariant } from "@/lib/variants";
-import { readQa } from "@/lib/qa";
+import { readQa, seedQaFromSpec } from "@/lib/qa";
 import { readScope } from "@/lib/scope";
 import type { JourneyDesignTab, JourneyProtoTab } from "@/lib/journey";
 
@@ -142,7 +142,13 @@ export async function gatherJourneyData(
     });
   }
   if (isShared(cfg, "qa")) {
-    const items = await readQa(issue).catch(() => null);
+    // Mirror the QA panel: it loads `qa.json`, and FALLS BACK to seeding from the
+    // Spec's acceptance criteria when none is saved (qa-proposal.tsx). That seed is
+    // only persisted once the maker edits a row, so a freshly-seeded (unedited) QA
+    // lives in the panel but has no qa.json yet — `readQa` alone returned empty and
+    // the share showed "no cases". Seed here too so the share reflects what's shown.
+    let items = await readQa(issue).catch(() => null);
+    if (!items) items = await seedQaFromSpec(issue).catch(() => []);
     prototype.push({
       kind: "qa",
       label: protoLabel("qa"),

@@ -69,6 +69,24 @@ export function parseSpecCriteria(specMd: string): QaItem[] {
   return out;
 }
 
+/** Render QA rows as a committed-friendly Markdown table (fixed English headers so
+ *  it reads in a PR diff regardless of locale). Used by the handoff bundle so the
+ *  implementing engineer gets the QA as a real file, not a read-only HTML grid. */
+export function qaToMarkdown(items: QaItem[]): string {
+  const cols = ["Status", "Priority", "Area", "Case", "Expected", "Basis"];
+  const statusLabel: Record<QaStatus, string> = { todo: "TODO", pass: "PASS", fail: "FAIL" };
+  const cell = (s: string) => (s || "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  const head = `| ${cols.join(" | ")} |`;
+  const sep = `| ${cols.map(() => "---").join(" | ")} |`;
+  const body = items.map(
+    (i) =>
+      `| ${[statusLabel[i.status], i.priority, i.area, i.scenario, i.expected, i.note]
+        .map(cell)
+        .join(" | ")} |`,
+  );
+  return [head, sep, ...body].join("\n");
+}
+
 /** Seed QA rows from the Spec's acceptance criteria (empty if none / no spec). */
 export async function seedQaFromSpec(issue: Issue): Promise<QaItem[]> {
   try {

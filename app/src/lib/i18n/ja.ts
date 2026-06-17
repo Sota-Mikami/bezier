@@ -118,6 +118,15 @@ export const ja: Messages = {
     buildFailed: "[Bezier] ローカルビルドに失敗しました。上のログに正確なエラーがあります。",
     noOutput: "[Bezier] ビルド出力（index.html を含むフォルダ）が見つかりませんでした。これは静的/SPA ビルドのアプリですか？",
     deployingOutput: "\n[Bezier] ビルド結果を Vercel に公開中（静的・再ビルド無し）…\n",
+    proxying: "[Bezier] チームが普段の情報でログインできるよう、API を同一オリジン経由に（バックエンド変更なし）",
+    diagSsr:
+      "サーバーレンダリング型のアプリのようです（Next.js SSR / Remix / SvelteKit-node / Nuxt）。永続公開は今は静的/SPA ビルドが対象です（サーバー型向けの『ライブ共有リンク』は近日対応）。今は Live でローカルプレビューできます。",
+    diagNonJs:
+      "package.json のビルドがありません。フルスタックのアプリ（Rails / Django / サーバー）のようです。永続公開は JS の静的/SPA ビルドが対象です（『ライブ共有リンク』は近日対応）。今は Live でローカルプレビューできます。",
+    diagNoBuild:
+      "この package に `build` スクリプトが無く、公開できる静的出力がありません。静的ファイルを出すビルドを追加するか、Live でローカルプレビューしてください。",
+    diagStatic:
+      "ビルドは走りましたが、認識できる静的出力（dist/build/out/…）が見つかりませんでした。別の場所に出力されるなら出力ディレクトリを指定してください。難しければ Live でローカルプレビューできます。",
   },
 
   previewServer: {
@@ -198,6 +207,8 @@ export const ja: Messages = {
   journey: {
     specEmpty: "*(spec はまだありません)*",
     openApp: "アプリを開く →",
+    generated: "{date} 生成",
+    openHint: "ログインは新しいタブで開くのが確実です（埋め込み表示はブラウザの制限で不安定な場合があります）。",
     appNotPublished: "まだアプリは公開されていません。「共有」で公開すると、ここに表示されます。",
     segDesign: "デザイン",
     segPrototype: "プロトタイプ",
@@ -606,7 +617,8 @@ export const ja: Messages = {
     implementAgent: "実装エージェント",
     comingSoonSuffix: "（近日対応）",
     notFoundSuffix: "（未検出）",
-    reImplement: "編集後の Spec で再 Implement",
+    reImplement: "再実装（会話を継続）",
+    reImplementFresh: "ゼロからやり直す（会話をリセット）",
     discardChanges: "変更を破棄（Discard）",
     moveIssueToTrash: "Issue をゴミ箱へ移動",
     notGitRepo: "git リポジトリではありません",
@@ -659,6 +671,8 @@ export const ja: Messages = {
     setupHint:
       "Bezier があなたのマシンでビルドし、その結果を Vercel に公開します（秘密はローカルに留まります）。初回だけ公開設定を自動で判断します。",
     setupReady: "公開設定は準備済み。共有で再ビルドして最新を公開します。",
+    appDropped:
+      "ライブアプリは含められませんでしたが、共有ページは準備できました（デザイン / QA は共有済み）。理由は下に表示します。",
     phaseDeciding: "公開設定を判断中…",
     phaseRegistering: "Vercel に設定を登録中…",
   },
@@ -787,6 +801,17 @@ export const ja: Messages = {
 
   session: {
     noAgent: "利用可能なエージェント (claude / codex) が見つかりません。",
+    rerunFreshTitle: "ゼロからやり直しますか？",
+    rerunFreshConfirm:
+      "新しい会話で始めます。これまでの会話（確認事項・デザインの選択・なぜそうしたか）は失われます。worktree のコードは保持されます。会話を引き継ぎたい場合は通常の「再実装」を使ってください。",
+    rerunFreshOk: "リセットしてやり直す",
+    feedbackInterruptTitle: "実行中のエージェントを中断しますか？",
+    feedbackInterruptConfirm:
+      "このフィードバックを送るとこの Issue のエージェントを再起動します。進行中・返信待ちのターンは失われます。続けますか？",
+    feedbackInterruptOk: "中断して送信",
+    notifyWaiting: "エージェントが返信を待っています。",
+    notifyDone: "エージェントがターンを完了しました。",
+    notifyError: "エージェントがエラーで停止しました。",
     resumeFallback: "前回のセッションを再開できなかったため、新規セッションを開始しました。",
     gitRequired: "Implement には git リポジトリが必要です。",
     noWorktree: "worktree がありません。先に Implement してください。",

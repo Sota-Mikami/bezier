@@ -28,6 +28,7 @@ import {
   type JourneyDesignTab,
   type JourneyProtoTab,
 } from "@/lib/journey";
+import { vercelProjectName, runToExit } from "./use-publish";
 
 export type JourneyStatus = "idle" | "building" | "ready" | "error";
 
@@ -152,10 +153,15 @@ export function useJourney(
       }
 
       // The caller already gathered the SELECTED content (DF-5); just render it.
+      // Stamp the page with today's date (YYYY-MM-DD) so the recipient sees how
+      // fresh it is in the header.
+      const now = new Date();
+      const generatedAt = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       let pageHtml = buildJourneyHtml({
         title,
         design: opts.design,
         prototype: opts.prototype,
+        generatedAt,
       });
 
       // Password protection (DEC-102): encrypt the whole page client-side; the
@@ -199,12 +205,34 @@ export function useJourney(
       setUrl(null);
       setStatus("building");
 
+      // Stable share URL (heuristic #1): deploy to the issue's OWN project at
+      // PRODUCTION so the alias <id>.vercel.app always reflects the LATEST re-share —
+      // instead of the per-deploy hash URL, which left every previously-sent link
+      // pointing at stale content (a re-share silently diverged from the link in the
+      // stakeholder's inbox). Mirror the app publish (DEC-114 stableAppAlias): create
+      // the project (idempotent) then deploy --prod --project, and return the alias.
+      const projectName = vercelProjectName(issueId.toLowerCase());
+      const stableUrl = `https://${projectName}.vercel.app`;
+      await runToExit({
+        cwd: dir,
+        cmd: bin,
+        args: ["project", "add", projectName, ...(scope ? ["--scope", scope] : [])],
+        key: `${ptyKey}:add`,
+      });
+
       let id: string;
       try {
         id = await ptySpawn({
           cwd: dir,
           cmd: bin,
-          args: ["deploy", "--yes", ...(scope ? ["--scope", scope] : [])],
+          args: [
+            "deploy",
+            "--prod",
+            "--yes",
+            "--project",
+            projectName,
+            ...(scope ? ["--scope", scope] : []),
+          ],
           cols: 120,
           rows: 40,
           key: ptyKey,
@@ -242,7 +270,9 @@ export function useJourney(
           const resolved =
             urlRef.current ?? VERCEL_RE.exec(accRef.current)?.[0] ?? null;
           if (p.code === 0 && resolved) {
-            setUrl(resolved);
+            // Embed the STABLE alias (survives re-shares), not the per-deploy hash
+            // we parsed to confirm success.
+            setUrl(stableUrl);
             setStatus("ready");
           } else {
             setStatus("error");

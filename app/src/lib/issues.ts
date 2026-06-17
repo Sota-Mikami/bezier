@@ -1037,6 +1037,10 @@ export async function buildPrBody(
   root: string,
   issue: Issue,
   thread: ThreadEvent[],
+  // The committed handoff file's repo-relative path, ONLY when it was actually
+  // written + committed into the branch (heuristic #2). Omitted → no pointer, so the
+  // PR body never points at a `docs/handoff/<id>.md` that doesn't exist in the diff.
+  handoffPath?: string,
 ): Promise<{ path: string; content: string }> {
   let specMd: string;
   try {
@@ -1050,6 +1054,12 @@ export async function buildPrBody(
     "",
     s.prComment,
     "",
+    ...(handoffPath
+      ? [
+          `> 📋 実装ハンドオフ（受入基準・QA・決定・preview env）は \`${handoffPath}\` にこの PR の diff として同梱しています。clone するだけで意図がすべて手に入ります。`,
+          "",
+        ]
+      : []),
     "## Spec",
     "",
     specMd,

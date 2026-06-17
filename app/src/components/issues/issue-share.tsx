@@ -138,22 +138,29 @@ export function IssueShare({ session }: { session: ImplementSession }) {
     await journey.share({ ...data, password: pwOn ? pw : null });
   };
 
-  const phase =
-    setupPhase === "deciding"
+  const ready = journey.status === "ready" && !!journey.url && !busy;
+  // The app part was needed but couldn't be published, yet the share PAGE still
+  // succeeded (Design/QA) — present that calmly with an honest reason, NOT as a
+  // failure ("行き止まりゼロ化": share never dead-ends).
+  const appDropped = (previewOn || mapOn) && publish.status === "error" && ready;
+  const phase = busy
+    ? setupPhase === "deciding"
       ? t("share.phaseDeciding")
       : publish.status === "building"
         ? t("share.phasePublishingApp")
         : journey.status === "building"
           ? t("share.phaseCreatingPage")
-          : publish.status === "error" || journey.status === "error"
-              ? t("share.phaseError")
-              : null;
-  const ready = journey.status === "ready" && !!journey.url && !busy;
+          : null
+    : !ready && (publish.status === "error" || journey.status === "error")
+      ? t("share.phaseError")
+      : null;
+  // Only show the raw log when the share genuinely FAILED — never alongside a ready
+  // page (then the calm appDropped note + diagnosis explains it instead).
   const errorLog =
-    publish.status === "error"
-      ? publish.log
-      : journey.status === "error"
-        ? journey.log
+    journey.status === "error"
+      ? journey.log
+      : publish.status === "error" && !ready
+        ? publish.log
         : "";
 
   if (!ref) return null;
@@ -332,6 +339,29 @@ export function IssueShare({ session }: { session: ImplementSession }) {
 
         {phase && (
           <div className="px-1 pt-1.5 text-[11px] text-muted-foreground">{phase}</div>
+        )}
+        {/* 行き止まりゼロ化: the app couldn't be published, but the share PAGE still
+            got made — frame it calmly as a partial success + say WHY honestly (the
+            diagnosis for an SSR/full-stack app, else the build log) + a next step. */}
+        {appDropped && (
+          <div className="mt-2 rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+            <div className="mb-1 font-medium text-foreground">
+              {t("share.appDropped")}
+            </div>
+            {publish.diagnosis ? (
+              <span>{publish.diagnosis}</span>
+            ) : publish.log.trim() ? (
+              <pre className="max-h-20 overflow-auto whitespace-pre-wrap">
+                {publish.log.trim().split("\n").slice(-6).join("\n")}
+              </pre>
+            ) : null}
+          </div>
+        )}
+        {/* Whole share failed AND we have an honest diagnosis (rare) — show it. */}
+        {!ready && publish.status === "error" && publish.diagnosis && (
+          <div className="mt-2 rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+            {publish.diagnosis}
+          </div>
         )}
         {errorLog && (
           <pre className="mt-1 max-h-28 overflow-auto rounded border bg-destructive/5 px-2 py-1 text-[10px] leading-snug whitespace-pre-wrap text-muted-foreground">

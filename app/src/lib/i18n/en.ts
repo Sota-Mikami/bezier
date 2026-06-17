@@ -119,6 +119,15 @@ export const en = {
     buildFailed: "[Bezier] The local build failed. See the log above for the exact error.",
     noOutput: "[Bezier] Couldn't find the build output (a folder with index.html). Is this app a static/SPA build?",
     deployingOutput: "\n[Bezier] Publishing the built output to Vercel (static — no rebuild)…\n",
+    proxying: "[Bezier] Same-origin API proxy so teammates can sign in (no backend change)",
+    diagSsr:
+      "This looks like a server-rendered app (Next.js SSR / Remix / SvelteKit-node / Nuxt). Persistent publish currently ships static/SPA builds — a live-link option for server apps is coming. For now, use Live to preview it locally.",
+    diagNonJs:
+      "No package.json build here — this looks like a full-stack app (Rails / Django / a server). Persistent publish ships JS static/SPA builds; a live-link option is coming. Use Live to preview it locally for now.",
+    diagNoBuild:
+      "This package has no `build` script, so there's no static output to publish. Add a build that emits static files, or use Live to preview it locally.",
+    diagStatic:
+      "The build ran but produced no recognizable static output (dist/build/out/…). If it builds elsewhere, set the output directory; otherwise use Live to preview it locally.",
   },
 
   previewServer: {
@@ -199,6 +208,8 @@ export const en = {
   journey: {
     specEmpty: "*(no spec yet)*",
     openApp: "Open the app →",
+    generated: "Generated {date}",
+    openHint: "Signing in is most reliable in a new tab — embedded previews can be limited by the browser.",
     appNotPublished: "The app isn't published yet. Publish it via Share and it will appear here.",
     segDesign: "Design",
     segPrototype: "Prototype",
@@ -607,7 +618,8 @@ export const en = {
     implementAgent: "Implementation agent",
     comingSoonSuffix: " (coming soon)",
     notFoundSuffix: " (not found)",
-    reImplement: "Re-implement with edited Spec",
+    reImplement: "Re-implement (keep conversation)",
+    reImplementFresh: "Re-implement from scratch (reset conversation)",
     discardChanges: "Discard changes",
     moveIssueToTrash: "Move Issue to trash",
     notGitRepo: "Not a git repository",
@@ -660,6 +672,8 @@ export const en = {
     setupHint:
       "Bezier builds the app on your machine and publishes the result to Vercel — secrets stay local. The first time, it figures out the deploy settings for you.",
     setupReady: "Deploy settings are ready — sharing rebuilds + publishes the latest.",
+    appDropped:
+      "The live app couldn't be included, but your share page is ready (Design / QA are shared). See why below.",
     phaseDeciding: "Figuring out the deploy settings…",
     phaseRegistering: "Registering settings on Vercel…",
   },
@@ -788,6 +802,17 @@ export const en = {
 
   session: {
     noAgent: "No available agent found (claude / codex).",
+    rerunFreshTitle: "Re-implement from scratch?",
+    rerunFreshConfirm:
+      "This starts a FRESH conversation — the agent loses the prior thread (clarifications, design choices, why). The worktree code is kept. Use the normal Re-implement to keep the conversation.",
+    rerunFreshOk: "Reset and re-implement",
+    feedbackInterruptTitle: "Interrupt the running agent?",
+    feedbackInterruptConfirm:
+      "Sending this feedback restarts the issue's agent. A turn that's in progress or awaiting your reply will be lost. Continue?",
+    feedbackInterruptOk: "Interrupt and send",
+    notifyWaiting: "The agent is awaiting you.",
+    notifyDone: "The agent finished a turn.",
+    notifyError: "The agent stopped with an error.",
     resumeFallback: "Couldn't resume the previous session, so a new one was started.",
     gitRequired: "Implement requires a git repository.",
     noWorktree: "No worktree yet — run Implement first.",

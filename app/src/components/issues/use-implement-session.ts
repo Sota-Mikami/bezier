@@ -73,7 +73,8 @@ import {
   agentHookSettings,
   type AgentState,
 } from "@/lib/pty";
-import { confirmDialog } from "@/lib/ipc";
+import { confirmDialog, grantPath, notify } from "@/lib/ipc";
+import { writeHandoffBundle } from "@/lib/handoff";
 import { tt } from "@/lib/i18n";
 import { conflictResolvePrompt } from "@/lib/prompts";
 import type {
@@ -722,11 +723,23 @@ export function useImplementSession(
 
   // Re-run AI on the SAME worktree with a follow-up handoff built from the
   // (possibly edited) issue.md + spec.md (DEC-012 review↔refine cycle).
-  const handleRerun = React.useCallback(async () => {
+  const handleRerun = React.useCallback(async (opts?: { fresh?: boolean }) => {
     if (!ref || action) return;
     if (!selectedAgent?.available) {
       setError(tt("session.noAgent"));
       return;
+    }
+    // Hard re-run starts a FRESH conversation (clean slate) — confirm, because the
+    // default (soft) re-run keeps the thread via `--continue` so the "why" of the
+    // prior decisions survives the cycle (heuristic #3: Re-run used to silently wipe
+    // the conversation).
+    if (opts?.fresh) {
+      const ok = await confirmDialog(tt("session.rerunFreshConfirm"), {
+        title: tt("session.rerunFreshTitle"),
+        okLabel: tt("session.rerunFreshOk"),
+        cancelLabel: tt("common.cancel"),
+      });
+      if (!ok) return;
     }
     setAction("rerun");
     setError(null);
@@ -739,8 +752,14 @@ export function useImplementSession(
         followUp: true,
         subPath,
       });
-      launchAgent(selectedAgent, workDir(ref.path), { prompt: content });
-      void logEvent("rerun");
+      // Soft (default): `--continue` resumes the prior conversation AND keeps the
+      // worktree changes, so the maker's iterative edits build on context. Hard:
+      // fresh session (the old behaviour), used only when explicitly chosen.
+      launchAgent(selectedAgent, workDir(ref.path), {
+        prompt: content,
+        resume: !opts?.fresh,
+      });
+      void logEvent("rerun", opts?.fresh ? "fresh" : "continue");
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -940,6 +959,25 @@ export function useImplementSession(
     }
   }, [agentState, autoCheckpoint]);
 
+  // Ping the maker when a turn FINISHES (running → not-running) and Bezier isn't
+  // focused, so they don't have to stare at the terminal to know it's done or
+  // awaiting them (heuristic #4). The in-app inbox/dot already covers the focused
+  // case; this is for "I tabbed away to do something else".
+  const prevAgentForNotify = React.useRef<AgentState | null>(agentState);
+  React.useEffect(() => {
+    const was = prevAgentForNotify.current;
+    prevAgentForNotify.current = agentState;
+    if (was !== "running" || agentState === "running" || agentState === null) return;
+    if (typeof document !== "undefined" && document.hasFocus()) return;
+    const body =
+      agentState === "waiting"
+        ? tt("session.notifyWaiting")
+        : agentState === "error"
+          ? tt("session.notifyError")
+          : tt("session.notifyDone");
+    void notify(issue.title || "Bezier", body).catch(() => {});
+  }, [agentState, issue.title]);
+
   // Roll the worktree back to a checkpoint (§D / DEC-080). reset --hard discards
   // later commits + uncommitted changes (reflog-recoverable); main is untouched.
   const rollbackTo = React.useCallback(
@@ -1116,7 +1154,28 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     try {
-      const { path: bodyPath } = await buildPrBody(root, issue, thread);
+      // Handoff travels (DEC-117 / team-loop seam ②): commit the maker's INTENT
+      // (spec + acceptance + decisions + QA + the preview env) into the tree as
+      // docs/handoff/<id>.md, so the implementing engineer gets it in the PR DIFF —
+      // not just the gitignored .bezier or the PR body. Done BEFORE buildPrBody so we
+      // only point the PR body at the file when it ACTUALLY landed in the branch
+      // (heuristic #2 — no phantom pointer to a non-existent file). Best-effort: a
+      // failure must not block the PR (the body still carries the spec inline).
+      let handoffPath: string | undefined;
+      try {
+        await grantPath(ref.path).catch(() => {});
+        const rel = await writeHandoffBundle(root, issue, ref.path);
+        // Commit it if dirty; if clean it was already committed in a prior open. Either
+        // way the file is in the branch → the pointer is valid. If the commit throws,
+        // the catch leaves handoffPath undefined (the file isn't in the branch).
+        if (changedPathsFromStatus(await gitStatus(ref.path)).length > 0) {
+          await gitCommitAll(ref.path, `docs(handoff): ${issue.title || issue.id}`);
+        }
+        handoffPath = rel;
+      } catch {
+        handoffPath = undefined; // not committed → don't point the PR body at it
+      }
+      const { path: bodyPath } = await buildPrBody(root, issue, thread, handoffPath);
       await gitPush(ref.path, ref.branch);
       const url = await ghPrCreate(root, ref.branch, issue.title, bodyPath);
       // Persist the PR URL on the worktree ref so it survives a re-open.
@@ -1142,10 +1201,22 @@ export function useImplementSession(
   // with `--continue` + the prompt as a positional arg — reliable arg-passing).
   // The screenshot lives under issue.dir, already readable via `--add-dir`.
   const sendDesignFeedback = React.useCallback(
-    async (promptText: string, note?: string) => {
+    async (promptText: string, note?: string): Promise<boolean> => {
       if (!ref) throw new Error(tt("session.noWorktree"));
       if (!selectedAgent?.available) {
         throw new Error(tt("session.noAgent"));
+      }
+      // Sending feedback KILLS the issue's live agent to relaunch it with the note.
+      // If a turn is mid-flight or awaiting the maker, that thread is lost — confirm
+      // first (heuristic #6). Returning false (cancel) lets the caller leave the
+      // annotations as unsent drafts instead of marking them "running".
+      if (agentState === "running" || agentState === "waiting") {
+        const ok = await confirmDialog(tt("session.feedbackInterruptConfirm"), {
+          title: tt("session.feedbackInterruptTitle"),
+          okLabel: tt("session.feedbackInterruptOk"),
+          cancelLabel: tt("common.cancel"),
+        });
+        if (!ok) return false;
       }
       await ptyKillKey(issue.id).catch(() => {});
       launchAgent(selectedAgent, workDir(ref.path), {
@@ -1153,8 +1224,9 @@ export function useImplementSession(
         resume: true,
       });
       void logEvent("design_feedback", note);
+      return true;
     },
-    [ref, selectedAgent, issue.id, launchAgent, workDir, logEvent],
+    [ref, selectedAgent, issue.id, launchAgent, workDir, logEvent, agentState],
   );
 
   const canImplement =

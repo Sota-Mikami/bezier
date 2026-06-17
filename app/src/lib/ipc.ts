@@ -220,6 +220,34 @@ export function collectPublicEnv(root: string): Promise<[string, string][]> {
   return invoke<[string, string][]>("collect_public_env", { root });
 }
 
+/**
+ * Scan a built static output dir for absolute `https://host` origins inlined in
+ * runtime files (.js/.html/.css/.json) — an app's candidate backend origins to
+ * same-origin-proxy in the share deploy (DEC-115). Grant-checked.
+ * -> invoke("scan_text_origins", { dir })
+ */
+export function scanTextOrigins(dir: string): Promise<string[]> {
+  return invoke<string[]>("scan_text_origins", { dir });
+}
+
+/**
+ * Replace literal substrings across runtime files under `dir` (each `[from, to]`,
+ * applied longest-`from`-first). Repoints inlined backend origins to same-origin
+ * proxy prefixes before a static share deploy. Returns the replacement count.
+ * -> invoke("rewrite_in_dir", { dir, pairs })
+ */
+export function rewriteInDir(dir: string, pairs: [string, string][]): Promise<number> {
+  return invoke<number>("rewrite_in_dir", { dir, pairs });
+}
+
+/**
+ * Fire a macOS desktop notification (best-effort) so the maker is pinged when an
+ * agent turn finishes even if Bezier isn't focused. -> invoke("notify", { title, body })
+ */
+export function notify(title: string, body: string): Promise<void> {
+  return invoke<void>("notify", { title, body });
+}
+
 /** Result of pushing the repo's env to a Vercel project. */
 export interface VercelSyncResult {
   pushed: number;

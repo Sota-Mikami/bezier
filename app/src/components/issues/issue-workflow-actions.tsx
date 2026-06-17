@@ -14,6 +14,7 @@ import {
   Keyboard,
   Loader2,
   Lock,
+  RefreshCw,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -132,6 +133,14 @@ export function IssueMenu({
             >
               <RotateCcw className="size-3.5" />
               {t("ship.reImplement")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-xs"
+              disabled={!selectedAgent?.available || !!action}
+              onClick={() => void handleRerun({ fresh: true })}
+            >
+              <RefreshCw className="size-3.5" />
+              {t("ship.reImplementFresh")}
             </DropdownMenuItem>
             <DropdownMenuItem
               className="cursor-pointer gap-2 text-xs text-destructive focus:text-destructive"

@@ -36,6 +36,7 @@ import {
   mirrorWorktreeEnv,
 } from "@/lib/preview";
 import { resolveDeployEnv } from "@/lib/deploy-env";
+import { planApiProxy } from "@/lib/proxy";
 import { tt } from "@/lib/i18n";
 import {
   readFile,
@@ -43,6 +44,8 @@ import {
   removeVercelDir,
   collectPublicEnv,
   vercelSyncEnv,
+  scanTextOrigins,
+  rewriteInDir,
   pathMtime,
   grantPath,
   type VercelSyncResult,
@@ -68,6 +71,12 @@ export interface PublishController {
    * stream — so the share UI links to it.
    */
   inspectUrl: string | null;
+  /**
+   * When a build produced no static output, an HONEST one-line reason + next step
+   * (SSR / full-stack / non-JS app, etc.) — so a failed app-publish never dead-ends
+   * the maker ("行き止まりゼロ化"). Null unless that specific failure happened.
+   */
+  diagnosis: string | null;
   /**
    * Build + deploy the worktree to Vercel. Resolves to the deployment URL when
    * the deploy finishes (or null on failure / no-op) so callers can chain — the
@@ -146,6 +155,19 @@ export function vercelProjectName(base: string): string {
   return s || "app";
 }
 
+// The STABLE production alias for a published app. `vercel deploy --prod` to a
+// uniquely-named project aliases it to `<project>.vercel.app`, which SURVIVES
+// re-deploys (the per-deploy hash URL — what the CLI prints first, what
+// VERCEL_URL_RE catches — changes every publish). We embed the alias in the share
+// so the page stays valid across re-publishes AND the maker gets ONE origin to
+// whitelist in their backend (Firebase authorized domains / API CORS) instead of a
+// new untrusted origin each time. The parsed hash URL stays the deploy-SUCCESS
+// signal; the alias is what we save/return/embed. (`<previewKey>` is a globally
+// unique ULID, so `<id>-web.vercel.app` never collides.)
+export function stableAppAlias(previewKey: string): string {
+  return `https://${vercelProjectName(`${previewKey}-web`)}.vercel.app`;
+}
+
 // Run a transient command to completion (no streaming), resolving on exit or a
 // safety timeout. Used to PRE-CREATE the Vercel project: `vercel deploy --project
 // <name>` only SELECTS an existing project — a missing name fails with a "different
@@ -153,7 +175,7 @@ export function vercelProjectName(base: string): string {
 // auto-creates from its lowercase dir basename). So we `vercel project add <name>`
 // first. Best-effort: "already exists" / any failure is swallowed — the deploy
 // surfaces the real error if creation genuinely didn't happen.
-async function runToExit(opts: {
+export async function runToExit(opts: {
   cwd: string;
   cmd: string;
   args: string[];
@@ -285,6 +307,54 @@ async function detectStaticOutput(
   return best?.path ?? null;
 }
 
+// When the local build produced NO static output, work out WHY so the maker gets an
+// HONEST reason + a next step instead of a dead-end ("行き止まりゼロ化"). Persistent
+// publish ships a static folder, so SSR / full-stack / non-JS apps legitimately have
+// no output — say so plainly. Reads only committed files in the worktree.
+async function diagnoseNoOutput(
+  worktreePath: string,
+  packageDir: string,
+): Promise<string> {
+  const cwd = packageCwd(worktreePath, packageDir);
+  const pkgRaw = await readFile(`${cwd}/package.json`).catch(() => "");
+  if (!pkgRaw.trim()) return tt("publishFlow.diagNonJs"); // no package.json → Rails/Django/server
+  let scripts: Record<string, string> = {};
+  let deps: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(pkgRaw) as {
+      scripts?: Record<string, string>;
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    scripts = pkg.scripts ?? {};
+    deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  } catch {
+    return tt("publishFlow.diagStatic"); // malformed package.json — generic guidance
+  }
+  if (!scripts.build?.trim()) return tt("publishFlow.diagNoBuild");
+  const dep = (k: string) => k in deps;
+  const build = scripts.build.toLowerCase();
+  // A server build leaves a server bundle (not a static index.html dir).
+  const serverOut = (
+    await Promise.all(
+      [".next", ".output/server", "build/server", "dist/server"].map((d) =>
+        pathMtime(`${cwd}/${d}`)
+          .then(() => true)
+          .catch(() => false),
+      ),
+    )
+  ).some(Boolean);
+  const ssr =
+    dep("@remix-run/node") ||
+    dep("@remix-run/serve") ||
+    dep("@sveltejs/adapter-node") ||
+    dep("@nuxt/kit") ||
+    /\bremix\b/.test(build) ||
+    ((dep("next") || dep("nuxt")) && serverOut) ||
+    serverOut;
+  return ssr ? tt("publishFlow.diagSsr") : tt("publishFlow.diagStatic");
+}
+
 // The maker's per-repo PUBLIC-env overrides, set in the share UI (NOT hand-edited)
 // and stored in `.bezier/publish-env.json`. These let the persona choose values
 // (e.g. which environment to deploy: VITE_APP_ENV=dev) without touching .env / the
@@ -344,6 +414,7 @@ export function usePublish(
   );
   const [log, setLog] = React.useState("");
   const [inspectUrl, setInspectUrl] = React.useState<string | null>(null);
+  const [diagnosis, setDiagnosis] = React.useState<string | null>(null);
   // Editable public env (auto-detected + overrides) for the share form.
   const [publicEnv, setPublicEnv] = React.useState<[string, string][]>([]);
   const publicEnvRef = React.useRef<[string, string][]>([]);
@@ -406,6 +477,7 @@ export function usePublish(
     setStatus("idle");
     setUrl(null);
     setInspectUrl(null);
+    setDiagnosis(null);
     setLog("");
   }, [detach, ptyKey, previewKey]);
 
@@ -538,6 +610,7 @@ export function usePublish(
       await ptyKillKey(ptyKey).catch(() => {});
       setUrl(null);
       setInspectUrl(null);
+      setDiagnosis(null);
       setStatus("building");
 
       // Accumulate pty output into the (rendered) log + the ref the URL/inspect
@@ -596,15 +669,43 @@ export function usePublish(
       // The freshly-built static output (the dir with index.html).
       const output = await detectStaticOutput(worktreePath, packageDir);
       if (!output) {
+        // Diagnose WHY (SSR / full-stack / non-JS) so the maker gets an honest reason
+        // + next step, never a cryptic dead-end. The share still proceeds with
+        // Design/QA (the caller embeds null for the app).
+        const diag = await diagnoseNoOutput(worktreePath, packageDir).catch(
+          () => tt("publishFlow.diagStatic"),
+        );
+        setDiagnosis(diag);
         setStatus("error");
-        setLog((l) => `${l}\n${tt("publishFlow.noOutput")}`);
+        setLog((l) => `${l}\n${tt("publishFlow.noOutput")}\n${diag}`);
         finish(null);
         return null;
       }
-      // SPA client routing: serve index.html for routes with no matching file.
+      // === Same-origin API proxy (DEC-115): the app talks to a PRIVATE backend that
+      // only trusts localhost / known origins, so a credentialed cross-origin call
+      // from the random *.vercel.app deploy is CORS-blocked → a teammate can't log in
+      // ("不明なエラー"). Fix WITHOUT touching the backend: repoint the app's inlined
+      // backend origins to same-origin `/__bz/h<n>` paths, and proxy each via a Vercel
+      // rewrite (server-side, no browser CORS). Third-party origins (analytics /
+      // Firebase auth / CDNs) stay direct. The agent's build env is already baked in;
+      // this only rewrites string literals in the built output.
+      const foundOrigins = await scanTextOrigins(output).catch(() => [] as string[]);
+      const proxy = planApiProxy(foundOrigins, true);
+      if (proxy.pairs.length) {
+        const n = await rewriteInDir(
+          output,
+          proxy.pairs.map((p): [string, string] => [p.origin, p.prefix]),
+        ).catch(() => 0);
+        const hosts = proxy.pairs
+          .map((p) => p.origin.replace(/^https:\/\//, ""))
+          .join(", ");
+        setLog((l) => `${l}\n${tt("publishFlow.proxying")}: ${hosts} (${n})`);
+      }
+      // SPA client routing + the API proxy rewrites (proxies FIRST, SPA catch-all
+      // LAST — Vercel matches rewrites top-to-bottom).
       await writeFile(
         `${output}/vercel.json`,
-        `${JSON.stringify({ rewrites: [{ source: "/(.*)", destination: "/index.html" }] })}\n`,
+        `${JSON.stringify({ rewrites: proxy.rewrites })}\n`,
       ).catch(() => {});
 
       // Deploy the OUTPUT as a STATIC site (no remote build). A fresh `-web` project
@@ -664,10 +765,13 @@ export function usePublish(
           const resolved =
             urlRef.current ?? VERCEL_URL_RE.exec(logAccRef.current)?.[0] ?? null;
           if (p.code === 0 && resolved) {
-            setUrl(resolved);
+            // Embed the STABLE alias (survives re-deploys, whitelist-once), not the
+            // per-deploy hash URL we parsed to confirm success.
+            const stable = stableAppAlias(previewKey);
+            setUrl(stable);
             setStatus("ready");
-            savePublishedUrl(previewKey, resolved); // remember across navigation
-            finish(resolved);
+            savePublishedUrl(previewKey, stable); // remember across navigation
+            finish(stable);
           } else {
             // Friendly hints for the most common non-engineer failures.
             if (/Not authenticated|vercel login|No existing credentials/i.test(logAccRef.current)) {
@@ -748,9 +852,10 @@ export function usePublish(
           const resolved =
             urlRef.current ?? VERCEL_URL_RE.exec(logAccRef.current)?.[0] ?? null;
           if (p.code === 0 && resolved) {
-            setUrl(resolved);
+            const stable = stableAppAlias(previewKey);
+            setUrl(stable);
             setStatus("ready");
-            savePublishedUrl(previewKey, resolved);
+            savePublishedUrl(previewKey, stable);
           } else {
             setStatus("error");
           }
@@ -768,6 +873,7 @@ export function usePublish(
     url,
     log,
     inspectUrl,
+    diagnosis,
     publish,
     syncEnv,
     publicEnv,

@@ -97,12 +97,12 @@ export interface ImplementSession {
   prUrl: string | null;
   openPR: () => Promise<void>;
 
-  sendDesignFeedback: (promptText: string, note?: string) => Promise<void>;
+  sendDesignFeedback: (promptText: string, note?: string) => Promise<boolean>;
 
   canImplement: boolean;
   handleImplement: () => Promise<void>;
   handleStart: (message: string) => Promise<void>;
-  handleRerun: () => Promise<void>;
+  handleRerun: (opts?: { fresh?: boolean }) => Promise<void>;
 
   canGenerateVariant: boolean;
   handleGenerateVariant: (ids: string[], context: string) => Promise<void>;
