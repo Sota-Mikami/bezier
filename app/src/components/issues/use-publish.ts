@@ -44,6 +44,7 @@ import {
   collectPublicEnv,
   vercelSyncEnv,
   pathMtime,
+  grantPath,
   type VercelSyncResult,
 } from "@/lib/ipc";
 import {
@@ -516,6 +517,11 @@ export function usePublish(
       const cfg = await readPreviewConfig(root).catch(() => null);
       const packageDir = cfg?.packageDir ?? "";
       const cwd = packageCwd(worktreePath, packageDir);
+
+      // The worktree lives under app-data, not the user's granted repo root — grant
+      // it (Bezier owns it) so the grant-checked FS commands (path_mtime to find the
+      // build output, writeFile for the SPA rewrite) can see the freshly-built dist.
+      await grantPath(worktreePath).catch(() => {});
 
       // Account/scope this repo deploys under (DEC-098).
       const s = getSettings();
