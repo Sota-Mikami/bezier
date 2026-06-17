@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "vitest";
 
 import { buildJourneyHtml, type JourneyData } from "./journey.ts";
+import { SHARE_SCRIPT } from "./journey-script.ts";
 
 const base: JourneyData = {
   title: "Share <script>alert(1)</script>",
@@ -37,7 +39,8 @@ test("buildJourneyHtml escapes doc markdown and avoids runtime markdown executio
 
   assert.equal(html.includes("cdn.jsdelivr.net/npm/marked"), false);
   assert.equal(html.includes("window.marked"), false);
-  // The page is CSS-only (no script), so nothing manipulates innerHTML.
+  // The ONLY script is the hash-pinned keyboard handler; nothing manipulates
+  // innerHTML or evaluates page content.
   assert.equal(html.includes("innerHTML"), false);
   assert.equal(html.includes("<img src=x onerror=alert(1)>"), false);
   assert.equal(html.includes("&lt;img src=x onerror=alert(1)&gt;"), true);
@@ -63,6 +66,37 @@ test("buildJourneyHtml rejects non-https app URLs", () => {
   assert.equal(html.includes("javascript:alert(1)"), false);
   // A rejected (non-https) URL must produce no "open app" CTA (locale-independent).
   assert.equal(html.includes('class="cta"'), false);
+});
+
+test("buildJourneyHtml allows only the hash-pinned keyboard script (no 'unsafe-inline')", () => {
+  const html = buildJourneyHtml(base);
+  const hash = `sha256-${createHash("sha256").update(SHARE_SCRIPT, "utf8").digest("base64")}`;
+  // The exact script is embedded, and the CSP whitelists it by hash — so this one
+  // script runs but any injected inline script (different bytes) cannot.
+  assert.equal(html.includes(`<script>${SHARE_SCRIPT}</script>`), true);
+  assert.match(html, new RegExp(`script-src '${hash.replace(/[+/=]/g, "\\$&")}'`));
+  assert.equal(html.includes("'unsafe-inline'") && /script-src[^;]*'unsafe-inline'/.test(html), false);
+});
+
+test("buildJourneyHtml renders task lists as checkboxes (no bullet, no literal [ ])", () => {
+  const html = buildJourneyHtml({
+    ...base,
+    design: [
+      {
+        kind: "doc",
+        label: "Spec",
+        md: ["- [ ] open item", "- [x] done item", "  - nested bullet"].join("\n"),
+      },
+    ],
+  });
+  // No literal markdown checkbox syntax leaks through.
+  assert.equal(html.includes("[ ]"), false);
+  assert.equal(html.includes("[x]"), false);
+  // Task items get the checkbox class; the checked one is marked `on`.
+  assert.match(html, /<li class="task"><span class="chk">/);
+  assert.match(html, /<li class="task"><span class="chk on">/);
+  // The indented sub-bullet opens a nested list (indentation preserved).
+  assert.match(html, /<ul>[\s\S]*<ul>/);
 });
 
 test("buildJourneyHtml shows a segmented control only when both segments exist", () => {

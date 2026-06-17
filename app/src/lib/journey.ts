@@ -6,6 +6,12 @@
 // the shared page.
 
 import { tt } from "@/lib/i18n";
+import { SHARE_SCRIPT } from "@/lib/journey-script";
+
+// CSP hash of SHARE_SCRIPT (DEC-113) — allows ONLY that exact inline script to run
+// (keyboard shortcuts), keeping the page's no-arbitrary-script guarantee. Locked to
+// the script by journey.test.ts: change the script → recompute → update this.
+const SHARE_SCRIPT_HASH = "sha256-h8Jw6EvmmAoVr6NK7XMG0md8MmHMKN2g3ZmVEoYoI3w=";
 
 // DF-5: the share page MIRRORS the maker's Issue detail — a Design / Prototype
 // segmented control, each with its own tabs, showing only what the maker chose to
@@ -147,12 +153,17 @@ function renderSafeMarkdown(md: string): string {
   const out: string[] = [];
   let inCode = false;
   let code: string[] = [];
-  let inList = false;
-  const closeList = () => {
-    if (inList) {
-      out.push("</ul>");
-      inList = false;
+  // Open-list stack: each entry remembers its tag + the indent (leading spaces) it
+  // opened at, so nested bullets keep their indentation (the app renders nesting;
+  // the old flat single-<ul> dropped it) and ordered/unordered lists don't mix.
+  const stack: { tag: "ul" | "ol"; indent: number }[] = [];
+  const closeDeeper = (indent: number) => {
+    while (stack.length && stack[stack.length - 1].indent > indent) {
+      out.push(`</${stack.pop()!.tag}>`);
     }
+  };
+  const closeAll = () => {
+    while (stack.length) out.push(`</${stack.pop()!.tag}>`);
   };
   for (const line of lines) {
     if (/^```/.test(line)) {
@@ -161,7 +172,7 @@ function renderSafeMarkdown(md: string): string {
         code = [];
         inCode = false;
       } else {
-        closeList();
+        closeAll();
         inCode = true;
       }
       continue;
@@ -170,30 +181,48 @@ function renderSafeMarkdown(md: string): string {
       code.push(line);
       continue;
     }
-    if (!line.trim()) {
-      closeList();
-      continue;
-    }
+    // A blank line keeps open lists open (loose lists / sub-items often have gaps);
+    // a real paragraph below closes them.
+    if (!line.trim()) continue;
     const h = /^(#{1,3})\s+(.+)$/.exec(line);
     if (h) {
-      closeList();
+      closeAll();
       out.push(`<h${h[1].length}>${inlineMd(h[2])}</h${h[1].length}>`);
       continue;
     }
-    const li = /^\s*[-*]\s+(.*)$/.exec(line);
+    const li = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
     if (li) {
-      if (!inList) {
-        out.push("<ul>");
-        inList = true;
+      const indent = li[1].replace(/\t/g, "  ").length;
+      const ordered = /^\s*\d/.test(line);
+      const tag: "ul" | "ol" = ordered ? "ol" : "ul";
+      closeDeeper(indent);
+      const top = stack[stack.length - 1];
+      if (!top || top.indent < indent) {
+        out.push(`<${tag}>`);
+        stack.push({ tag, indent });
+      } else if (top.indent === indent && top.tag !== tag) {
+        out.push(`</${stack.pop()!.tag}>`);
+        out.push(`<${tag}>`);
+        stack.push({ tag, indent });
       }
-      out.push(`<li>${inlineMd(li[1])}</li>`);
+      // GitHub task list: `- [ ]` / `- [x]` → a real checkbox, no bullet (the app's
+      // Spec checklist renders this way; the old code showed a dot + literal "[ ]").
+      const task = /^\[([ xX])\]\s+(.*)$/.exec(li[2]);
+      if (task) {
+        const on = task[1].toLowerCase() === "x";
+        out.push(
+          `<li class="task"><span class="chk${on ? " on" : ""}">${on ? "✓" : ""}</span>${inlineMd(task[2])}</li>`,
+        );
+      } else {
+        out.push(`<li>${inlineMd(li[2])}</li>`);
+      }
       continue;
     }
-    closeList();
+    closeAll();
     out.push(`<p>${inlineMd(line)}</p>`);
   }
-  closeList();
   if (inCode) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+  closeAll();
   return out.join("\n");
 }
 
@@ -310,7 +339,7 @@ function buildPage(safeTitle: string, badge: string, body: string, tabCss: strin
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; frame-src 'self' https://*.vercel.app; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; script-src '${SHARE_SCRIPT_HASH}'; frame-src 'self' https://*.vercel.app; base-uri 'none'; form-action 'none'">
 <title>${safeTitle} — Bezier</title>
 <style>
 :root{--bg:#faf9f7;--fg:#1c1a17;--muted:#6b6660;--line:#e7e3dd;--accent:#1c1a17}
@@ -328,15 +357,23 @@ h1{font-size:24px;font-weight:650;letter-spacing:-.01em;margin:0}
 .segbar{display:inline-flex;gap:3px;background:#efece7;border-radius:10px;padding:3px;margin-bottom:8px}
 .segbar label{font-size:13px;font-weight:600;color:var(--muted);padding:6px 16px;border-radius:7px;cursor:pointer}
 .segp{display:none}
-.tabbar{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:6px 0 18px}
-.tabbar label{font-size:13px;color:var(--muted);padding:8px 12px;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px}
+/* Many tabs scroll horizontally (no wrap) instead of stacking into rows. */
+.tabbar{display:flex;gap:2px;flex-wrap:nowrap;overflow-x:auto;border-bottom:1px solid var(--line);margin:6px 0 18px;scrollbar-width:thin}
+.tabbar::-webkit-scrollbar{height:6px}
+.tabbar::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.tabbar label{font-size:13px;color:var(--muted);padding:8px 12px;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;white-space:nowrap;flex:0 0 auto}
 .tabp{display:none}
 .doc :is(h1,h2,h3){font-size:17px;font-weight:650;margin:20px 0 8px;color:var(--fg)}
 .doc p{margin:8px 0}
 .doc code{background:#efece7;padding:1px 5px;border-radius:4px;font-size:13px}
 .doc pre{background:#efece7;padding:12px;border-radius:8px;overflow:auto}
 .doc pre code{background:none;padding:0}
-.doc ul,.doc ol{padding-left:20px}
+.doc ul,.doc ol{padding-left:22px;margin:8px 0}
+.doc li{margin:3px 0}
+/* GitHub task list: no bullet, a real checkbox box (matches the app's checklist). */
+.doc li.task{list-style:none;margin-left:-22px}
+.doc .chk{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border:1px solid var(--line);border-radius:4px;margin-right:7px;vertical-align:-3px;font-size:10px;line-height:1;color:transparent}
+.doc .chk.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .cta{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:8px}
 .frame{display:block;width:100%;height:560px;margin-top:16px;border:1px solid var(--line);border-radius:10px;background:#fff}
 .design{display:block;width:100%;height:560px;border:1px solid var(--line);border-radius:10px;background:#fff}
@@ -356,7 +393,6 @@ ${tabCss}
 <div class="wrap">
   <header>
     <h1>${safeTitle}</h1>
-    ${badge}
   </header>
   <p class="lead">${esc(tt("journey.footerLead"))}</p>
 
@@ -367,6 +403,7 @@ ${tabCss}
     <span>${esc(tt("journey.madeBy"))}</span>
   </footer>
 </div>
+<script>${SHARE_SCRIPT}</script>
 </body>
 </html>`;
 }
