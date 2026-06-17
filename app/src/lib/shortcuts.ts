@@ -53,6 +53,8 @@ export function buildShortcuts(t: TFn): ShortcutGroup[] {
       items: [
         { keys: ["⌘", "K"], desc: t("shortcuts.palette") },
         { keys: ["⌘", "N"], desc: t("shortcuts.newIssue") },
+        { keys: ["⌘", "⇧", "↓"], desc: t("shortcuts.sidebarDown") },
+        { keys: ["⌘", "⇧", "↑"], desc: t("shortcuts.sidebarUp") },
         { keys: ["⌘", "B"], desc: t("shortcuts.toggleSidebar") },
         { keys: ["⌘", "R"], desc: t("shortcuts.reload") },
         { keys: ["⌘", "W"], desc: t("shortcuts.closeWindow") },

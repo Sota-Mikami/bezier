@@ -497,6 +497,76 @@ export function AppSidebar() {
     [q],
   );
 
+  // Keyboard navigation through the sidebar (⌘⇧↓ / ⌘⇧↑): walk the SAME order the
+  // list renders — each repo's Live entry, then (if that repo is open) its visible
+  // issues — across all repos. Mirrors what the eye sees so next/prev is predictable.
+  const navTargets = React.useMemo(() => {
+    const out: (
+      | { kind: "live"; repo: string }
+      | { kind: "issue"; repo: string; id: string }
+    )[] = [];
+    if (showTrash) return out;
+    for (const r of recents) {
+      out.push({ kind: "live", repo: r.path });
+      if (!(expanded.has(r.path) || searching)) continue;
+      const all = issuesByRepo[r.path] ?? [];
+      const filtered = q ? all.filter(matches) : all;
+      const shown = showAll.has(r.path) || q ? filtered : filtered.slice(0, PAGE);
+      for (const issue of shown) out.push({ kind: "issue", repo: r.path, id: issue.id });
+    }
+    return out;
+  }, [showTrash, recents, expanded, searching, issuesByRepo, q, matches, showAll]);
+  // Read the latest list from the keydown handler without re-subscribing per change.
+  const navTargetsRef = React.useRef(navTargets);
+  React.useEffect(() => {
+    navTargetsRef.current = navTargets;
+  }, [navTargets]);
+
+  const moveSelection = React.useCallback(
+    (dir: 1 | -1) => {
+      const list = navTargetsRef.current;
+      if (list.length === 0) return;
+      const cur = list.findIndex((tg) =>
+        selectedId
+          ? tg.kind === "issue" && tg.id === selectedId
+          : tg.kind === "live" && tg.repo === root,
+      );
+      const nextIdx =
+        cur < 0
+          ? dir === 1
+            ? 0
+            : list.length - 1
+          : Math.min(list.length - 1, Math.max(0, cur + dir));
+      const tgt = list[nextIdx];
+      if (!tgt) return;
+      if (tgt.kind === "live") {
+        expandRepo(tgt.repo); // open it so a further ↓ descends into its issues
+        selectLive(tgt.repo);
+      } else {
+        selectIssue(tgt.repo, tgt.id);
+      }
+    },
+    [selectedId, root, expandRepo, selectLive, selectIssue],
+  );
+
+  // ⌘⇧↑/↓ — move through the sidebar from anywhere (capture phase + exact chord, so
+  // a plain ↑/↓ while typing is untouched). Mirrors ⌘N's global wiring (DEC-082).
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        !e.altKey &&
+        (e.key === "ArrowDown" || e.key === "ArrowUp")
+      ) {
+        e.preventDefault();
+        moveSelection(e.key === "ArrowDown" ? 1 : -1);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [moveSelection]);
+
   // Flat id → { title, repoPath } index across all loaded repos, to resolve an
   // agent status (keyed by issue id) to a displayable row + a target repo.
   const issueIndex = React.useMemo(() => {

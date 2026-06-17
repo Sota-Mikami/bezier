@@ -252,6 +252,8 @@ export const en = {
     appTitle: "App-wide",
     palette: "Command palette (Issue / repo / actions)",
     newIssue: "New issue",
+    sidebarDown: "Next item in the sidebar (issue / repo)",
+    sidebarUp: "Previous item in the sidebar (issue / repo)",
     toggleSidebar: "Toggle the sidebar",
     reload: "Reload",
     closeWindow: "Close the window outside the editor (with confirm)",
