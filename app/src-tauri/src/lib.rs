@@ -2538,6 +2538,70 @@ fn mirror_worktree_env(root: String, worktree_path: String) -> Result<Vec<String
     Ok(mirrored)
 }
 
+/// A PUBLIC (client-inlined) env key: `VITE_*` / `NEXT_PUBLIC_*`. These are baked
+/// into the client bundle by the framework anyway, so passing them to a deploy is
+/// not a secret leak (DEC-098).
+fn is_public_env_key(k: &str) -> bool {
+    (k.starts_with("VITE_") || k.starts_with("NEXT_PUBLIC_"))
+        && k.bytes().enumerate().all(|(i, b)| {
+            b == b'_' || b.is_ascii_alphanumeric() && !(i == 0 && b.is_ascii_digit())
+        })
+}
+
+/// Parse one `.env` line into a PUBLIC `(KEY, VALUE)` pair, or None. Skips blanks /
+/// comments / non-public keys; tolerates a leading `export ` and surrounding
+/// quotes — mirrors the front-end parseEnv so injection is consistent.
+fn parse_public_env_line(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with('#') {
+        return None;
+    }
+    let body = line.strip_prefix("export ").unwrap_or(line).trim();
+    let eq = body.find('=')?;
+    if eq == 0 {
+        return None;
+    }
+    let k = body[..eq].trim();
+    if !is_public_env_key(k) {
+        return None;
+    }
+    let mut v = body[eq + 1..].trim();
+    if v.len() >= 2
+        && ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\'')))
+    {
+        v = &v[1..v.len() - 1];
+    }
+    Some((k.to_string(), v.to_string()))
+}
+
+/// Collect every PUBLIC env var (`VITE_*` / `NEXT_PUBLIC_*`) from all `.env` files
+/// under `root` (root + workspace/package subdirs). SECRETS are read but NEVER
+/// returned — only public keys cross the IPC boundary (safer than reading whole
+/// files into the front-end). Deeper files override shallower ones, so a
+/// monorepo's app-level public env (e.g. `workspaces/app/.env`'s `VITE_APP_ENV`,
+/// which the root `.env` lacks) is what gets injected into the Vercel deploy build.
+/// Traversal-guarded; the env-file walk already skips node_modules/dist/etc.
+#[tauri::command]
+fn collect_public_env(root: String) -> Result<Vec<(String, String)>, String> {
+    let root_p = Path::new(&root);
+    reject_traversal(root_p)?;
+    let mut files = Vec::new();
+    collect_env_files(root_p, root_p, 0, &mut files);
+    // Shallower paths first so deeper (more specific) files override on conflict.
+    files.sort_by_key(|p| p.components().count());
+    let mut map: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for rel in files {
+        if let Ok(txt) = fs::read_to_string(root_p.join(&rel)) {
+            for line in txt.lines() {
+                if let Some((k, v)) = parse_public_env_line(line) {
+                    map.insert(k, v);
+                }
+            }
+        }
+    }
+    Ok(map.into_iter().collect())
+}
+
 /// The Bezier app-data directory (e.g. ~/Library/Application Support/
 /// com.bezier.app on macOS). Created if absent. Used to host git worktrees
 /// OUTSIDE the user's repo — a worktree nested inside the repo makes tools that
@@ -2864,6 +2928,7 @@ pub fn run() {
             symlink,
             clone_dir,
             mirror_worktree_env,
+            collect_public_env,
             app_data_dir,
             home_dir,
             uninstall_bezier_commands,

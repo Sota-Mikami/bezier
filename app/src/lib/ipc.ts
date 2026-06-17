@@ -210,6 +210,17 @@ export function removeVercelDir(dir: string): Promise<void> {
 }
 
 /**
+ * Collect every PUBLIC env var (`VITE_*` / `NEXT_PUBLIC_*`) from all `.env` files
+ * under `root` (root + workspace subdirs). Secrets are filtered out on the Rust
+ * side — only public keys cross. Used by publish to inject build-time public env
+ * for a monorepo whose app-level vars (e.g. VITE_APP_ENV) live in a workspace dir,
+ * not the root. -> invoke("collect_public_env", { root })
+ */
+export function collectPublicEnv(root: string): Promise<[string, string][]> {
+  return invoke<[string, string][]>("collect_public_env", { root });
+}
+
+/**
  * Move/rename a file or directory. Guarded on the Rust side to paths under a
  * `.bezier` working store (used to shuffle issues into / out of the trash).
  * -> invoke("move_path", { from, to })

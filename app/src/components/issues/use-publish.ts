@@ -28,7 +28,7 @@ import {
 } from "@/lib/pty";
 import { readPreviewConfig, packageCwd } from "@/lib/preview";
 import { tt } from "@/lib/i18n";
-import { readFile, writeFile, removeVercelDir } from "@/lib/ipc";
+import { readFile, writeFile, removeVercelDir, collectPublicEnv } from "@/lib/ipc";
 import {
   getSettings,
   setSettings,
@@ -191,29 +191,6 @@ async function ensureVercelExcluded(worktreePath: string): Promise<void> {
   }
 }
 
-/** Parse a .env file into KEY=VALUE pairs (skip comments/blank, strip quotes). */
-function parseEnv(text: string): [string, string][] {
-  const out: [string, string][] = [];
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    // Drop an optional leading `export `.
-    const body = line.startsWith("export ") ? line.slice(7).trim() : line;
-    const eq = body.indexOf("=");
-    if (eq <= 0) continue;
-    const k = body.slice(0, eq).trim();
-    let v = body.slice(eq + 1).trim();
-    if (
-      (v.startsWith('"') && v.endsWith('"')) ||
-      (v.startsWith("'") && v.endsWith("'"))
-    ) {
-      v = v.slice(1, -1);
-    }
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && !ENV_SKIP.test(k)) out.push([k, v]);
-  }
-  return out;
-}
-
 export function usePublish(
   root: string,
   worktreePath: string | null,
@@ -362,19 +339,12 @@ export function usePublish(
           }
         }
       } else {
-        const dirs = cwd === worktreePath ? [cwd] : [cwd, worktreePath];
-        for (const dir of dirs) {
-          let found = false;
-          for (const name of [".env.local", ".env"]) {
-            const txt = await readFile(`${dir}/${name}`).catch(() => "");
-            if (!txt) continue;
-            // PUBLIC-prefixed keys ONLY — Bezier never reads/passes secrets.
-            envPairs = parseEnv(txt).filter(([k]) => isPublicEnvKey(k));
-            found = true;
-            break;
-          }
-          if (found) break;
-        }
+        // PUBLIC-prefixed keys ONLY, from ALL .env files in the REAL repo (root +
+        // workspace subdirs) — a monorepo's app-level public env (e.g. fs-student-
+        // web's VITE_APP_ENV in workspaces/app/.env, which the root .env lacks) is
+        // REQUIRED by the build. Reading only the root/cwd .env missed it, so the
+        // remote `vite build` threw. Secrets are filtered on the Rust side.
+        envPairs = await collectPublicEnv(root).catch(() => [] as [string, string][]);
       }
       const envFlags: string[] = [];
       for (const [k, v] of envPairs) {
