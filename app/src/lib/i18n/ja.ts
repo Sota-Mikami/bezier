@@ -646,15 +646,17 @@ export const ja: Messages = {
     copyUrl: "URL をコピー",
     open: "開く",
     openBuildLog: "ビルドログを Vercel で開く",
-    vercelEnvTitle: "Vercel に env を登録",
-    vercelEnvDesc:
-      "このリポジトリの env を Vercel プロジェクトに一度登録すると、デプロイ先のアプリがビルド＆実行できます。値は下で設定（例: VITE_APP_ENV=dev）— Bezier が書き込み・送信します（ファイル編集は不要）。",
-    vercelEnvButton: "Vercel に登録",
-    vercelEnvConfirm:
-      "このリポジトリの環境変数（秘密を含む）をあなたの Vercel プロジェクトに送信します。Vercel 上に保存され、毎回のデプロイで使われます。よろしいですか？",
-    vercelEnvDone: "Vercel プロジェクトに {n} 個の変数を登録しました（{failed} 件失敗）。",
     vercelEnvLinkFailed:
       "Vercel プロジェクトにリンクできませんでした。ログイン（vercel login）とアカウント/スコープを確認してください。",
+    setupTitle: "共有の準備",
+    setupConfirm:
+      "このアプリを共有すると、あなたの Vercel に公開されます。初回だけ、Bezier が公開に必要な設定を自動で判断して Vercel に登録します（秘密は AI には渡さず、Vercel に直接送られます）。準備して共有しますか？",
+    setupOk: "準備して共有",
+    setupHint:
+      "アプリは Vercel に公開されます。初回だけ Bezier が公開設定を自動で整えます（秘密は AI に渡りません）。",
+    setupReady: "公開設定は準備済み。共有で最新を公開します。",
+    phaseDeciding: "公開設定を判断中…",
+    phaseRegistering: "Vercel に設定を登録中…",
   },
 
   commands: {

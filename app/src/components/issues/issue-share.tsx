@@ -55,6 +55,11 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   const [pwOn, setPwOn] = React.useState(false);
   const [pw, setPw] = React.useState("");
   const [pwReveal, setPwReveal] = React.useState(false);
+  // First-time, agent-driven deploy-env setup progress (the persona never touches
+  // env: an agent decides it — hard-blocked from .env — then Bezier registers it).
+  const [setupPhase, setSetupPhase] = React.useState<
+    null | "deciding" | "registering"
+  >(null);
 
   // Load the shareable items + saved selection for this issue.
   React.useEffect(() => {
@@ -71,7 +76,10 @@ export function IssueShare({ session }: { session: ImplementSession }) {
     };
   }, [issue]);
 
-  const busy = publish.status === "building" || journey.status === "building";
+  const busy =
+    publish.status === "building" ||
+    journey.status === "building" ||
+    setupPhase !== null;
 
   const toggle = (key: string) => {
     const next = toggleShare(cfg, key);
@@ -85,54 +93,58 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   const mapOn = isShared(cfg, "map");
   const pwMissing = pwOn && !pw.trim();
 
-  // Option B (DEC-114): register the repo's env on the Vercel project ONCE, so the
-  // deployed app has the secret/build env it needs (e.g. fs-student-web's
-  // VITE_APP_ENV + Firebase keys) — persistently, not per-deploy. Explicit consent
-  // first, since this sends env (incl. secrets) to the user's Vercel.
-  const [syncing, setSyncing] = React.useState(false);
-  const runSyncEnv = async () => {
-    if (syncing) return;
-    const ok = await confirmDialog(t("share.vercelEnvConfirm"), {
-      title: t("share.vercelEnvTitle"),
-      okLabel: t("share.vercelEnvButton"),
-      cancelLabel: t("common.cancel"),
-    });
-    if (!ok) return;
-    setSyncing(true);
-    try {
-      const r = await publish.syncEnv();
-      await messageDialog(
-        r.linkFailed
-          ? t("share.vercelEnvLinkFailed")
-          : t("share.vercelEnvDone", { n: r.pushed, failed: r.failed }),
-        { title: t("share.vercelEnvTitle") },
-      );
-    } catch (e) {
-      await messageDialog(e instanceof Error ? e.message : String(e), {
-        title: t("share.vercelEnvTitle"),
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  // Publish the live app (only when Preview or Map is shared), then gather the
-  // SELECTED content and hand it to the share builder.
+  // Share the app. The persona just clicks: on the FIRST app-share, Bezier sets it
+  // up for them — a headless agent DECIDES the public deploy env (hard-blocked from
+  // .env, so no secret reaches the AI), then Bezier registers env on the Vercel
+  // project (secrets via Rust, never the AI). Subsequent shares skip straight to
+  // deploy. Then it publishes the app and builds the share page.
   const runShare = async () => {
     if (busy || !anySelected || pwMissing) return;
-    const appUrl = previewOn || mapOn ? await publish.publish() : null;
+    const needsApp = previewOn || mapOn;
+    if (needsApp && !publish.configured) {
+      const ok = await confirmDialog(t("share.setupConfirm"), {
+        title: t("share.setupTitle"),
+        okLabel: t("share.setupOk"),
+        cancelLabel: t("common.cancel"),
+      });
+      if (!ok) return;
+      try {
+        setSetupPhase("deciding");
+        await publish.autoConfigure(); // agent decides env (no secrets to the AI)
+        setSetupPhase("registering");
+        const r = await publish.syncEnv(); // register on Vercel (secrets via Rust)
+        setSetupPhase(null);
+        if (r.linkFailed) {
+          await messageDialog(t("share.vercelEnvLinkFailed"), {
+            title: t("share.setupTitle"),
+          });
+          return;
+        }
+      } catch (e) {
+        setSetupPhase(null);
+        await messageDialog(e instanceof Error ? e.message : String(e), {
+          title: t("share.setupTitle"),
+        });
+        return;
+      }
+    }
+    const appUrl = needsApp ? await publish.publish() : null;
     const data = await gatherJourneyData(issue, appUrl, cfg);
     await journey.share({ ...data, password: pwOn ? pw : null });
   };
 
   const phase =
-    publish.status === "building"
-      ? t("share.phasePublishingApp")
-      : journey.status === "building"
-        ? t("share.phaseCreatingPage")
-        : publish.status === "error" || journey.status === "error"
-          ? t("share.phaseError")
-          : null;
+    setupPhase === "deciding"
+      ? t("share.phaseDeciding")
+      : setupPhase === "registering"
+        ? t("share.phaseRegistering")
+        : publish.status === "building"
+          ? t("share.phasePublishingApp")
+          : journey.status === "building"
+            ? t("share.phaseCreatingPage")
+            : publish.status === "error" || journey.status === "error"
+              ? t("share.phaseError")
+              : null;
   const ready = journey.status === "ready" && !!journey.url && !busy;
   const errorLog =
     publish.status === "error"
@@ -288,54 +300,16 @@ export function IssueShare({ session }: { session: ImplementSession }) {
           </div>
         )}
 
-        {/* App deploy involved (Preview/Map) → offer the one-time env setup so the
-            deployed app actually works (not just builds). DEC-114 Option B. */}
+        {/* App deploy involved (Preview/Map). The persona touches NO env — Bezier
+            sets it up for them on the first share (agent decides env, hard-blocked
+            from .env; secrets go to Vercel via Rust, never the AI). Just a quiet
+            note of what will happen. DEC-114. */}
         {(previewOn || mapOn) && (
-          <div className="mt-2 rounded-md border bg-muted/30 p-2">
-            <div className="flex items-center gap-1 text-[11px] font-medium">
-              <Cloud className="size-3" />
-              {t("share.vercelEnvTitle")}
-            </div>
-            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
-              {t("share.vercelEnvDesc")}
-            </p>
-            {/* The persona sets values HERE (e.g. VITE_APP_ENV=dev) — Bezier writes +
-                pushes them. No .env / vercel CLI editing. */}
-            {publish.publicEnv.length > 0 && (
-              <div className="mt-1.5 flex flex-col gap-1">
-                {publish.publicEnv.map(([k, v]) => (
-                  <div key={k} className="flex items-center gap-1.5">
-                    <span
-                      className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground"
-                      title={k}
-                    >
-                      {k}
-                    </span>
-                    <input
-                      value={v}
-                      spellCheck={false}
-                      onChange={(e) => publish.setEnvValue(k, e.target.value)}
-                      onKeyDown={(e) => e.stopPropagation()}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      className="w-28 shrink-0 rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] outline-none focus:border-foreground"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            <button
-              type="button"
-              disabled={syncing}
-              onClick={() => void runSyncEnv()}
-              className="mt-1.5 inline-flex items-center gap-1 rounded border bg-background px-2 py-1 text-[11px] transition hover:bg-muted disabled:opacity-50"
-            >
-              {syncing ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <Cloud className="size-3" />
-              )}
-              {t("share.vercelEnvButton")}
-            </button>
+          <div className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/30 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+            <Cloud className="mt-0.5 size-3 shrink-0" />
+            <span>
+              {publish.configured ? t("share.setupReady") : t("share.setupHint")}
+            </span>
           </div>
         )}
 

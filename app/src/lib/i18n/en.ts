@@ -647,15 +647,17 @@ export const en = {
     copyUrl: "Copy URL",
     open: "Open",
     openBuildLog: "Open the build log on Vercel",
-    vercelEnvTitle: "Register env on Vercel",
-    vercelEnvDesc:
-      "Register this repo's env on the Vercel project once, so the deployed app builds AND runs. Set values below (e.g. VITE_APP_ENV=dev) — Bezier writes and pushes them; no files to edit.",
-    vercelEnvButton: "Register on Vercel",
-    vercelEnvConfirm:
-      "Send this repo's environment variables — INCLUDING SECRETS — to your Vercel project? They're stored on your Vercel and used by every deploy.",
-    vercelEnvDone: "Registered {n} variable(s) on the Vercel project ({failed} failed).",
     vercelEnvLinkFailed:
       "Couldn't link the Vercel project. Make sure you're logged in (vercel login) and the account/scope is right.",
+    setupTitle: "Set up sharing",
+    setupConfirm:
+      "Sharing this app deploys it to your Vercel. The first time, Bezier figures out the deploy settings for you and registers them on Vercel — any secrets go straight to Vercel, never to the AI. Set up and share?",
+    setupOk: "Set up and share",
+    setupHint:
+      "The app is published to Vercel. The first time, Bezier sets up the deploy config for you — secrets never go to the AI.",
+    setupReady: "Deploy settings are ready — sharing publishes the latest.",
+    phaseDeciding: "Figuring out the deploy settings…",
+    phaseRegistering: "Registering settings on Vercel…",
   },
 
   commands: {

@@ -27,6 +27,7 @@ import {
   type UnlistenFn,
 } from "@/lib/pty";
 import { readPreviewConfig, packageCwd } from "@/lib/preview";
+import { resolveDeployEnv } from "@/lib/deploy-env";
 import { tt } from "@/lib/i18n";
 import {
   readFile,
@@ -77,6 +78,15 @@ export interface PublishController {
   publicEnv: [string, string][];
   /** Set a public env value (persisted as a per-repo override; used by deploy + sync). */
   setEnvValue: (key: string, value: string) => void;
+  /** Has the deploy env been set up (so sharing the app is one-click henceforth)? */
+  configured: boolean;
+  /**
+   * Decide the public deploy env via a HEADLESS agent (hard-blocked from .env, so no
+   * secret reaches the AI) and persist it — the persona never touches env. Returns
+   * the decided public vars (e.g. { VITE_APP_ENV: "development" }), or {} if it
+   * couldn't decide / no agent.
+   */
+  autoConfigure: () => Promise<Record<string, string>>;
   /** Reset (and kill any in-flight deploy). */
   clear: () => Promise<void>;
   /** Named publish accounts (DEC-098). */
@@ -270,6 +280,8 @@ export function usePublish(
   // Editable public env (auto-detected + overrides) for the share form.
   const [publicEnv, setPublicEnv] = React.useState<[string, string][]>([]);
   const publicEnvRef = React.useRef<[string, string][]>([]);
+  // Whether the maker has set up the deploy env (override file has entries).
+  const [configured, setConfigured] = React.useState(false);
 
   const idRef = React.useRef<string | null>(null);
   const urlRef = React.useRef<string | null>(null);
@@ -330,17 +342,35 @@ export function usePublish(
     setLog("");
   }, [detach, ptyKey, previewKey]);
 
-  // Load the resolved public env (auto + overrides) for the editable form.
+  // Load the resolved public env (auto + overrides) + whether it's set up.
   React.useEffect(() => {
     let cancelled = false;
-    void resolvePublicEnv(root).then((e) => {
-      if (cancelled) return;
-      publicEnvRef.current = e;
-      setPublicEnv(e);
-    });
+    void Promise.all([resolvePublicEnv(root), readPublishEnv(root)]).then(
+      ([e, overrides]) => {
+        if (cancelled) return;
+        publicEnvRef.current = e;
+        setPublicEnv(e);
+        setConfigured(Object.keys(overrides).length > 0);
+      },
+    );
     return () => {
       cancelled = true;
     };
+  }, [root]);
+
+  // Decide the deploy env via a headless agent (no secrets to the AI) + persist it
+  // as the per-repo override. Idempotent-ish: re-running re-decides + overwrites.
+  const autoConfigure = React.useCallback(async (): Promise<Record<string, string>> => {
+    const decided = await resolveDeployEnv(root).catch(() => ({}));
+    if (Object.keys(decided).length) {
+      const merged = { ...(await readPublishEnv(root)), ...decided };
+      await writePublishEnv(root, merged).catch(() => {});
+      const e = await resolvePublicEnv(root).catch(() => publicEnvRef.current);
+      publicEnvRef.current = e;
+      setPublicEnv(e);
+      setConfigured(true);
+    }
+    return decided;
   }, [root]);
 
   // The persona sets a value in the UI → update + persist as a per-repo override
@@ -637,6 +667,8 @@ export function usePublish(
     syncEnv,
     publicEnv,
     setEnvValue,
+    configured,
+    autoConfigure,
     clear,
     connections,
     connectionId,
