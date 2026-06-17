@@ -114,6 +114,10 @@ export const ja: Messages = {
     loginHint: "\n[Bezier] ヒント: `vercel login` が必要かもしれません。ターミナルで実行してください。",
     pwProtectFailed: "この環境ではパスワード保護を適用できませんでした。",
     listenerFailed: "\n[Bezier] リスナー登録に失敗しました。",
+    buildingLocally: "[Bezier] アプリをローカルでビルド中（あなたの repo には git・.env・依存が揃っているので、普段と同じようにビルドできます）…\n",
+    buildFailed: "[Bezier] ローカルビルドに失敗しました。上のログに正確なエラーがあります。",
+    noOutput: "[Bezier] ビルド出力（index.html を含むフォルダ）が見つかりませんでした。これは静的/SPA ビルドのアプリですか？",
+    deployingOutput: "\n[Bezier] ビルド結果を Vercel に公開中（静的・再ビルド無し）…\n",
   },
 
   previewServer: {
@@ -650,11 +654,11 @@ export const ja: Messages = {
       "Vercel プロジェクトにリンクできませんでした。ログイン（vercel login）とアカウント/スコープを確認してください。",
     setupTitle: "共有の準備",
     setupConfirm:
-      "このアプリを共有すると、あなたの Vercel に公開されます。初回だけ、Bezier が公開に必要な設定を自動で判断して Vercel に登録します（秘密は AI には渡さず、Vercel に直接送られます）。準備して共有しますか？",
+      "このアプリを共有すると、あなたのマシン上でビルドし（普段どおり git・.env・依存を使って）、その結果を Vercel に公開します。初回だけ Bezier が公開設定を自動で判断します。秘密はマシンから出ません（AI にも Vercel の env にも送りません）。準備して共有しますか？",
     setupOk: "準備して共有",
     setupHint:
-      "アプリは Vercel に公開されます。初回だけ Bezier が公開設定を自動で整えます（秘密は AI に渡りません）。",
-    setupReady: "公開設定は準備済み。共有で最新を公開します。",
+      "Bezier があなたのマシンでビルドし、その結果を Vercel に公開します（秘密はローカルに留まります）。初回だけ公開設定を自動で判断します。",
+    setupReady: "公開設定は準備済み。共有で再ビルドして最新を公開します。",
     phaseDeciding: "公開設定を判断中…",
     phaseRegistering: "Vercel に設定を登録中…",
   },

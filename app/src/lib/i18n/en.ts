@@ -115,6 +115,10 @@ export const en = {
     loginHint: "\n[Bezier] Hint: you may need `vercel login`. Run it in your terminal.",
     pwProtectFailed: "Password protection couldn't be applied in this environment.",
     listenerFailed: "\n[Bezier] Failed to register the listener.",
+    buildingLocally: "[Bezier] Building the app locally (your repo has git, .env and deps — so it builds the same way you do)…\n",
+    buildFailed: "[Bezier] The local build failed. See the log above for the exact error.",
+    noOutput: "[Bezier] Couldn't find the build output (a folder with index.html). Is this app a static/SPA build?",
+    deployingOutput: "\n[Bezier] Publishing the built output to Vercel (static — no rebuild)…\n",
   },
 
   previewServer: {
@@ -651,11 +655,11 @@ export const en = {
       "Couldn't link the Vercel project. Make sure you're logged in (vercel login) and the account/scope is right.",
     setupTitle: "Set up sharing",
     setupConfirm:
-      "Sharing this app deploys it to your Vercel. The first time, Bezier figures out the deploy settings for you and registers them on Vercel — any secrets go straight to Vercel, never to the AI. Set up and share?",
+      "Sharing this app builds it on your machine (the same way you build it — git, .env, deps) and publishes the result to your Vercel. The first time, Bezier figures out the deploy settings for you. Your secrets stay on your machine; they're never sent to the AI or to Vercel as env. Set up and share?",
     setupOk: "Set up and share",
     setupHint:
-      "The app is published to Vercel. The first time, Bezier sets up the deploy config for you — secrets never go to the AI.",
-    setupReady: "Deploy settings are ready — sharing publishes the latest.",
+      "Bezier builds the app on your machine and publishes the result to Vercel — secrets stay local. The first time, it figures out the deploy settings for you.",
+    setupReady: "Deploy settings are ready — sharing rebuilds + publishes the latest.",
     phaseDeciding: "Figuring out the deploy settings…",
     phaseRegistering: "Registering settings on Vercel…",
   },

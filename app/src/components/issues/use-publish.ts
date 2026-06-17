@@ -26,7 +26,15 @@ import {
   renderProgress,
   type UnlistenFn,
 } from "@/lib/pty";
-import { readPreviewConfig, packageCwd } from "@/lib/preview";
+import {
+  readPreviewConfig,
+  packageCwd,
+  detectInstall,
+  repoNodeVersion,
+  withRepoNode,
+  ensureWorktreeNodeModules,
+  mirrorWorktreeEnv,
+} from "@/lib/preview";
 import { resolveDeployEnv } from "@/lib/deploy-env";
 import { tt } from "@/lib/i18n";
 import {
@@ -35,6 +43,7 @@ import {
   removeVercelDir,
   collectPublicEnv,
   vercelSyncEnv,
+  pathMtime,
   type VercelSyncResult,
 } from "@/lib/ipc";
 import {
@@ -180,6 +189,54 @@ async function runToExit(opts: {
   }
 }
 
+/** Spawn a command, STREAM its output via `onData`, resolve its exit code (or a
+ *  10-min ceiling). Used for the LOCAL build step before the static deploy. */
+async function runStream(
+  opts: { cwd: string; cmd: string; args: string[]; key: string },
+  onData: (chunk: string) => void,
+): Promise<number> {
+  await ptyKillKey(opts.key).catch(() => {});
+  let id: string;
+  try {
+    id = await ptySpawn({
+      cwd: opts.cwd,
+      cmd: opts.cmd,
+      args: opts.args,
+      cols: 120,
+      rows: 40,
+      key: opts.key,
+    });
+  } catch {
+    return 1;
+  }
+  const unlisten: UnlistenFn[] = [];
+  let code = 1;
+  try {
+    await new Promise<void>((resolve) => {
+      const timer = window.setTimeout(resolve, 600_000);
+      void onPtyData((p) => {
+        if (p.id === id) onData(p.chunk);
+      }).then((u) => unlisten.push(u));
+      void onPtyExit((p) => {
+        if (p.id !== id) return;
+        code = p.code ?? 1;
+        window.clearTimeout(timer);
+        resolve();
+      }).then((u) => unlisten.push(u));
+    });
+  } finally {
+    for (const u of unlisten) {
+      try {
+        u();
+      } catch {
+        /* ignore */
+      }
+    }
+    await ptyKillKey(opts.key).catch(() => {});
+  }
+  return code;
+}
+
 // The last published URL is remembered per issue (localStorage) so it survives
 // leaving + returning to the issue — the Vercel deployment is immutable and
 // persists, so the saved URL stays valid (re-share updates it).
@@ -200,24 +257,31 @@ function savePublishedUrl(key: string, value: string | null): void {
   }
 }
 
-// `vercel deploy` writes `.vercel/` (projectId/orgId) into the worktree. The
-// worktree is a checkout of the USER's repo, and auto-checkpoint runs
-// `git add -A` — so `.vercel/` could get committed + pushed to their GitHub.
-// Add it to the worktree's LOCAL git exclude (`.git/info/exclude`, uncommitted)
-// before deploying. Best-effort: a worktree's `.git` is a file `gitdir: <path>`.
-async function ensureVercelExcluded(worktreePath: string): Promise<void> {
-  try {
-    const dotGit = await readFile(`${worktreePath}/.git`).catch(() => "");
-    const m = /^gitdir:\s*(.+?)\s*$/m.exec(dotGit);
-    if (!m) return; // not a worktree (.git is a dir) — skip
-    const excludePath = `${m[1]}/info/exclude`;
-    const cur = await readFile(excludePath).catch(() => "");
-    if (/(^|\n)\.vercel\/?(\n|$)/.test(cur)) return; // already excluded
-    const sep = cur === "" || cur.endsWith("\n") ? "" : "\n";
-    await writeFile(excludePath, `${cur}${sep}.vercel/\n`);
-  } catch {
-    /* best-effort — don't block publish */
+/** POSIX single-quote a value so a public env value can't break the build shell. */
+function shq(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Find the static build output (the dir holding the freshly-built `index.html`)
+ *  for a worktree. Scans the package dir + worktree root × common output names —
+ *  e.g. fs-student-web writes to the repo-root `dist`. Returns an absolute path or
+ *  null. The freshest index.html wins (so a stale dir never shadows a new build). */
+async function detectStaticOutput(
+  worktreePath: string,
+  packageDir: string,
+): Promise<string | null> {
+  const strip = (p: string) => p.replace(/\/+$/, "");
+  const dirs = [packageCwd(worktreePath, packageDir), strip(worktreePath)];
+  const names = ["dist", "build", "out", "dist/spa", ".output/public", "public"];
+  let best: { path: string; mtime: number } | null = null;
+  for (const d of dirs) {
+    for (const n of names) {
+      const candidate = `${strip(d)}/${n}`;
+      const mt = await pathMtime(`${candidate}/index.html`).catch(() => null);
+      if (mt != null && (!best || mt > best.mtime)) best = { path: candidate, mtime: mt };
+    }
   }
+  return best?.path ?? null;
 }
 
 // The maker's per-repo PUBLIC-env overrides, set in the share UI (NOT hand-edited)
@@ -449,42 +513,16 @@ export function usePublish(
         return null;
       }
 
-      // Build from the package dir (root or a subdir like app/).
       const cfg = await readPreviewConfig(root).catch(() => null);
-      const cwd = packageCwd(worktreePath, cfg?.packageDir ?? "");
+      const packageDir = cfg?.packageDir ?? "";
+      const cwd = packageCwd(worktreePath, packageDir);
 
-      // Public env injected into the deploy: auto-detected from ALL .env files
-      // (root + workspace subdirs; secrets filtered in Rust) MERGED with the
-      // maker's UI-set overrides (e.g. VITE_APP_ENV=dev) — so the persona picks the
-      // value in Bezier, never hand-editing a file. Same resolution the share form
-      // shows + the Vercel-project sync uses, so they're always consistent.
-      const envPairs = await resolvePublicEnv(root);
-      const envFlags: string[] = [];
-      for (const [k, v] of envPairs) {
-        envFlags.push("-b", `${k}=${v}`, "-e", `${k}=${v}`);
-      }
-
-      // Keep `.vercel/` out of the user's git history (MF).
-      await ensureVercelExcluded(worktreePath);
-
-      // Which account/scope this repo deploys under (DEC-098).
+      // Account/scope this repo deploys under (DEC-098).
       const s = getSettings();
       const cid = s.repoConnections[root] ?? s.defaultConnectionId;
       const conn =
         s.publishConnections.find((c) => c.id === cid) ?? s.publishConnections[0];
       const scope = conn?.scope ?? "";
-
-      // A stale `.vercel/` linked under a DIFFERENT scope makes
-      // `vercel deploy --scope <new>` hard-error. Drop it so the deploy
-      // re-links (by dir name) under the current scope (CTO MF / DEC-098).
-      if (scope) await removeVercelDir(cwd).catch(() => {});
-
-      // Make what's injected VISIBLE (the user can open the log).
-      const header =
-        (envPairs.length > 0
-          ? tt("publishFlow.injectedPublic", { n: envPairs.length })
-          : tt("publishFlow.noPublicEnv")) +
-        (scope ? tt("publishFlow.account", { label: conn?.label ?? "", scope }) : "");
 
       detach();
       idRef.current = null;
@@ -492,40 +530,103 @@ export function usePublish(
       inspectRef.current = null;
       logAccRef.current = "";
       await ptyKillKey(ptyKey).catch(() => {});
-      setLog(header);
       setUrl(null);
       setInspectUrl(null);
       setStatus("building");
 
-      // Explicit lowercase project name (previewKey = the issue's UPPERCASE ULID):
-      // Vercel rejects an uppercase basename, so we name the project ourselves.
-      // `-app` keeps it distinct from the journey/share page's project. Pre-create
-      // it under the SAME scope, since `deploy --project` won't create it.
-      const projectName = vercelProjectName(`${previewKey}-app`);
+      // Accumulate pty output into the (rendered) log + the ref the URL/inspect
+      // scan + self-heal read.
+      const appendLog = (chunk: string) => {
+        const clean = chunk.replace(ANSI_RE, "");
+        setLog((l) => {
+          const n = renderProgress(l + clean);
+          return n.length > PUBLISH_LOG_CAP ? n.slice(n.length - PUBLISH_LOG_CAP) : n;
+        });
+        const acc = logAccRef.current + clean;
+        logAccRef.current =
+          acc.length > PUBLISH_LOG_CAP ? acc.slice(acc.length - PUBLISH_LOG_CAP) : acc;
+        captureInspect();
+      };
+
+      // === ROOT FIX (DEC-114): build LOCALLY, deploy the OUTPUT — never remote-build.
+      // Vercel's clean container kept lacking what the app's build ASSUMES (.env, a
+      // git repo for the commit hash, env modes…) — an endless whack-a-mole. The app
+      // builds fine in its NATIVE env (the worktree has git/.env/deps), so we build
+      // THERE and ship only the built static output. The agent-decided public env
+      // (e.g. VITE_APP_ENV=development) is exported for THIS build; secrets in .env
+      // are used locally + baked in — they never go to Vercel as env vars.
+      setLog(tt("publishFlow.buildingLocally"));
+      try {
+        await ensureWorktreeNodeModules(root, worktreePath, packageDir);
+      } catch {
+        /* deps may already be present (the preview cloned them) */
+      }
+      await mirrorWorktreeEnv(root, worktreePath).catch(() => {});
+
+      const { manager } = await detectInstall(worktreePath, packageDir).catch(
+        () => ({ manager: "npm" as const }),
+      );
+      const envPairs = await resolvePublicEnv(root);
+      const envExports = envPairs
+        .map(([k, v]) => `export ${k}=${shq(v)};`)
+        .join(" ");
+      const node = await repoNodeVersion(cwd).catch(() => null);
+      const buildLaunch = withRepoNode(
+        `${envExports} ${manager} run build`.trim(),
+        node,
+      );
+
+      const buildCode = await runStream(
+        { cwd, cmd: buildLaunch.cmd, args: buildLaunch.args, key: `${ptyKey}:build` },
+        appendLog,
+      );
+      if (buildCode !== 0) {
+        setStatus("error");
+        setLog((l) => `${l}\n${tt("publishFlow.buildFailed")}`);
+        finish(null);
+        return null;
+      }
+
+      // The freshly-built static output (the dir with index.html).
+      const output = await detectStaticOutput(worktreePath, packageDir);
+      if (!output) {
+        setStatus("error");
+        setLog((l) => `${l}\n${tt("publishFlow.noOutput")}`);
+        finish(null);
+        return null;
+      }
+      // SPA client routing: serve index.html for routes with no matching file.
+      await writeFile(
+        `${output}/vercel.json`,
+        `${JSON.stringify({ rewrites: [{ source: "/(.*)", destination: "/index.html" }] })}\n`,
+      ).catch(() => {});
+
+      // Deploy the OUTPUT as a STATIC site (no remote build). A fresh `-web` project
+      // (distinct from the journey page + the old remote-build `-app`) so no stale
+      // build config runs against the static files. The build env is already baked
+      // in, so no `-e`/secret injection.
+      const projectName = vercelProjectName(`${previewKey}-web`);
       await runToExit({
-        cwd,
+        cwd: output,
         cmd: bin,
         args: ["project", "add", projectName, ...(scope ? ["--scope", scope] : [])],
         key: `${ptyKey}:add`,
       });
+      await removeVercelDir(output).catch(() => {});
 
+      setLog((l) => `${l}\n${tt("publishFlow.deployingOutput")}`);
       let id: string;
       try {
-        // Direct exec (no shell) so env VALUES can't be shell-injected.
         id = await ptySpawn({
-          cwd,
+          cwd: output,
           cmd: bin,
           args: [
             "deploy",
-            // Production deployment → a STABLE `<project>.vercel.app` URL that
-            // survives re-deploys (so a share page stays valid), and it reads the
-            // project's PRODUCTION env (where "Vercel に env を登録" writes).
             "--prod",
             "--yes",
             "--project",
             projectName,
             ...(scope ? ["--scope", scope] : []),
-            ...envFlags,
           ],
           cols: 120,
           rows: 40,
@@ -542,15 +643,7 @@ export function usePublish(
       unlistenRef.current.push(
         await onPtyData((p) => {
           if (p.id !== id || idRef.current !== id) return;
-          const clean = p.chunk.replace(ANSI_RE, "");
-          setLog((l) => {
-            const n = renderProgress(l + clean);
-            return n.length > PUBLISH_LOG_CAP ? n.slice(n.length - PUBLISH_LOG_CAP) : n;
-          });
-          const acc = logAccRef.current + clean;
-          logAccRef.current =
-            acc.length > PUBLISH_LOG_CAP ? acc.slice(acc.length - PUBLISH_LOG_CAP) : acc;
-          captureInspect();
+          appendLog(p.chunk);
           if (!urlRef.current) {
             // Scan the ACCUMULATED log so a chunk-split URL is still caught.
             const m = VERCEL_URL_RE.exec(logAccRef.current);

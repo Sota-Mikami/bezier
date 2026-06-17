@@ -57,9 +57,7 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   const [pwReveal, setPwReveal] = React.useState(false);
   // First-time, agent-driven deploy-env setup progress (the persona never touches
   // env: an agent decides it — hard-blocked from .env — then Bezier registers it).
-  const [setupPhase, setSetupPhase] = React.useState<
-    null | "deciding" | "registering"
-  >(null);
+  const [setupPhase, setSetupPhase] = React.useState<null | "deciding">(null);
 
   // Load the shareable items + saved selection for this issue.
   React.useEffect(() => {
@@ -93,11 +91,10 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   const mapOn = isShared(cfg, "map");
   const pwMissing = pwOn && !pw.trim();
 
-  // Share the app. The persona just clicks: on the FIRST app-share, Bezier sets it
-  // up for them — a headless agent DECIDES the public deploy env (hard-blocked from
-  // .env, so no secret reaches the AI), then Bezier registers env on the Vercel
-  // project (secrets via Rust, never the AI). Subsequent shares skip straight to
-  // deploy. Then it publishes the app and builds the share page.
+  // Share the app. The persona just clicks: on the FIRST app-share, a headless agent
+  // DECIDES the public deploy env (hard-blocked from .env, so no secret reaches the
+  // AI). Then publish() builds the app LOCALLY (native env) and ships the built
+  // output — secrets stay on the machine. Subsequent shares skip the decision.
   const runShare = async () => {
     if (busy || !anySelected || pwMissing) return;
     const needsApp = previewOn || mapOn;
@@ -111,15 +108,6 @@ export function IssueShare({ session }: { session: ImplementSession }) {
       try {
         setSetupPhase("deciding");
         await publish.autoConfigure(); // agent decides env (no secrets to the AI)
-        setSetupPhase("registering");
-        const r = await publish.syncEnv(); // register on Vercel (secrets via Rust)
-        setSetupPhase(null);
-        if (r.linkFailed) {
-          await messageDialog(t("share.vercelEnvLinkFailed"), {
-            title: t("share.setupTitle"),
-          });
-          return;
-        }
       } catch (e) {
         setSetupPhase(null);
         await messageDialog(e instanceof Error ? e.message : String(e), {
@@ -127,9 +115,10 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         });
         return;
       }
+      setSetupPhase(null);
     }
     let appUrl = needsApp ? await publish.publish() : null;
-    // Self-heal: if the app deploy failed (most often a wrong env value the build
+    // Self-heal: if the build failed (most often a wrong env value the build
     // rejected), feed the build error back to the agent so it re-decides, then
     // retry once. "More AI" beats surfacing an opaque failure to the persona.
     if (needsApp && !appUrl) {
@@ -138,8 +127,6 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         try {
           setSetupPhase("deciding");
           await publish.autoConfigure(buildErr);
-          setSetupPhase("registering");
-          await publish.syncEnv();
           setSetupPhase(null);
           appUrl = await publish.publish();
         } catch {
@@ -154,13 +141,11 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   const phase =
     setupPhase === "deciding"
       ? t("share.phaseDeciding")
-      : setupPhase === "registering"
-        ? t("share.phaseRegistering")
-        : publish.status === "building"
-          ? t("share.phasePublishingApp")
-          : journey.status === "building"
-            ? t("share.phaseCreatingPage")
-            : publish.status === "error" || journey.status === "error"
+      : publish.status === "building"
+        ? t("share.phasePublishingApp")
+        : journey.status === "building"
+          ? t("share.phaseCreatingPage")
+          : publish.status === "error" || journey.status === "error"
               ? t("share.phaseError")
               : null;
   const ready = journey.status === "ready" && !!journey.url && !busy;
