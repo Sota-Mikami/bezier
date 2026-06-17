@@ -69,6 +69,14 @@ export interface PublishController {
    * it persistently (DEC-114 Option B). The CALLER must get explicit consent first.
    */
   syncEnv: () => Promise<VercelSyncResult>;
+  /**
+   * The resolved PUBLIC env (auto-detected + the maker's overrides) the persona can
+   * edit in the share form — so they pick values (e.g. VITE_APP_ENV=dev) in Bezier,
+   * not by hand-editing .env or running the vercel CLI.
+   */
+  publicEnv: [string, string][];
+  /** Set a public env value (persisted as a per-repo override; used by deploy + sync). */
+  setEnvValue: (key: string, value: string) => void;
   /** Reset (and kill any in-flight deploy). */
   clear: () => Promise<void>;
   /** Named publish accounts (DEC-098). */
@@ -86,9 +94,6 @@ const VERCEL_URL_RE = /https:\/\/[a-z0-9-]+\.vercel\.app/;
 // deploy — the dashboard build log where a remote BUILD error actually appears.
 const INSPECT_RE = /https:\/\/vercel\.com\/[^\s'")]+/;
 const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]/g;
-
-// Vercel sets these itself; injecting them from .env would fight the build.
-const ENV_SKIP = /^(NODE_ENV|VERCEL|VERCEL_.*|CI|PORT)$/;
 
 // Bezier injects ONLY public-prefixed env (NEXT_PUBLIC_ / VITE_) — these are
 // inlined into the client bundle by the framework anyway, so passing them is not
@@ -203,6 +208,50 @@ async function ensureVercelExcluded(worktreePath: string): Promise<void> {
   }
 }
 
+// The maker's per-repo PUBLIC-env overrides, set in the share UI (NOT hand-edited)
+// and stored in `.bezier/publish-env.json`. These let the persona choose values
+// (e.g. which environment to deploy: VITE_APP_ENV=dev) without touching .env / the
+// vercel CLI; the system does the operation.
+export async function readPublishEnv(root: string): Promise<Record<string, string>> {
+  const txt = await readFile(`${root}/.bezier/publish-env.json`).catch(() => "");
+  if (!txt.trim()) return {};
+  try {
+    const o = JSON.parse(txt) as unknown;
+    if (o && typeof o === "object") {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+          out[k] = String(v);
+        }
+      }
+      return out;
+    }
+  } catch {
+    /* malformed — treat as no overrides */
+  }
+  return {};
+}
+
+export async function writePublishEnv(
+  root: string,
+  map: Record<string, string>,
+): Promise<void> {
+  await writeFile(`${root}/.bezier/publish-env.json`, `${JSON.stringify(map, null, 2)}\n`);
+}
+
+/** Auto-detected public env (all .env files) MERGED with the maker's overrides
+ *  (overrides win) — what the deploy injects, the share form shows, and the Vercel
+ *  sync pushes. One resolution everywhere so they never disagree. */
+export async function resolvePublicEnv(root: string): Promise<[string, string][]> {
+  const auto = await collectPublicEnv(root).catch(() => [] as [string, string][]);
+  const map = new Map(auto);
+  const overrides = await readPublishEnv(root);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (isPublicEnvKey(k)) map.set(k, v);
+  }
+  return [...map];
+}
+
 export function usePublish(
   root: string,
   worktreePath: string | null,
@@ -218,6 +267,9 @@ export function usePublish(
   );
   const [log, setLog] = React.useState("");
   const [inspectUrl, setInspectUrl] = React.useState<string | null>(null);
+  // Editable public env (auto-detected + overrides) for the share form.
+  const [publicEnv, setPublicEnv] = React.useState<[string, string][]>([]);
+  const publicEnvRef = React.useRef<[string, string][]>([]);
 
   const idRef = React.useRef<string | null>(null);
   const urlRef = React.useRef<string | null>(null);
@@ -278,6 +330,33 @@ export function usePublish(
     setLog("");
   }, [detach, ptyKey, previewKey]);
 
+  // Load the resolved public env (auto + overrides) for the editable form.
+  React.useEffect(() => {
+    let cancelled = false;
+    void resolvePublicEnv(root).then((e) => {
+      if (cancelled) return;
+      publicEnvRef.current = e;
+      setPublicEnv(e);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [root]);
+
+  // The persona sets a value in the UI → update + persist as a per-repo override
+  // (so deploy injection AND the Vercel sync use the SAME chosen value). No files.
+  const setEnvValue = React.useCallback(
+    (key: string, value: string) => {
+      const next = publicEnvRef.current.map(
+        ([k, v]): [string, string] => (k === key ? [k, value] : [k, v]),
+      );
+      publicEnvRef.current = next;
+      setPublicEnv(next);
+      void writePublishEnv(root, Object.fromEntries(next)).catch(() => {});
+    },
+    [root],
+  );
+
   // Register the repo's env on the Vercel project (Option B). Resolves the deploy
   // cwd + project name + scope the same way publish() does, so it targets the SAME
   // project the deploy uses. Consent is the caller's job.
@@ -291,7 +370,10 @@ export function usePublish(
       s.publishConnections.find((c) => c.id === cid) ?? s.publishConnections[0];
     const scope = conn?.scope ?? "";
     const project = vercelProjectName(`${previewKey}-app`);
-    return vercelSyncEnv(cwd, project, scope, root);
+    // The maker's UI-set values win over raw .env (so VITE_APP_ENV=dev they picked
+    // is what gets registered, not the .env's local).
+    const overrides = Object.entries(await readPublishEnv(root));
+    return vercelSyncEnv(cwd, project, scope, root, overrides);
   }, [root, worktreePath, previewKey]);
 
   // Pull the dashboard "Inspect" URL out of the accumulated log once it appears.
@@ -335,45 +417,12 @@ export function usePublish(
       const cfg = await readPreviewConfig(root).catch(() => null);
       const cwd = packageCwd(worktreePath, cfg?.packageDir ?? "");
 
-      // Bezier injects ONLY public-prefixed env (NEXT_PUBLIC_/VITE_). Server
-      // secrets are NEVER read or passed — set them on the Vercel project env
-      // (DEC-098). A repo-level `.bezier/publish-env.json` may supply explicit
-      // PUBLIC values (e.g. staging URLs); else fall back to the worktree .env.
-      let envPairs: [string, string][] = [];
-      const overrideTxt = await readFile(
-        `${root}/.bezier/publish-env.json`,
-      ).catch(() => "");
-      if (overrideTxt.trim()) {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(overrideTxt);
-        } catch {
-          setStatus("error");
-          setLog(tt("publishFlow.invalidEnvJson"));
-          finish(null);
-          return null;
-        }
-        if (parsed && typeof parsed === "object") {
-          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-            if (
-              isPublicEnvKey(k) &&
-              !ENV_SKIP.test(k) &&
-              (typeof v === "string" ||
-                typeof v === "number" ||
-                typeof v === "boolean")
-            ) {
-              envPairs.push([k, String(v)]);
-            }
-          }
-        }
-      } else {
-        // PUBLIC-prefixed keys ONLY, from ALL .env files in the REAL repo (root +
-        // workspace subdirs) — a monorepo's app-level public env (e.g. fs-student-
-        // web's VITE_APP_ENV in workspaces/app/.env, which the root .env lacks) is
-        // REQUIRED by the build. Reading only the root/cwd .env missed it, so the
-        // remote `vite build` threw. Secrets are filtered on the Rust side.
-        envPairs = await collectPublicEnv(root).catch(() => [] as [string, string][]);
-      }
+      // Public env injected into the deploy: auto-detected from ALL .env files
+      // (root + workspace subdirs; secrets filtered in Rust) MERGED with the
+      // maker's UI-set overrides (e.g. VITE_APP_ENV=dev) — so the persona picks the
+      // value in Bezier, never hand-editing a file. Same resolution the share form
+      // shows + the Vercel-project sync uses, so they're always consistent.
+      const envPairs = await resolvePublicEnv(root);
       const envFlags: string[] = [];
       for (const [k, v] of envPairs) {
         envFlags.push("-b", `${k}=${v}`, "-e", `${k}=${v}`);
@@ -586,6 +635,8 @@ export function usePublish(
     inspectUrl,
     publish,
     syncEnv,
+    publicEnv,
+    setEnvValue,
     clear,
     connections,
     connectionId,

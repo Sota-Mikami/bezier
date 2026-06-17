@@ -239,8 +239,15 @@ export function vercelSyncEnv(
   project: string,
   scope: string,
   root: string,
+  overrides: [string, string][],
 ): Promise<VercelSyncResult> {
-  return invoke<VercelSyncResult>("vercel_sync_env", { cwd, project, scope, root });
+  return invoke<VercelSyncResult>("vercel_sync_env", {
+    cwd,
+    project,
+    scope,
+    root,
+    overrides,
+  });
 }
 
 /**

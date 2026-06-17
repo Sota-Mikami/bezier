@@ -648,7 +648,7 @@ export const ja: Messages = {
     openBuildLog: "ビルドログを Vercel で開く",
     vercelEnvTitle: "Vercel に env を登録",
     vercelEnvDesc:
-      "このリポジトリの .env（秘密含む）を Vercel プロジェクトに一度登録します。デプロイ先のアプリがビルド＆実行に必要な env を持てます。どの環境でデプロイするかは .env で指定（例: VITE_APP_ENV=dev）。",
+      "このリポジトリの env を Vercel プロジェクトに一度登録すると、デプロイ先のアプリがビルド＆実行できます。値は下で設定（例: VITE_APP_ENV=dev）— Bezier が書き込み・送信します（ファイル編集は不要）。",
     vercelEnvButton: "Vercel に登録",
     vercelEnvConfirm:
       "このリポジトリの環境変数（秘密を含む）をあなたの Vercel プロジェクトに送信します。Vercel 上に保存され、毎回のデプロイで使われます。よろしいですか？",

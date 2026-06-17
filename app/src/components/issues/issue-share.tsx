@@ -299,6 +299,30 @@ export function IssueShare({ session }: { session: ImplementSession }) {
             <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
               {t("share.vercelEnvDesc")}
             </p>
+            {/* The persona sets values HERE (e.g. VITE_APP_ENV=dev) — Bezier writes +
+                pushes them. No .env / vercel CLI editing. */}
+            {publish.publicEnv.length > 0 && (
+              <div className="mt-1.5 flex flex-col gap-1">
+                {publish.publicEnv.map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-1.5">
+                    <span
+                      className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground"
+                      title={k}
+                    >
+                      {k}
+                    </span>
+                    <input
+                      value={v}
+                      spellCheck={false}
+                      onChange={(e) => publish.setEnvValue(k, e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="w-28 shrink-0 rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] outline-none focus:border-foreground"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               disabled={syncing}

@@ -2668,6 +2668,7 @@ fn vercel_sync_env(
     project: String,
     scope: String,
     root: String,
+    overrides: Vec<(String, String)>,
 ) -> Result<VercelSyncResult, String> {
     let cwd_p = Path::new(&cwd);
     let root_p = Path::new(&root);
@@ -2717,6 +2718,13 @@ fn vercel_sync_env(
                     map.insert(k, v);
                 }
             }
+        }
+    }
+    // The maker's UI-set values (e.g. VITE_APP_ENV=dev) win over the raw .env, so
+    // the persona never hand-edits a file — they pick the value in Bezier.
+    for (k, v) in overrides {
+        if !k.is_empty() {
+            map.insert(k, v);
         }
     }
 
