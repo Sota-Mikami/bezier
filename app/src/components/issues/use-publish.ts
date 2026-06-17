@@ -80,6 +80,23 @@ function publishPtyKey(key: string): string {
   return `${PUBLISH_PTY_PREFIX}${key}`;
 }
 
+// A VALID Vercel project name from an arbitrary base: lowercase, only [a-z0-9._-],
+// dash runs collapsed (so the forbidden "---" can never form), no leading/trailing
+// separators, ≤100 chars. WITHOUT this, `vercel deploy` derived the project name
+// from the deploy dir's BASENAME — the worktree leaf is the issue's UPPERCASE ULID
+// (e.g. 01KV8GG8…) — and Vercel rejected it ("must be lowercase"), so the APP
+// deploy failed and the share page got no Preview/Map/QA (only Design). We now pass
+// `--project` explicitly. (The journey/share page avoided this via a lowercase dir.)
+export function vercelProjectName(base: string): string {
+  let s = base
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-") // invalid runs → a single dash
+    .replace(/-{2,}/g, "-") // collapse dash runs (kills "---")
+    .replace(/^[-._]+|[-._]+$/g, ""); // trim leading/trailing separators
+  if (s.length > 100) s = s.slice(0, 100).replace(/[-._]+$/g, "");
+  return s || "app";
+}
+
 // The last published URL is remembered per issue (localStorage) so it survives
 // leaving + returning to the issue — the Vercel deployment is immutable and
 // persists, so the saved URL stays valid (re-share updates it).
@@ -330,12 +347,18 @@ export function usePublish(
       let id: string;
       try {
         // Direct exec (no shell) so env VALUES can't be shell-injected.
+        // Explicit lowercase project name (previewKey = the issue's UPPERCASE
+        // ULID): override Vercel's basename derivation, which rejects uppercase.
+        // `-app` keeps it distinct from the journey/share page's project.
+        const projectName = vercelProjectName(`${previewKey}-app`);
         id = await ptySpawn({
           cwd,
           cmd: bin,
           args: [
             "deploy",
             "--yes",
+            "--project",
+            projectName,
             ...(scope ? ["--scope", scope] : []),
             ...envFlags,
           ],
