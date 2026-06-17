@@ -833,6 +833,16 @@ fn pty_spawn(
     builder.args(&opts.args);
     builder.cwd(&opts.cwd);
 
+    // Advertise a real color terminal. The frontend IS xterm.js (xterm-256color /
+    // truecolor capable), but a Finder/Dock-launched GUI app inherits NO `TERM`,
+    // so CLIs that probe it (Claude Code via chalk/supports-color, vite, next,
+    // git) detect "no color support" and emit PLAIN text — the chat + dev logs
+    // render as one flat near-white with no ANSI color. Set them to match the
+    // actual renderer so color content comes back. Unconditional: it overrides an
+    // inherited `dumb`/`screen` too, since what we render in is always xterm.
+    builder.env("TERM", "xterm-256color");
+    builder.env("COLORTERM", "truecolor");
+
     // Strip env vars that make a spawned agent (Claude / Codex) believe it is a
     // NESTED child session. When Bezier is launched from inside a cmux or
     // Claude-Code terminal, CLAUDECODE / CLAUDE_CODE_* / CMUX_* / AI_AGENT are
