@@ -42,6 +42,7 @@ export interface ReadinessController {
 export function useReadiness(
   root: string,
   packageDir: string,
+  enabled = true,
 ): ReadinessController {
   const [items, setItems] = React.useState<ReadinessItem[]>([]);
   const [loaded, setLoaded] = React.useState(false);
@@ -76,8 +77,11 @@ export function useReadiness(
   // Initial / dependency-driven probe. `loaded` starts false (initial spinner)
   // and only ever flips true; a rare dependency change updates the checklist in
   // place. setState only runs in the async continuation (no synchronous effect
-  // setState), guarded by `cancelled`.
+  // setState), guarded by `cancelled`. Gated by `enabled` (DEC-123): the probe
+  // spawns a pty (Node detection), so the caller withholds it until its pane is
+  // actually shown + settled — passing through Live never spawns it.
   React.useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     void (async () => {
       const next = await probeReadiness(root, packageDir).catch(() => [] as ReadinessItem[]);
@@ -88,12 +92,13 @@ export function useReadiness(
     return () => {
       cancelled = true;
     };
-  }, [root, packageDir]);
+  }, [root, packageDir, enabled]);
 
   // Re-read when the window regains focus / becomes visible — so coming back from
   // a terminal where the maker just installed deps or Node clears stale blockers
   // without a manual step. Throttled, and skipped while a fix is running.
   React.useEffect(() => {
+    if (!enabled) return; // don't reprobe a pane that isn't shown (DEC-123)
     const last = { t: 0 };
     const onFocus = () => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
@@ -109,7 +114,7 @@ export function useReadiness(
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [reprobe]);
+  }, [reprobe, enabled]);
 
   // Run a fix in a throwaway pty, streaming to the log; resolves with the exit
   // code (1 on spawn failure).

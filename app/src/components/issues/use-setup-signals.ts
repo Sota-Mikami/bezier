@@ -8,12 +8,18 @@ import * as React from "react";
 
 import { detectSetup, type SetupSignals } from "@/lib/readiness";
 
-export function useSetupSignals(root: string, packageDir: string): SetupSignals | null {
+export function useSetupSignals(
+  root: string,
+  packageDir: string,
+  enabled = true,
+): SetupSignals | null {
   const [signals, setSignals] = React.useState<SetupSignals | null>(null);
 
   // cancelled-guard; setState only in the async continuation (no synchronous
-  // effect setState), mirroring useReadiness.
+  // effect setState), mirroring useReadiness. Gated by `enabled` (DEC-123) so a
+  // Live pane that's only passed through in the sidebar does zero FS work.
   React.useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     void (async () => {
       const s = await detectSetup(root, packageDir).catch(() => null);
@@ -23,7 +29,7 @@ export function useSetupSignals(root: string, packageDir: string): SetupSignals 
     return () => {
       cancelled = true;
     };
-  }, [root, packageDir]);
+  }, [root, packageDir, enabled]);
 
   return signals;
 }

@@ -60,21 +60,40 @@ const LOG_HEIGHT_KEY = "bezier:live-log-height";
 const LOG_MIN = 80;
 const LOG_DEFAULT = 176;
 
-export function RepoLive({ root }: { root: string }) {
+export function RepoLive({ root, active = true }: { root: string; active?: boolean }) {
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
   const { status, url, error, log, installing, installCmd, config, start, stop, installDeps } = live;
+
+  // Defer the repo-health probes off the landing path (DEC-123). RepoLive is kept
+  // MOUNTED while hidden under an issue (DEC-113) and is REMOUNTED on repo switch,
+  // and the sidebar's ⌘⇧↑↓ steps THROUGH each repo's Live entry — so the heavy
+  // probes (gitFetch network + readiness pty + setup scan) used to fire on every
+  // remount/landing and made nav stutter. `probeEnabled` is true only when this
+  // pane is actually shown (`active`) AND has settled there briefly: passing
+  // through Live (land then leave within the settle window) cancels the timer →
+  // probes never run; resting on Live runs them after the shell has painted.
+  const [probeEnabled, setProbeEnabled] = React.useState(false);
+  React.useEffect(() => {
+    if (!active) return; // stays false; reset happens in the active run's cleanup
+    const h = window.setTimeout(() => setProbeEnabled(true), 200);
+    return () => {
+      window.clearTimeout(h);
+      setProbeEnabled(false); // leaving Live → re-settle (200ms) on return
+    };
+  }, [active]);
+
   // Repo readiness (DEC-111): detect "cloned but not set up" before Run fails
   // cryptically, and offer bounded one-click fixes (Node / deps / .env).
-  const readiness = useReadiness(root, config?.packageDir ?? "");
+  const readiness = useReadiness(root, config?.packageDir ?? "", probeEnabled);
   // Repo freshness (DEC-111 Phase 2): is the default branch behind origin? Shown
   // as a non-blocking banner — never gates Run.
-  const freshness = useRepoFreshness(root);
+  const freshness = useRepoFreshness(root, probeEnabled);
   // Setup handoff (DEC-111 Phase 3): does the repo have its own setup story we
   // should open (never run)? Plus a throwaway terminal for the maker to run it.
   const packageDir = config?.packageDir ?? "";
-  const setup = useSetupSignals(root, packageDir);
+  const setup = useSetupSignals(root, packageDir, probeEnabled);
   const [showTerminal, setShowTerminal] = React.useState(false);
 
   // Publish the active repo's truth to the sidebar badge store (DEC-111 Phase 4)

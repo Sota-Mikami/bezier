@@ -174,7 +174,9 @@ function IssuesView() {
   return (
     <div className="relative h-full min-h-0">
       <div className={cn("absolute inset-0", detail && "hidden")}>
-        <RepoLive key={root} root={root} />
+        {/* active = Live is the shown layer (no issue/trash on top). Gates
+            RepoLive's heavy repo-health probes off the nav path (DEC-123). */}
+        <RepoLive key={root} root={root} active={!detail} />
       </div>
       {detail && <div className="absolute inset-0">{detail}</div>}
     </div>

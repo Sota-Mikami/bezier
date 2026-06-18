@@ -33,7 +33,7 @@ export interface RepoFreshness {
   update: () => Promise<void>;
 }
 
-export function useRepoFreshness(root: string): RepoFreshness {
+export function useRepoFreshness(root: string, enabled = true): RepoFreshness {
   const [snap, setSnap] = React.useState<DefaultBehind | null>(null);
   const [loaded, setLoaded] = React.useState(false);
   const [busy, setBusy] = React.useState<null | "checking" | "updating">(null);
@@ -42,8 +42,11 @@ export function useRepoFreshness(root: string): RepoFreshness {
 
   // Mount / root-change: best-effort fetch then snapshot. cancelled-guard so a
   // slow fetch never writes stale state into the wrong repo; setState only in the
-  // async continuation (no synchronous effect setState).
+  // async continuation (no synchronous effect setState). Gated by `enabled`
+  // (DEC-123): the caller withholds the network fetch until its pane is actually
+  // shown + settled, so passing through Live in the sidebar never pays for it.
   React.useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     void (async () => {
       await gitFetch(root).catch(() => false);
@@ -55,7 +58,7 @@ export function useRepoFreshness(root: string): RepoFreshness {
     return () => {
       cancelled = true;
     };
-  }, [root]);
+  }, [root, enabled]);
 
   const refresh = React.useCallback(async () => {
     if (busy) return;
