@@ -131,7 +131,8 @@ export const en = {
   },
 
   previewServer: {
-    devCommandUnset: "The dev command isn't set. Enter and save a command in settings.",
+    devCommandUnset:
+      "No dev command. Bezier runs Node/JS web apps — set one in Settings, or this stack may not be supported yet (Python/Ruby/Go/static).",
     nodeModulesFailed: "{msg} — couldn't prepare node_modules, so the dev server can't start.",
     packageDirMissing: "No package.json in the package directory “{dir}” (it may not exist in this repo). Clear it in Settings to use the repo root, or set the right subfolder.",
     processExited: "The dev server process exited. Check the log below.",
@@ -163,6 +164,9 @@ export const en = {
     openInBrowser: "Open in browser",
     stop: "Stop",
     newHint: "Or pick an Issue from the sidebar, or create a New one.",
+    noAppTitle: "No runnable web app found here",
+    noAppBody:
+      "Bezier runs Node/JS web apps (Next, Vite, Remix, Astro, …). If this is one, open an Issue and set its dev command in Preview → Settings. Other stacks (Python, Ruby, Go, static sites) aren't supported yet — you can still run it yourself in a terminal.",
     installDeps: "Install dependencies ({cmd})",
     installing: "Installing…",
     retry: "Run again",

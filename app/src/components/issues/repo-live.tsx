@@ -70,8 +70,13 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, log, installing, installCmd, config, cwd, apps, selectApp, start, stop, installDeps } =
+  const { status, url, error, log, installing, installCmd, config, cwd, apps, selectApp, start, stop, installDeps, configLoaded, runner } =
     live;
+  // No runnable web app detected (non-Node stack, or detection missed it) — show a
+  // clear, scoped explainer instead of a Run button that fails with a cryptic error
+  // (P0: never a silent/cryptic dead-end). DEC-128.
+  const noApp =
+    configLoaded && runner !== "tauri" && apps.length === 0 && !config?.devCommand?.trim();
 
   // Defer the repo-health probes off the landing path (DEC-123). RepoLive is kept
   // MOUNTED while hidden under an issue (DEC-113) and is REMOUNTED on repo switch,
@@ -324,6 +329,23 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
               {!readiness.loaded ? (
                 <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              ) : noApp ? (
+                <>
+                  <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
+                    <TriangleAlert className="size-5 text-amber-600" />
+                  </div>
+                  <p className="text-sm font-medium">{t("live.noAppTitle")}</p>
+                  <p className="max-w-md text-xs text-muted-foreground">{t("live.noAppBody")}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => setShowTerminal(true)}
+                  >
+                    <TerminalIcon className="size-3.5" />
+                    {t("live.openTerminalManual")}
+                  </Button>
+                </>
               ) : readiness.ready ? (
                 <>
                   <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">

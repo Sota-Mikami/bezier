@@ -130,7 +130,8 @@ export const ja: Messages = {
   },
 
   previewServer: {
-    devCommandUnset: "dev コマンドが未設定です。設定欄でコマンドを入力して保存してください。",
+    devCommandUnset:
+      "dev コマンドが未設定です。Bezier は Node/JS の web アプリを起動します — 設定で指定するか、このスタックは未対応かもしれません（Python/Ruby/Go/静的）。",
     nodeModulesFailed: "{msg} — node_modules を用意できなかったため dev server を起動できません。",
     packageDirMissing: "パッケージディレクトリ「{dir}」に package.json がありません（このリポジトリに存在しない可能性）。設定で空にしてリポジトリのルートを使うか、正しいサブフォルダを指定してください。",
     processExited: "dev server プロセスが終了しました。下のログを確認してください。",
@@ -162,6 +163,9 @@ export const ja: Messages = {
     openInBrowser: "ブラウザで開く",
     stop: "停止",
     newHint: "または左のサイドバーから Issue を選ぶ／New で作成。",
+    noAppTitle: "ここで動かせる web アプリが見つかりません",
+    noAppBody:
+      "Bezier は Node/JS の web アプリ（Next・Vite・Remix・Astro など）を起動します。これがそうなら、Issue を作って Preview → 設定で dev コマンドを指定してください。Python・Ruby・Go・静的サイトなどは未対応です（ターミナルで自分で起動はできます）。",
     installDeps: "依存をインストール（{cmd}）",
     installing: "インストール中…",
     retry: "もう一度起動",
