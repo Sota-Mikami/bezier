@@ -519,7 +519,13 @@ export function buildDevCommand(cfg: PreviewConfig, fallback: Framework): string
   const fw = detectFramework(cmd) ?? fallback;
   if (!fw || !cfg.port) return cmd;
   const flag = fw === "next" ? `-p ${cfg.port}` : `--port ${cfg.port}`;
-  const wrapped = /^(npm|pnpm|yarn|bun)\b/.test(cmd) || /\brun\b/.test(cmd);
+  // A compound command (`a && b`, `a; b`, `a || b`) already ends in its own dev
+  // binary (e.g. `npm run lingui:compile && npx next dev`), so append the flag
+  // DIRECTLY to the end — it attaches to that last command. The `--` form is only
+  // for a bare `npm/pnpm/yarn/bun run <script>` (to forward args INTO the script);
+  // using it on a compound command would mis-target the flag (DEC-127 follow-up).
+  const compound = /&&|\|\||;/.test(cmd);
+  const wrapped = !compound && (/^(npm|pnpm|yarn|bun)\b/.test(cmd) || /\brun\b/.test(cmd));
   return wrapped ? `${cmd} -- ${flag}` : `${cmd} ${flag}`;
 }
 

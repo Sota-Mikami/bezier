@@ -71,6 +71,13 @@ describe("buildDevCommand (DEC-125 port de-dup)", () => {
   it("leaves an unknown framework alone (no port flag to inject)", () => {
     expect(buildDevCommand(cfg("./scripts/dev.sh"), null)).toBe("./scripts/dev.sh");
   });
+
+  it("appends directly (no `--`) for a compound command ending in next", () => {
+    // `--` would mis-target the flag; it must attach to the trailing `next dev`.
+    expect(buildDevCommand(cfg("npm run lingui:compile && npx next dev"), "next")).toBe(
+      "npm run lingui:compile && npx next dev -p 4110",
+    );
+  });
 });
 
 describe("verdictFor (DEC-125)", () => {
