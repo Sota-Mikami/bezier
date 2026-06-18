@@ -46,6 +46,26 @@ export interface PreviewConfig {
    * (e.g. by hand-editing config.json) to force a runner regardless of detection.
    */
   runner?: RunnerKind;
+  /**
+   * Attach mode (DEC-129): a loopback URL the maker is ALREADY serving themselves
+   * (e.g. `docker compose up` → http://localhost:3000). When set, Bezier does NOT
+   * spawn a dev server — it polls this URL and embeds it. For Docker / Rails /
+   * Python / any complex stack Bezier can't (or shouldn't) auto-run.
+   */
+  externalUrl?: string;
+}
+
+/** A loopback http(s) URL (the only kind the embedded webview will load — see
+ *  `parse_local_url` in lib.rs). Used to validate an attach-mode external URL. */
+export function isLoopbackUrl(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  return ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(u.hostname);
 }
 
 /** Frameworks we know how to pass a port to. */
@@ -132,6 +152,10 @@ export async function readPreviewConfig(
         // runner override was added in slice 2.7; only honor valid values.
         ...(data.runner === "web" || data.runner === "tauri"
           ? { runner: data.runner }
+          : {}),
+        // attach mode (DEC-129): a loopback URL the maker serves themselves.
+        ...(typeof data.externalUrl === "string" && data.externalUrl.trim()
+          ? { externalUrl: data.externalUrl.trim() }
           : {}),
       };
     }

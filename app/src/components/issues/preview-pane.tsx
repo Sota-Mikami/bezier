@@ -38,7 +38,7 @@ import { loadImageDataUrl } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
 import { previewFeedbackPrompt, previewDoctorPrompt } from "@/lib/prompts";
-import type { PreviewConfig } from "@/lib/preview";
+import { isLoopbackUrl, type PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
@@ -173,7 +173,9 @@ export function PreviewPane({
   session?: ImplementSession;
 }) {
   const t = useT();
-  const { status, config, apps, selectApp, scriptsDev, log, error, url, configLoaded } = server;
+  const { status, config, apps, selectApp, scriptsDev, log, error, url, configLoaded, attach } =
+    server;
+  const externalUrl = config?.externalUrl?.trim() ?? "";
   const { on: annotating } = useAnnotationMode();
 
   const [showSettings, setShowSettings] = React.useState(false);
@@ -537,7 +539,7 @@ export function PreviewPane({
       {/* Settings — keyed by config so the draft re-seeds when config loads. */}
       {showSettings && config && (
         <SettingsForm
-          key={`${config.devCommand}#${config.packageDir}#${config.port}`}
+          key={`${config.devCommand}#${config.packageDir}#${config.port}#${config.externalUrl ?? ""}`}
           config={config}
           scriptsDev={scriptsDev}
           onSubmit={handleSubmit}
@@ -562,7 +564,27 @@ export function PreviewPane({
 
       {/* Body */}
       <div ref={paneRef} className="relative min-h-0 flex-1">
-        {status === "ready" && url ? (
+        {attach && !(status === "ready" && url) ? (
+          // Attach mode (DEC-129): waiting for the maker's own server (Docker/Rails…).
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <p className="max-w-md text-sm text-muted-foreground">
+              {t("preview.attachWaiting", { url: externalUrl })}
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5"
+              onClick={() => {
+                setPanelTab("terminal");
+                setPanelOpen(true);
+              }}
+            >
+              <Terminal className="size-3.5" />
+              {t("preview.output")}
+            </Button>
+          </div>
+        ) : status === "ready" && url ? (
           // Single mode (DEC-120): the preview IS a native embedded browser, so
           // OAuth works inline. Device presets resize the slot it tracks; "fluid"
           // fills the pane. To annotate we freeze it to a screenshot (the webview
@@ -772,15 +794,20 @@ function SettingsForm({
   const [draftCmd, setDraftCmd] = React.useState(config.devCommand);
   const [draftPort, setDraftPort] = React.useState(String(config.port));
   const [draftPkgDir, setDraftPkgDir] = React.useState(config.packageDir);
+  const [draftExternalUrl, setDraftExternalUrl] = React.useState(config.externalUrl ?? "");
 
   const submit = (alsoStart: boolean) => {
     const port = Number.parseInt(draftPort, 10);
+    const ext = draftExternalUrl.trim();
     void onSubmit(
       {
         devCommand: draftCmd.trim(),
         port: Number.isFinite(port) && port > 0 ? port : config.port,
         // Normalize: strip surrounding slashes ("" = repo root).
         packageDir: draftPkgDir.trim().replace(/^\/+/, "").replace(/\/+$/, ""),
+        // Attach mode (DEC-129): a loopback URL the maker runs themselves wins
+        // over the dev command. Only honor a valid loopback URL.
+        ...(ext && isLoopbackUrl(ext) ? { externalUrl: ext } : {}),
       },
       alsoStart,
     );
@@ -823,6 +850,20 @@ function SettingsForm({
           placeholder="app"
           className="h-8 font-mono text-xs"
         />
+      </label>
+      <label className="block space-y-1">
+        <span className="text-xs font-medium text-muted-foreground">
+          {t("preview.externalUrlLabel")}
+        </span>
+        <Input
+          value={draftExternalUrl}
+          onChange={(e) => setDraftExternalUrl(e.target.value)}
+          placeholder="http://localhost:3000"
+          className="h-8 font-mono text-xs"
+        />
+        <span className="block text-[10px] text-muted-foreground/70">
+          {t("preview.externalUrlHint")}
+        </span>
       </label>
       {scriptsDev && (
         <p className="font-mono text-[11px] text-muted-foreground">

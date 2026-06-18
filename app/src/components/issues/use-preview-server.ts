@@ -172,6 +172,9 @@ export interface PreviewServer {
    *  the bottom-panel terminal so `claude`/commands run where the app lives (DEC-126).
    *  Null until a worktree + config exist. */
   cwd: string | null;
+  /** Attach mode (DEC-129): pointing at a URL the maker serves themselves (Docker /
+   *  Rails / etc.) instead of managing a dev-server process. */
+  attach: boolean;
   /** All runnable apps found in the repo — render a picker when length > 1 (DEC-125). */
   apps: DetectedApp[];
   /** Switch the active app (monorepo): persist its packageDir and restart if running. */
@@ -467,6 +470,9 @@ export function usePreviewServer(
     async (override?: PreviewConfig) => {
       if (!worktreePath) return;
       const cfg = override ?? config;
+      // Attach mode (DEC-129): nothing to spawn — the attach effect polls the
+      // external URL and embeds it. The user starts their own server (the terminal).
+      if (cfg?.externalUrl?.trim()) return;
       const isTauri = runnerRef.current === "tauri";
       // The web runner needs a dev command; the tauri runner builds its own
       // (`npm run tauri dev …`), so it doesn't.
@@ -784,12 +790,43 @@ export function usePreviewServer(
   // The dir the dev server runs in — for the bottom-panel terminal (DEC-126).
   const cwd = worktreePath ? packageCwd(worktreePath, config?.packageDir ?? "") : null;
 
+  // Attach mode (DEC-129): the maker runs their own server (Docker/Rails/etc.) and
+  // gives us its loopback URL. Bezier doesn't spawn anything — it polls the URL and
+  // embeds it when up ("waiting" when down). No readiness/deps/node — it's external.
+  const externalUrl = config?.externalUrl?.trim() || "";
+  const attach = !!externalUrl;
+  React.useEffect(() => {
+    if (!externalUrl) return;
+    // Drop any managed dev-server we may have started for this key — attach owns it now.
+    void dropPreview(previewKey).catch(() => {});
+    let cancelled = false;
+    const tick = async () => {
+      const up = await httpPing(externalUrl).catch(() => false);
+      if (cancelled) return;
+      if (up) {
+        setUrl(externalUrl);
+        setStatus("ready");
+        setFrameBlocked(false);
+      } else {
+        setUrl(null);
+        setStatus("starting"); // "waiting for your server"
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [externalUrl, previewKey]);
+
   return {
     status,
     runner,
     tauriPort,
     config,
     cwd,
+    attach,
     apps,
     selectApp,
     framework,

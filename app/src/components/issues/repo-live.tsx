@@ -42,6 +42,7 @@ import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
 import { detectAgents } from "@/lib/agents";
 import { previewDoctorPrompt } from "@/lib/prompts";
+import { isLoopbackUrl } from "@/lib/preview";
 import { useReadiness, type ReadinessController } from "./use-readiness";
 import { useRepoFreshness, type RepoFreshness } from "./use-repo-freshness";
 import { useSetupSignals } from "./use-setup-signals";
@@ -70,13 +71,23 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, log, installing, installCmd, config, cwd, apps, selectApp, start, stop, installDeps, configLoaded, runner } =
+  const { status, url, error, log, installing, installCmd, config, cwd, attach, apps, selectApp, start, stop, installDeps, configLoaded, runner, saveConfig } =
     live;
+  const externalUrl = config?.externalUrl?.trim() ?? "";
   // No runnable web app detected (non-Node stack, or detection missed it) — show a
   // clear, scoped explainer instead of a Run button that fails with a cryptic error
-  // (P0: never a silent/cryptic dead-end). DEC-128.
+  // (P0: never a silent/cryptic dead-end). DEC-128. Excluded in attach mode (DEC-129).
   const noApp =
-    configLoaded && runner !== "tauri" && apps.length === 0 && !config?.devCommand?.trim();
+    configLoaded && runner !== "tauri" && apps.length === 0 && !config?.devCommand?.trim() && !attach;
+  // Attach mode (DEC-129): point at a URL the maker runs themselves (Docker/Rails…).
+  const [attachInput, setAttachInput] = React.useState("");
+  const setExternalUrl = React.useCallback(
+    (u: string) => {
+      if (!config) return;
+      void saveConfig({ ...config, externalUrl: u.trim() || undefined });
+    },
+    [config, saveConfig],
+  );
 
   // Defer the repo-health probes off the landing path (DEC-123). RepoLive is kept
   // MOUNTED while hidden under an issue (DEC-113) and is REMOUNTED on repo switch,
@@ -200,7 +211,7 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
     setSpawnNonce((n) => n + 1);
     setPanelTab("terminal");
     setPanelOpen(true);
-  }, [cwd, diagVerdict, diagStatus, src, log]);
+  }, [cwd, diagVerdict, diagStatus, src, log, setAgentSpawn, setSpawnNonce, setPanelTab, setPanelOpen]);
   // OUTPUT shows readiness-fix output while preparing, else the dev-server log.
   const panelLog = readiness.log.trim() ? readiness.log : log;
   const panelBusy = installing || !!readiness.busy;
@@ -327,7 +338,29 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
         ) : (
           <div className="flex h-full flex-col">
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-              {!readiness.loaded ? (
+              {attach ? (
+                // Attach mode (DEC-129): waiting for the maker's own server.
+                <>
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                  <p className="max-w-md text-sm text-muted-foreground">
+                    {t("live.attachWaiting", { url: externalUrl })}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => setShowTerminal(true)}
+                    >
+                      <TerminalIcon className="size-3.5" />
+                      {t("live.openTerminalManual")}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setExternalUrl("")}>
+                      {t("live.attachDetach")}
+                    </Button>
+                  </div>
+                </>
+              ) : !readiness.loaded ? (
                 <Loader2 className="size-5 animate-spin text-muted-foreground" />
               ) : noApp ? (
                 <>
@@ -336,6 +369,24 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
                   </div>
                   <p className="text-sm font-medium">{t("live.noAppTitle")}</p>
                   <p className="max-w-md text-xs text-muted-foreground">{t("live.noAppBody")}</p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (isLoopbackUrl(attachInput)) setExternalUrl(attachInput);
+                    }}
+                    className="flex w-full max-w-sm items-center gap-1.5"
+                  >
+                    <input
+                      value={attachInput}
+                      onChange={(e) => setAttachInput(e.target.value)}
+                      placeholder={t("live.attachUrlPlaceholder")}
+                      spellCheck={false}
+                      className="h-7 min-w-0 flex-1 rounded-md border bg-transparent px-2 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <Button size="sm" type="submit" disabled={!isLoopbackUrl(attachInput)}>
+                      {t("live.attachShow")}
+                    </Button>
+                  </form>
                   <Button
                     size="sm"
                     variant="outline"

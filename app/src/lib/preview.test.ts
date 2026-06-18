@@ -4,6 +4,7 @@ import {
   parseDevServerUrl,
   buildDevCommand,
   verdictFor,
+  isLoopbackUrl,
   type HttpProbeResult,
 } from "./preview";
 
@@ -110,5 +111,20 @@ describe("verdictFor (DEC-125)", () => {
   });
   it("200 JSON (API-only) → empty", () => {
     expect(verdictFor(p({ contentType: "application/json", bodyLen: 9000 }))).toBe("empty");
+  });
+});
+
+describe("isLoopbackUrl (DEC-129 attach mode)", () => {
+  it("accepts loopback http(s) URLs", () => {
+    expect(isLoopbackUrl("http://localhost:3000")).toBe(true);
+    expect(isLoopbackUrl("http://127.0.0.1:4001/path")).toBe(true);
+    expect(isLoopbackUrl("https://localhost:8443")).toBe(true);
+  });
+  it("rejects remote / non-http URLs", () => {
+    expect(isLoopbackUrl("https://staging.example.com")).toBe(false);
+    expect(isLoopbackUrl("http://192.168.1.20:3000")).toBe(false);
+    expect(isLoopbackUrl("ftp://localhost")).toBe(false);
+    expect(isLoopbackUrl("not a url")).toBe(false);
+    expect(isLoopbackUrl("")).toBe(false);
   });
 });
