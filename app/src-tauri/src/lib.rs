@@ -3313,6 +3313,17 @@ fn fix_path_env() {
     }
 }
 
+/// A native menu accelerator fired (DEC-120) → return keyboard focus to the main
+/// webview (the embedded browser may hold OS focus, so the opened palette/etc.
+/// gets typing) and tell the frontend which chord it was. `chord` matches the
+/// keys in MenuShortcutBridge (palette / annotate / newIssue).
+fn emit_menu_shortcut(app: &tauri::AppHandle, chord: &str) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_focus();
+    }
+    let _ = app.emit("bezier://menu-shortcut", chord);
+}
+
 pub fn run() {
     fix_path_env();
     tauri::Builder::default()
@@ -3369,15 +3380,38 @@ pub fn run() {
                     .minimize()
                     // intentionally no .close_window() — frees ⌘W for the webview.
                     .build()?;
+                // Global shortcuts as native menu accelerators (DEC-120 follow-up):
+                // these fire regardless of which webview is focused, so Bezier's
+                // shortcuts WIN even while the maker is inside the embedded browser
+                // (which otherwise steals keyboard focus). Each emits an event the
+                // frontend (MenuShortcutBridge) turns into the synthetic keydown the
+                // existing handlers expect. Only conflict-free globals: ⌘K / ⌘⇧A /
+                // ⌘N (⌘B clashes with editor bold; bracket area-switch deferred).
+                let sc_palette = MenuItemBuilder::with_id("shortcut.palette", "Command Palette…")
+                    .accelerator("CmdOrCtrl+K")
+                    .build(app)?;
+                let sc_annotate = MenuItemBuilder::with_id("shortcut.annotate", "Toggle Annotations")
+                    .accelerator("CmdOrCtrl+Shift+A")
+                    .build(app)?;
+                let sc_new = MenuItemBuilder::with_id("shortcut.new-issue", "New Issue")
+                    .accelerator("CmdOrCtrl+N")
+                    .build(app)?;
+                let go_menu = SubmenuBuilder::new(app, "Go")
+                    .items(&[&sc_palette, &sc_annotate, &sc_new])
+                    .build()?;
                 let menu = MenuBuilder::new(app)
-                    .items(&[&app_menu, &edit_menu, &window_menu])
+                    .items(&[&app_menu, &edit_menu, &go_menu, &window_menu])
                     .build()?;
                 app.set_menu(menu)?;
-                // ⌘Q → ask the frontend to confirm before quitting.
-                app.on_menu_event(|app, event| {
-                    if event.id().as_ref() == "quit-confirm" {
+                app.on_menu_event(|app, event| match event.id().as_ref() {
+                    // ⌘Q → ask the frontend to confirm before quitting.
+                    "quit-confirm" => {
                         let _ = app.emit("bezier://quit-requested", ());
                     }
+                    "shortcut.palette" => emit_menu_shortcut(app, "palette"),
+                    "shortcut.annotate" => emit_menu_shortcut(app, "annotate"),
+                    "shortcut.new-issue" => emit_menu_shortcut(app, "newIssue"),
+                    _ => {}
                 });
             }
             Ok(())

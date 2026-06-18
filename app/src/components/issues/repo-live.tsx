@@ -219,7 +219,7 @@ export function RepoLive({ root }: { root: string }) {
           // Live = the same native embedded browser (DEC-120): OAuth/login works
           // inline, and X-Frame-Options no longer matters (it's a real top-level
           // browser, not an iframe). Path changes / reload re-point it via `src`.
-          <EmbeddedBrowser src={src!} active reloadKey={0} />
+          <EmbeddedBrowser src={src!} active reloadKey={0} captureDir={`${root}/.bezier`} />
         ) : (
           <div className="flex h-full flex-col">
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center">

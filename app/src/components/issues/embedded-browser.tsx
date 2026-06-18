@@ -11,15 +11,24 @@
 // mirrors that slot's on-screen rect to the real webview (Rust set_bounds), and
 // HIDES the webview whenever the slot isn't actually visible (tab switched to
 // Map/QA → the ancestor gets `hidden`; annotation/Design → `active` goes false).
+//
+// Overlays (dialogs/dropdowns) also can't be drawn over a native webview. Rather
+// than blanking the pane to white (which looks like a bug), when an overlay
+// overlaps the browser we FREEZE it to a screenshot and show that still — so the
+// modal/dropdown appears over what looks like the live browser. It un-freezes
+// (shows the live webview again) when the overlay closes.
 
 import * as React from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   embedBrowserOpen,
   embedBrowserSetBounds,
   embedBrowserNavigate,
   embedBrowserHide,
   embedBrowserClose,
+  captureRegion,
 } from "@/lib/ipc";
+import { loadImageDataUrl } from "@/lib/annotations";
 
 interface Rect {
   x: number;
@@ -28,11 +37,29 @@ interface Rect {
   height: number;
 }
 
-// A native webview paints ABOVE all HTML, so it would cover any modal that opens
-// over the pane. Bezier's overlays (⌘K palette, Share, shortcuts, confirm) all
-// render role="dialog" — while one is up, hide the embedded browser.
-function anyModalOpen(): boolean {
-  return !!document.querySelector('[role="dialog"]');
+// A native webview paints ABOVE all HTML, so it covers any overlay drawn over
+// the pane. Dialogs (⌘K palette, Share, shortcuts, confirm) are role="dialog";
+// dropdowns/menus (Ship ▾, Title ▾, base-ui Menu) are role="menu"; selects are
+// role="listbox". React only when such an overlay actually OVERLAPS the browser
+// rect — so an unrelated menu elsewhere (e.g. top-left Title ▾) is ignored.
+// (base-ui portals these only while open, so presence ≈ open.)
+function overlayOverlaps(rect: Rect): boolean {
+  const els = document.querySelectorAll(
+    '[role="dialog"], [role="menu"], [role="listbox"]',
+  );
+  for (const el of els) {
+    const r = (el as HTMLElement).getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
+    if (
+      r.left < rect.x + rect.width &&
+      r.right > rect.x &&
+      r.top < rect.y + rect.height &&
+      r.bottom > rect.y
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function sameRect(a: Rect | null, b: Rect | null): boolean {
@@ -46,10 +73,32 @@ function sameRect(a: Rect | null, b: Rect | null): boolean {
   );
 }
 
+// Screenshot the slot (the live webview sits there) to a data URL for the freeze.
+// capture_region only writes inside a granted `.bezier` store, so the caller
+// passes such a dir. Returns null on any failure (→ caller falls back to hide).
+async function captureSlot(rect: Rect, dir: string): Promise<string | null> {
+  try {
+    const win = getCurrentWindow();
+    const pos = await win.innerPosition();
+    const scale = await win.scaleFactor();
+    const path = await captureRegion(
+      pos.x / scale + rect.x,
+      pos.y / scale + rect.y,
+      rect.width,
+      rect.height,
+      `${dir.replace(/\/+$/, "")}/embed-freeze.png`,
+    );
+    return await loadImageDataUrl(path);
+  } catch {
+    return null;
+  }
+}
+
 export function EmbeddedBrowser({
   src,
   active,
   reloadKey = 0,
+  captureDir,
 }: {
   /** Full URL (origin + path) the embedded browser should load. */
   src: string;
@@ -57,15 +106,34 @@ export function EmbeddedBrowser({
   active: boolean;
   /** Bump to force a navigate (reload button / route change). */
   reloadKey?: number;
+  /** A granted `.bezier` dir to write the freeze screenshot into. Without it,
+   *  an overlapping overlay falls back to hiding the browser (blank). */
+  captureDir?: string;
 }) {
   const slotRef = React.useRef<HTMLDivElement | null>(null);
   const createdRef = React.useRef(false); // add_child has run
-  const shownRef = React.useRef(false); // currently visible
+  const shownRef = React.useRef(false); // webview currently visible
   const lastRectRef = React.useRef<Rect | null>(null);
   const disposedRef = React.useRef(false);
+  const capturingRef = React.useRef(false);
+  // Freeze still shown while an overlay overlaps (ref mirrors state so the
+  // mount-keyed sync loop reads the latest synchronously).
+  const [freeze, setFreeze] = React.useState<string | null>(null);
+  const freezeRef = React.useRef<string | null>(null);
+  const setFreezeBoth = (v: string | null) => {
+    freezeRef.current = v;
+    setFreeze(v);
+  };
   // Latest src in a ref so the mount-keyed observer loop reads it without
   // re-subscribing (same pattern as the terminal's pendingRef / onExitRef).
   const srcRef = React.useRef(src);
+
+  const hideWebview = () => {
+    if (shownRef.current) {
+      shownRef.current = false;
+      void embedBrowserHide().catch(() => {});
+    }
+  };
 
   // True only when the slot actually occupies screen space. offsetParent is null
   // under display:none (the `hidden` toggle when Map/QA is shown), and a 0-area
@@ -78,58 +146,79 @@ export function EmbeddedBrowser({
     return { x: r.left, y: r.top, width: r.width, height: r.height };
   };
 
-  // Reconcile the native webview with the slot: open/show/move when visible,
-  // hide when not. Cheap to call often — it only hits IPC on a real change.
+  // Reconcile the native webview + freeze still with the slot. Three outcomes:
+  // pane not visible → hide (no still); overlay overlaps → freeze (still shown,
+  // webview hidden); else → live (webview shown, still cleared). Cheap to call
+  // often — it only hits IPC / capture on a real transition.
   const sync = React.useCallback(() => {
     if (disposedRef.current) return;
-    const rect = active && !anyModalOpen() ? measure() : null;
-    if (rect) {
-      if (!createdRef.current) {
-        createdRef.current = true;
-        shownRef.current = true;
-        lastRectRef.current = rect;
-        void embedBrowserOpen(
-          srcRef.current,
-          rect.x,
-          rect.y,
-          rect.width,
-          rect.height,
-        ).then(() => {
-          // Unmounted before the child finished building → don't leak it.
-          if (disposedRef.current) void embedBrowserClose().catch(() => {});
-        }).catch(() => {});
-        return;
-      }
-      if (!shownRef.current) {
-        shownRef.current = true;
-        lastRectRef.current = rect;
-        void embedBrowserOpen(
-          srcRef.current,
-          rect.x,
-          rect.y,
-          rect.width,
-          rect.height,
-        ).catch(() => {});
-        return;
-      }
-      if (!sameRect(rect, lastRectRef.current)) {
-        lastRectRef.current = rect;
-        void embedBrowserSetBounds(
-          rect.x,
-          rect.y,
-          rect.width,
-          rect.height,
-        ).catch(() => {});
-      }
-    } else if (shownRef.current) {
-      shownRef.current = false;
-      void embedBrowserHide().catch(() => {});
-    }
-  }, [active]);
+    const m = active ? measure() : null;
 
-  // Observe everything that can move/resize/hide the slot. ResizeObserver
-  // catches the pane resizing AND the `hidden` toggle (size → 0); the rest are
-  // belt-and-suspenders for scroll, window resize, and ancestor layout flips.
+    // Pane not visible (Map/QA/Design/collapsed) → hide; drop any freeze.
+    if (!m) {
+      hideWebview();
+      if (freezeRef.current) setFreezeBoth(null);
+      return;
+    }
+
+    // An overlay overlaps the browser → show a frozen still instead of blanking.
+    if (overlayOverlaps(m)) {
+      if (freezeRef.current) return; // already frozen
+      if (!createdRef.current || !captureDir) {
+        // Nothing to capture (webview never shown, or no .bezier dir) → hide.
+        hideWebview();
+        return;
+      }
+      if (capturingRef.current) return; // capture in flight — keep webview live
+      capturingRef.current = true;
+      void captureSlot(m, captureDir).then((url) => {
+        capturingRef.current = false;
+        if (disposedRef.current) return;
+        const mm = active ? measure() : null;
+        const stillOverlapped = !!mm && overlayOverlaps(mm);
+        if (url && stillOverlapped) {
+          setFreezeBoth(url); // show the still, then hide the live webview
+          hideWebview();
+        } else if (stillOverlapped) {
+          hideWebview(); // capture failed → fall back to blank-hide
+        }
+        // overlay already gone → leave the live webview as-is (next sync fixes bounds)
+      });
+      return;
+    }
+
+    // Visible & unobstructed → live webview; clear any freeze.
+    if (freezeRef.current) setFreezeBoth(null);
+    const rect = m;
+    if (!createdRef.current) {
+      createdRef.current = true;
+      shownRef.current = true;
+      lastRectRef.current = rect;
+      void embedBrowserOpen(srcRef.current, rect.x, rect.y, rect.width, rect.height)
+        .then(() => {
+          if (disposedRef.current) void embedBrowserClose().catch(() => {});
+        })
+        .catch(() => {});
+      return;
+    }
+    if (!shownRef.current) {
+      shownRef.current = true;
+      lastRectRef.current = rect;
+      void embedBrowserOpen(srcRef.current, rect.x, rect.y, rect.width, rect.height).catch(
+        () => {},
+      );
+      return;
+    }
+    if (!sameRect(rect, lastRectRef.current)) {
+      lastRectRef.current = rect;
+      void embedBrowserSetBounds(rect.x, rect.y, rect.width, rect.height).catch(() => {});
+    }
+  }, [active, captureDir]);
+
+  // Observe everything that can move/resize/hide the slot or open an overlay.
+  // ResizeObserver catches pane resize + the `hidden` toggle (size → 0); the
+  // MutationObserver catches overlays mounting deep in the React tree (coalesced
+  // to one sync per frame so streaming chat/terminal output doesn't thrash).
   React.useEffect(() => {
     const el = slotRef.current;
     if (!el) return;
@@ -141,9 +230,6 @@ export function EmbeddedBrowser({
     const onWin = () => sync();
     window.addEventListener("resize", onWin);
     window.addEventListener("scroll", onWin, true);
-    // Modals (role="dialog") render deep in the React tree, so watch the whole
-    // body for them — but coalesce the firehose of DOM mutations to one sync per
-    // frame so streaming chat/terminal output doesn't thrash.
     let raf = 0;
     const schedule = () => {
       if (raf) return;
@@ -154,7 +240,6 @@ export function EmbeddedBrowser({
     };
     const mo = new MutationObserver(schedule);
     mo.observe(document.body, { childList: true, subtree: true });
-    // Backstop for ancestor display/visibility flips that no observer catches.
     const tick = window.setInterval(sync, 300);
     return () => {
       ro.disconnect();
@@ -185,7 +270,19 @@ export function EmbeddedBrowser({
     };
   }, []);
 
-  return <div ref={slotRef} className="h-full w-full bg-white" />;
+  return (
+    <div ref={slotRef} className="h-full w-full bg-white">
+      {freeze && (
+        // eslint-disable-next-line @next/next/no-img-element -- local data: URL freeze in a Tauri webview; next/image doesn't apply
+        <img
+          src={freeze}
+          alt=""
+          aria-hidden
+          className="pointer-events-none h-full w-full object-cover"
+        />
+      )}
+    </div>
+  );
 }
 
 export default EmbeddedBrowser;

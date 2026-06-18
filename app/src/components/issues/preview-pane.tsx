@@ -191,23 +191,39 @@ export function PreviewPane({
 
   const running = status === "starting" || status === "ready";
 
+  // Measure the pane body so device presets can be CAPPED to it. A native
+  // embedded webview can't clip/scroll inside a smaller container (it ignores
+  // overflow), so a device larger than the pane would draw OUTSIDE it (DEC-120
+  // bug). Capping = the webview never exceeds the visible pane: device ≤ pane →
+  // exact size; device > pane → fits the pane (no scroll-to-exact, which a
+  // native webview can't do anyway).
+  const paneRef = React.useRef<HTMLDivElement | null>(null);
+  const [paneSize, setPaneSize] = React.useState<{ w: number; h: number } | null>(null);
+  React.useEffect(() => {
+    const el = paneRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      setPaneSize((prev) =>
+        prev && Math.round(prev.w) === Math.round(r.width) && Math.round(prev.h) === Math.round(r.height)
+          ? prev
+          : { w: r.width, h: r.height },
+      );
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const device = DEVICES.find((d) => d.id === deviceId) ?? DEVICES[0];
   const isFluid = deviceId === "fluid";
   const isCustom = deviceId === "custom";
-  const vw = isFluid
-    ? null
-    : isCustom
-      ? Math.max(160, customW)
-      : portrait
-        ? device.w!
-        : device.h!;
-  const vh = isFluid
-    ? null
-    : isCustom
-      ? Math.max(160, customH)
-      : portrait
-        ? device.h!
-        : device.w!;
+  // p-4 backdrop padding (16px both sides) is reserved when capping.
+  const maxW = paneSize ? Math.max(160, paneSize.w - 32) : Infinity;
+  const maxH = paneSize ? Math.max(160, paneSize.h - 32) : Infinity;
+  const rawVw = isCustom ? Math.max(160, customW) : portrait ? device.w! : device.h!;
+  const rawVh = isCustom ? Math.max(160, customH) : portrait ? device.h! : device.w!;
+  const vw = isFluid ? null : Math.min(rawVw, maxW);
+  const vh = isFluid ? null : Math.min(rawVh, maxH);
 
   const src = url
     ? url.replace(/\/+$/, "") + (path.startsWith("/") ? path : `/${path}`)
@@ -446,7 +462,7 @@ export function PreviewPane({
       )}
 
       {/* Body */}
-      <div className="relative min-h-0 flex-1">
+      <div ref={paneRef} className="relative min-h-0 flex-1">
         {status === "ready" && url ? (
           // Single mode (DEC-120): the preview IS a native embedded browser, so
           // OAuth works inline. Device presets resize the slot it tracks; "fluid"
@@ -481,6 +497,7 @@ export function PreviewPane({
                   src={src!}
                   active={!(annotating && !!frozenShot)}
                   reloadKey={reloadNonce}
+                  captureDir={issueDir ? `${issueDir}/feedback` : undefined}
                 />
                 {/* Frozen-frame annotation: the still + the shared AnnotationLayer
                     (DEC-045/046/056 → edits the worktree CODE). The native webview
