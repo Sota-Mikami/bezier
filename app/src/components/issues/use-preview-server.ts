@@ -168,6 +168,10 @@ export interface PreviewServer {
   tauriPort: number | null;
   /** Resolved config (saved, or detected default). Null until loaded. */
   config: PreviewConfig | null;
+  /** The dir the dev server runs in (`packageCwd(worktree, packageDir)`) — used by
+   *  the bottom-panel terminal so `claude`/commands run where the app lives (DEC-126).
+   *  Null until a worktree + config exist. */
+  cwd: string | null;
   /** All runnable apps found in the repo — render a picker when length > 1 (DEC-125). */
   apps: DetectedApp[];
   /** Switch the active app (monorepo): persist its packageDir and restart if running. */
@@ -777,11 +781,15 @@ export function usePreviewServer(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worktreePath, previewKey]);
 
+  // The dir the dev server runs in — for the bottom-panel terminal (DEC-126).
+  const cwd = worktreePath ? packageCwd(worktreePath, config?.packageDir ?? "") : null;
+
   return {
     status,
     runner,
     tauriPort,
     config,
+    cwd,
     apps,
     selectApp,
     framework,

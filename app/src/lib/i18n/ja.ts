@@ -491,6 +491,10 @@ export const ja: Messages = {
     waitingForLog: "（ログ出力を待っています…）",
     output: "出力ログ",
     outputTip: "dev サーバーの出力ログを表示",
+    terminal: "ターミナル",
+    panelTip: "出力ログとターミナル",
+    resizePanel: "ドラッグで高さ調整（ダブルクリックでリセット）",
+    terminalNeedsServer: "dev サーバーを起動するとここでターミナルを開けます。",
   },
 
   prototype: {

@@ -39,6 +39,7 @@ import { EmbeddedBrowser } from "./embedded-browser";
 import { AppPicker } from "./app-picker";
 import { usePreviewDiagnostic } from "./use-preview-diagnostic";
 import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
+import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
 import { useReadiness, type ReadinessController } from "./use-readiness";
 import { useRepoFreshness, type RepoFreshness } from "./use-repo-freshness";
 import { useSetupSignals } from "./use-setup-signals";
@@ -67,7 +68,7 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, log, installing, installCmd, config, apps, selectApp, start, stop, installDeps } =
+  const { status, url, error, log, installing, installCmd, config, cwd, apps, selectApp, start, stop, installDeps } =
     live;
 
   // Defer the repo-health probes off the landing path (DEC-123). RepoLive is kept
@@ -99,6 +100,9 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
   const packageDir = config?.packageDir ?? "";
   const setup = useSetupSignals(root, packageDir, probeEnabled);
   const [showTerminal, setShowTerminal] = React.useState(false);
+  // VS-Code-style bottom panel (DEC-126): OUTPUT + Terminal under the running app.
+  const [panelOpen, setPanelOpen] = React.useState(false);
+  const [panelTab, setPanelTab] = React.useState<PanelTab>("output");
 
   // Publish the active repo's truth to the sidebar badge store (DEC-111 Phase 4)
   // so its badge is instantly correct after a one-click fix / update — without
@@ -227,6 +231,20 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
             </button>
             <button
               type="button"
+              onClick={() => setPanelOpen((v) => !v)}
+              title={t("preview.panelTip")}
+              aria-label={t("preview.panelTip")}
+              className={cn(
+                "flex size-7 items-center justify-center rounded-md transition-colors",
+                panelOpen
+                  ? "bg-secondary text-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <TerminalIcon className="size-3.5" />
+            </button>
+            <button
+              type="button"
               onClick={() => void stop()}
               title={t("live.stop")}
               aria-label={t("live.stop")}
@@ -246,6 +264,10 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
           status={diag.status}
           src={src}
           onDismiss={diag.dismiss}
+          onShowLog={() => {
+            setPanelTab("output");
+            setPanelOpen(true);
+          }}
         />
       )}
 
@@ -387,6 +409,19 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
           </div>
         )}
       </div>
+
+      {/* Bottom panel (DEC-126): OUTPUT + Terminal under the running app — see the
+          dev log AND run claude/commands in the repo. Only in the ready state; the
+          body shrinks so the webview slot follows. */}
+      {ready && !showTerminal && panelOpen && (
+        <PreviewBottomPanel
+          log={log}
+          cwd={cwd}
+          tab={panelTab}
+          onTab={setPanelTab}
+          onClose={() => setPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }

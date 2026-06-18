@@ -492,6 +492,10 @@ export const en = {
     waitingForLog: "(Waiting for log output…)",
     output: "Output",
     outputTip: "Show the dev-server output log",
+    terminal: "Terminal",
+    panelTip: "Output & terminal",
+    resizePanel: "Drag to resize (double-click to reset)",
+    terminalNeedsServer: "Start the dev server to open a terminal here.",
   },
 
   prototype: {

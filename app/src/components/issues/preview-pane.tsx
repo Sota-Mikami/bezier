@@ -26,7 +26,6 @@ import {
   Ruler,
   ExternalLink,
   Terminal,
-  X,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -48,6 +47,7 @@ import { EmbeddedBrowser } from "./embedded-browser";
 import { AppPicker } from "./app-picker";
 import { usePreviewDiagnostic } from "./use-preview-diagnostic";
 import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
+import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
 
 function statusLabel(status: PreviewStatus): string {
   switch (status) {
@@ -177,10 +177,11 @@ export function PreviewPane({
   const { on: annotating } = useAnnotationMode();
 
   const [showSettings, setShowSettings] = React.useState(false);
-  // OUTPUT log drawer (DEC-125 follow-up): the Issue Preview had no dev-server log
-  // while running, so the diagnostic banner's "check the OUTPUT log" was a dead end.
-  // Toggleable from the header + the banner's "Show output" button.
-  const [showLog, setShowLog] = React.useState(false);
+  // VS-Code-style bottom panel (DEC-126): OUTPUT (dev log) + Terminal (run claude/
+  // commands in the app's dir). Open state + active tab kept separately so the tab
+  // survives close/reopen. The banner's "Show output" opens it on OUTPUT.
+  const [panelOpen, setPanelOpen] = React.useState(false);
+  const [panelTab, setPanelTab] = React.useState<PanelTab>("output");
   const [reloadNonce, setReloadNonce] = React.useState(0);
   // Single mode (DEC-120): the preview IS the native embedded browser — OAuth
   // works inline. A native webview paints above HTML, so to annotate we FREEZE
@@ -497,10 +498,10 @@ export function PreviewPane({
           )}
           <Button
             size="sm"
-            variant={showLog ? "secondary" : "ghost"}
+            variant={panelOpen ? "secondary" : "ghost"}
             className="h-7 gap-1.5"
-            onClick={() => setShowLog((v) => !v)}
-            title={t("preview.outputTip")}
+            onClick={() => setPanelOpen((v) => !v)}
+            title={t("preview.panelTip")}
           >
             <Terminal className="size-3.5" />
             {t("preview.output")}
@@ -536,7 +537,10 @@ export function PreviewPane({
           status={diag.status}
           src={src ?? null}
           onDismiss={diag.dismiss}
-          onShowLog={() => setShowLog(true)}
+          onShowLog={() => {
+            setPanelTab("output");
+            setPanelOpen(true);
+          }}
         />
       )}
 
@@ -623,28 +627,17 @@ export function PreviewPane({
         )}
       </div>
 
-      {/* OUTPUT log drawer (DEC-125 follow-up) — the dev-server output, so a 500/
-          error banner's "check the OUTPUT log" is actually reachable here. */}
-      {showLog && (
-        <div className="flex h-48 shrink-0 flex-col border-t bg-[#0a0a0a]">
-          <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-3 py-1">
-            <span className="font-mono text-[11px] text-zinc-400">{t("preview.output")}</span>
-            <button
-              type="button"
-              onClick={() => setShowLog(false)}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-              className="rounded p-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-200"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-          <ScrollArea className="min-h-0 flex-1">
-            <pre className="px-3 py-2 font-mono text-[11px] leading-[1.5] whitespace-pre-wrap break-all text-zinc-300">
-              {log || t("preview.waitingForLog")}
-            </pre>
-          </ScrollArea>
-        </div>
+      {/* Bottom panel (DEC-126): OUTPUT log + interactive Terminal in the worktree
+          dir — so "check the OUTPUT log" is reachable AND the maker can run claude
+          to fix what they see. The body shrinks → the webview slot follows. */}
+      {panelOpen && (
+        <PreviewBottomPanel
+          log={log}
+          cwd={server.cwd}
+          tab={panelTab}
+          onTab={setPanelTab}
+          onClose={() => setPanelOpen(false)}
+        />
       )}
     </div>
   );
