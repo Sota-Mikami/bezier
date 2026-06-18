@@ -254,7 +254,7 @@ export function usePreviewServer(
         if (!cancelled) setConfigLoaded(true);
         return;
       }
-      const [saved, detect] = await Promise.all([
+      const [saved, detectWt] = await Promise.all([
         readPreviewConfig(root).catch(() => null),
         detectDev(worktreePath).catch(
           () =>
@@ -262,6 +262,17 @@ export function usePreviewServer(
         ),
       ]);
       if (cancelled) return;
+      // Robustness: an issue worktree can be mid-creation, cleaned, or on a
+      // branch without the package — detection then finds no dev script and the
+      // command "disappears" after a restart. The dev script is COMMITTED, so the
+      // REAL repo root is a reliable fallback source. (Live runs with
+      // worktreePath === root, so this only adds a fallback for issue worktrees.)
+      let detect = detectWt;
+      if (!detect.scriptsDev && worktreePath !== root) {
+        const rootDetect = await detectDev(root).catch(() => null);
+        if (cancelled) return;
+        if (rootDetect?.scriptsDev) detect = rootDetect;
+      }
       setScriptsDev(detect.scriptsDev);
       setFramework(detect.framework);
 
@@ -309,13 +320,26 @@ export function usePreviewServer(
       setConfig(resolved);
       setConfigLoaded(true);
 
-      // Self-heal: a saved config whose packageDir we just CORRECTED gets rewritten
-      // so the bad value never recurs. Only on a real correction — never create a
-      // config merely by opening a repo. (.bezier/ is gitignored — no git churn.)
-      if (saved && saved.packageDir && saved.packageDir !== packageDir) {
-        void writePreviewConfig(root, { ...resolved, ...(saved.runner ? { runner: saved.runner } : {}) }).catch(
-          () => {},
-        );
+      // Persist the resolved config so the preview command SURVIVES restarts —
+      // even when next launch's detection can't run (worktree not ready). The CEO
+      // hit "dev command isn't set" after ⌘Q + reopen because a detected-only
+      // command (never explicitly Saved) wasn't written anywhere. We now cache it.
+      // Rules: write only when the on-disk config is missing/stale (idempotent —
+      // .bezier/ is gitignored, so no git churn), and never create a brand-new
+      // EMPTY config (nothing to cache yet). An existing config is still corrected
+      // (e.g. packageDir self-heal), which subsumes the old narrow self-heal.
+      const persisted: PreviewConfig = {
+        ...resolved,
+        ...(saved?.runner ? { runner: saved.runner } : {}),
+      };
+      const differs =
+        !saved ||
+        saved.devCommand.trim() !== resolved.devCommand.trim() ||
+        saved.packageDir !== resolved.packageDir ||
+        saved.port !== resolved.port;
+      const worthWriting = resolved.devCommand.trim().length > 0 || !!saved;
+      if (differs && worthWriting) {
+        void writePreviewConfig(root, persisted).catch(() => {});
       }
 
       // Resolve the install command from the lockfile (npm/pnpm/yarn/bun), so
