@@ -26,12 +26,14 @@ import {
   Ruler,
   ExternalLink,
 } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { openExternal } from "@/lib/ipc";
+import { openExternal, openLiveWindow, captureRegion } from "@/lib/ipc";
+import { loadImageDataUrl } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
 import { previewFeedbackPrompt } from "@/lib/prompts";
@@ -40,6 +42,7 @@ import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
 import { useAnnotationMode } from "./annotation-mode";
+import { EmbeddedBrowser } from "./embedded-browser";
 
 function statusLabel(status: PreviewStatus): string {
   switch (status) {
@@ -170,6 +173,14 @@ export function PreviewPane({
 
   const [showSettings, setShowSettings] = React.useState(false);
   const [reloadNonce, setReloadNonce] = React.useState(0);
+  // Single mode (DEC-120): the preview IS the native embedded browser — OAuth
+  // works inline. A native webview paints above HTML, so to annotate we FREEZE
+  // it to a screenshot, hide the webview, and let the maker mark up the still
+  // (the agent gets the same annotated shot as before). `frozenShot` holds that
+  // still while annotating; `containerRef` is the rect we capture + the webview
+  // tracks.
+  const [frozenShot, setFrozenShot] = React.useState<string | null>(null);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
   // Responsive viewport (DEC-064) + navigated path. Custom width/height (DEC-074).
   const [deviceId, setDeviceId] = React.useState<DeviceId>("fluid");
   const [portrait, setPortrait] = React.useState(true);
@@ -177,9 +188,6 @@ export function PreviewPane({
   const [customH, setCustomH] = React.useState(900);
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
-  // Ref to the live iframe — handed to the annotation overlay so the element
-  // picker can postMessage the cooperating preview (DEC-046 #3).
-  const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
 
   const running = status === "starting" || status === "ready";
 
@@ -222,6 +230,47 @@ export function PreviewPane({
     [server],
   );
 
+  // Freeze-to-annotate (DEC-120): a native webview can't be drawn over, so when
+  // annotation mode turns on we screenshot the live (logged-in) browser, then
+  // show that still + the annotation layer (the webview hides itself once the
+  // shot is ready). Capture runs while the webview is still visible. Cleared
+  // when annotation ends → the live browser returns.
+  const issueDir = session?.issue.dir;
+  React.useEffect(() => {
+    if (!annotating || !issueDir) return; // nothing to do until annotation on
+    const el = containerRef.current;
+    if (!el || el.offsetParent === null) return; // pane not visible → skip
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return;
+        const win = getCurrentWindow();
+        const pos = await win.innerPosition();
+        const scale = await win.scaleFactor();
+        // capture_region only writes inside a granted `.bezier` store, so reuse
+        // the issue's feedback dir (same place AnnotationLayer writes its shots).
+        const out = `${issueDir}/feedback/preview-freeze.png`;
+        const path = await captureRegion(
+          pos.x / scale + r.left,
+          pos.y / scale + r.top,
+          r.width,
+          r.height,
+          out,
+        );
+        const dataUrl = await loadImageDataUrl(path);
+        if (!cancelled && dataUrl) setFrozenShot(dataUrl);
+      } catch {
+        /* capture failed → stay on the live browser (annotation unavailable) */
+      }
+    })();
+    // Clear when annotation ends (effect re-runs) / unmount → live browser back.
+    return () => {
+      cancelled = true;
+      setFrozenShot(null);
+    };
+  }, [annotating, issueDir]);
+
   if (!hasRef) {
     return (
       <EmptyState
@@ -249,6 +298,8 @@ export function PreviewPane({
         {/* Center: responsive viewport + navigated path (only once running). */}
         {status === "ready" && (
           <div className="flex shrink-0 items-center gap-2">
+            {/* Device presets resize the embedded browser (the slot it tracks).
+                Decorative chrome (rounded/notch) can't clip a native webview. */}
             <div className="flex items-center gap-0.5 rounded-md border p-0.5">
               {DEVICES.map((d) => {
                 const Icon = d.icon;
@@ -332,6 +383,19 @@ export function PreviewPane({
             >
               <RotateCw className="size-3.5" />
             </button>
+            {/* Open the current page in a dedicated top-level Bezier window —
+                where OAuth (Google/Facebook) redirects, 2FA, and window.open
+                pop-ups complete (they're blocked in the embedded iframe). */}
+            <button
+              type="button"
+              onClick={() => src && void openLiveWindow(src).catch(() => {})}
+              disabled={!src}
+              title={t("live.openWindowTip")}
+              aria-label={t("live.openWindow")}
+              className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            >
+              <AppWindow className="size-3.5" />
+            </button>
             {/* Open the current page (with the navigated path) in the real browser. */}
             <button
               type="button"
@@ -384,10 +448,11 @@ export function PreviewPane({
       {/* Body */}
       <div className="relative min-h-0 flex-1">
         {status === "ready" && url ? (
-          // For device presets the iframe is constrained + centered on a muted,
-          // scrollable backdrop; "fluid" fills the pane. The iframe AND the
-          // annotation overlay share the same device-sized frame so the %-based
-          // pins stay aligned at any width (DEC-064).
+          // Single mode (DEC-120): the preview IS a native embedded browser, so
+          // OAuth works inline. Device presets resize the slot it tracks; "fluid"
+          // fills the pane. To annotate we freeze it to a screenshot (the webview
+          // hides) and overlay the still + AnnotationLayer — same agent handoff
+          // as before, just over a frozen frame instead of a live iframe.
           <div
             className={cn(
               "h-full w-full",
@@ -401,46 +466,39 @@ export function PreviewPane({
               )}
             >
               <div
+                ref={containerRef}
                 style={isFluid ? undefined : { width: vw!, height: vh! }}
                 className={cn(
                   "relative bg-white",
                   isFluid
                     ? "h-full w-full"
-                    : cn(
-                        "shrink-0 overflow-hidden border shadow-sm",
-                        // Device-frame chrome (DEC-074): rounder corners per device.
-                        deviceId === "mobile"
-                          ? "rounded-[1.75rem]"
-                          : deviceId === "tablet"
-                            ? "rounded-2xl"
-                            : "rounded-lg",
-                      ),
+                    : "shrink-0 overflow-hidden border shadow-sm rounded-lg",
                 )}
               >
-                <iframe
-                  key={reloadNonce}
-                  ref={iframeRef}
-                  src={src}
-                  title="worktree preview"
-                  className="h-full w-full border-0 bg-white"
-                  sandbox="allow-scripts allow-same-origin allow-forms"
+                {/* The embedded browser stays MOUNTED (session preserved); it
+                    hides itself while a frozen shot is shown for annotation. */}
+                <EmbeddedBrowser
+                  src={src!}
+                  active={!(annotating && !!frozenShot)}
+                  reloadKey={reloadNonce}
                 />
-                {/* Figma-style comment/pen feedback over the live preview
-                    (DEC-045/046). The shared AnnotationLayer with a "build"
-                    surface → edits the worktree CODE (DEC-056). */}
-                {session && annotating && (
-                  <AnnotationLayer
-                    session={session}
-                    surface={buildAnnotationSurface(session, path)}
-                  />
-                )}
-                {/* A phone notch in portrait — purely decorative (DEC-074). */}
-                {deviceId === "mobile" && portrait && (
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center"
-                  >
-                    <div className="h-[18px] w-[34%] rounded-b-2xl bg-foreground/85" />
+                {/* Frozen-frame annotation: the still + the shared AnnotationLayer
+                    (DEC-045/046/056 → edits the worktree CODE). The native webview
+                    is hidden underneath, so the HTML overlay is visible. */}
+                {annotating && frozenShot && (
+                  <div className="absolute inset-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- local data: URL screenshot in a Tauri webview; next/image doesn't apply */}
+                    <img
+                      src={frozenShot}
+                      alt={t("preview.frozenForAnnotation")}
+                      className="h-full w-full object-cover"
+                    />
+                    {session && (
+                      <AnnotationLayer
+                        session={session}
+                        surface={buildAnnotationSurface(session, path)}
+                      />
+                    )}
                   </div>
                 )}
               </div>

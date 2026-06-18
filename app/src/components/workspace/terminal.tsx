@@ -26,8 +26,8 @@ import {
   commandExists,
   type UnlistenFn,
 } from "@/lib/pty";
-import { Paperclip } from "lucide-react";
-import { appDataDir, writeFileBytes } from "@/lib/ipc";
+import { X, ArrowUp } from "lucide-react";
+import { grantPath, removePath, writeFileBytes } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -74,10 +74,13 @@ function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-// Image paste/drop (TQ-2): xterm pastes text only, so an image in the clipboard
-// is lost. We save it to an app-data temp file and type the PATH into the pty —
-// the embedded agent (claude) reads image file paths as attachments. Keyed by
-// mime to a sane extension.
+// Image paste/drop (TQ-2 → Slack-style tray): xterm pastes text only, so an image
+// in the clipboard is lost. We save it under the worktree's gitignored
+// .bezier/chat-attachments/ and stage it as a deletable thumbnail in the tray —
+// the PATH is injected into the pty only on SEND, so the maker sees a thumbnail,
+// not a raw path. Saving under .bezier/ (not app-data) means the cwd-relative
+// path has no spaces and the existing removePath (guarded to .bezier/) can delete
+// it. Keyed by mime to a sane extension.
 const IMG_EXT: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -88,28 +91,50 @@ const IMG_EXT: Record<string, string> = {
   "image/tiff": "tiff",
 };
 
-async function attachImageToPty(blob: Blob, mime: string, pid: string, stamp: string): Promise<string> {
-  const ext = IMG_EXT[mime] ?? "png";
-  const name = `paste-${stamp}.${ext}`;
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const path = `${await appDataDir()}/bezier-pastes/${name}`;
-  await writeFileBytes(path, bytes);
-  // The controlled path has no spaces; a trailing space separates it from the
-  // next token the user types.
-  await ptyWrite(pid, `${path} `);
-  return name;
+/** An image staged in the tray, not yet sent to the agent. */
+interface PendingAttachment {
+  id: string;
+  name: string;
+  /** Absolute path — for removePath / cleanup. */
+  absPath: string;
+  /** cwd-relative, space-free path — injected into the pty on send. */
+  relPath: string;
+  /** Object URL for the thumbnail; revoked on remove / send / unmount. */
+  thumbUrl: string;
+  mime: string;
 }
 
-/** Find the first image in a clipboard/drag payload, or null. */
-function firstImage(items: DataTransferItemList | null | undefined): { blob: Blob; mime: string } | null {
-  if (!items) return null;
+/** Save an image under the worktree's .bezier/chat-attachments/. Does NOT touch
+ *  the pty — the path is injected only on send. Returns paths for the tray. */
+async function saveAttachment(
+  blob: Blob,
+  mime: string,
+  cwd: string,
+  stamp: string,
+): Promise<{ name: string; absPath: string; relPath: string }> {
+  const ext = IMG_EXT[mime] ?? "png";
+  const name = `paste-${stamp}.${ext}`;
+  const relPath = `.bezier/chat-attachments/${name}`;
+  const absPath = `${cwd.replace(/\/+$/, "")}/${relPath}`;
+  // The worktree root is already granted, but stay robust for any cwd.
+  await grantPath(cwd).catch(() => {});
+  await writeFileBytes(absPath, new Uint8Array(await blob.arrayBuffer()));
+  return { name, absPath, relPath };
+}
+
+/** Every image in a clipboard/drag payload (multi-image paste/drop). */
+function allImages(
+  items: DataTransferItemList | null | undefined,
+): { blob: Blob; mime: string }[] {
+  const out: { blob: Blob; mime: string }[] = [];
+  if (!items) return out;
   for (const it of items) {
     if (it.kind === "file" && it.type.startsWith("image/")) {
       const blob = it.getAsFile();
-      if (blob) return { blob, mime: it.type };
+      if (blob) out.push({ blob, mime: it.type });
     }
   }
-  return null;
+  return out;
 }
 
 /**
@@ -148,14 +173,45 @@ export default function TerminalPane({
 }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
-  // Transient "image attached" confirmation (TQ-2): pasting an image only types a
-  // path, so without this the maker isn't sure it worked until the LLM replies.
-  const [imgHint, setImgHint] = useState<string | null>(null);
-  const imgHintTimer = useRef<number | null>(null);
-  const flashImgHint = useRef((name: string) => {
-    setImgHint(name);
-    if (imgHintTimer.current) window.clearTimeout(imgHintTimer.current);
-    imgHintTimer.current = window.setTimeout(() => setImgHint(null), 2800);
+  // Staged image attachments (Slack-style tray, TQ-2). They live here — NOT typed
+  // into the pty — until the maker sends, then their paths are injected as one
+  // line. pendingRef mirrors the state so the mount-keyed key/paste handlers read
+  // the latest without re-spawning the pty (same pattern as onExitRef).
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const pendingRef = useRef<PendingAttachment[]>([]);
+  useLayoutEffect(() => {
+    pendingRef.current = pending;
+  });
+  const pidRef = useRef<string | null>(null);
+
+  // Remove a staged attachment: drop the chip, delete its temp file (nothing was
+  // sent to the agent yet), and free its thumbnail URL.
+  const removeAttachment = (id: string) => {
+    const gone = pendingRef.current.find((a) => a.id === id);
+    if (gone) {
+      URL.revokeObjectURL(gone.thumbUrl);
+      void removePath(gone.absPath).catch(() => {});
+    }
+    setPending((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  // Send the staged attachments: inject their cwd-relative paths as ONE line + CR
+  // (the maker's text is already in the agent's readline buffer), then clear the
+  // tray. Files are KEPT — the agent reads them now. Shared by the Enter handler
+  // and the "Attach & send" button (an Enter-independent fallback path).
+  const flushAttachments = useRef(async () => {
+    const pid = pidRef.current;
+    const items = pendingRef.current;
+    if (!pid || items.length === 0) return;
+    pendingRef.current = []; // consume synchronously — guards a double-send
+    setPending([]);
+    try {
+      await ptyWrite(pid, ` ${items.map((a) => a.relPath).join(" ")} `);
+      await ptyWrite(pid, "\r");
+    } catch {
+      /* pty already gone */
+    }
+    for (const a of items) URL.revokeObjectURL(a.thumbUrl);
   });
   // Keep the latest onExit in a ref — the pty effect captures its closure once
   // (mount-keyed), so reading through a ref avoids a stale callback without
@@ -202,6 +258,17 @@ export default function TerminalPane({
       term?.dispose();
       term = null;
       fit = null;
+      // Unsent attachments: their temp files never reached the agent — delete
+      // them and free their thumbnails. (Sent ones were cleared from pending on
+      // send, so they're not here.)
+      for (const a of pendingRef.current) {
+        URL.revokeObjectURL(a.thumbUrl);
+        void removePath(a.absPath).catch(() => {});
+      }
+      pendingRef.current = [];
+      pidRef.current = null;
+      // Clear the tray too (no-op on unmount; resets stale chips on a cwd change).
+      setPending([]);
     };
 
     (async () => {
@@ -291,6 +358,7 @@ export default function TerminalPane({
       if (!id) return; // unreachable (set by attach or spawn) — narrows the type.
       const pid = id;
       ptyId = pid;
+      pidRef.current = pid; // let the tray's send button reach the pty
 
       // Key handling (DEC-036). The #1 rule for IME (Japanese) input: while a
       // composition is active, DO NOTHING here and let the browser's
@@ -359,6 +427,22 @@ export default function TerminalPane({
         }
 
         const isEnter = ev.key === "Enter" || ev.keyCode === 13;
+        // Plain Enter with staged attachments: inject their paths, then submit.
+        // The maker's text is already in the agent's readline buffer; flush
+        // appends the paths as one line and sends CR. preventDefault + return
+        // false stop xterm's own \r so the order (text + paths + newline) holds.
+        if (
+          isEnter &&
+          !ev.shiftKey &&
+          !ev.ctrlKey &&
+          !ev.metaKey &&
+          !ev.altKey &&
+          pendingRef.current.length > 0
+        ) {
+          ev.preventDefault();
+          void flushAttachments.current();
+          return false;
+        }
         if (isEnter && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
           // preventDefault stops the browser inserting a newline into xterm's
           // hidden textarea (returning false alone does NOT preventDefault), then
@@ -376,30 +460,47 @@ export default function TerminalPane({
         ptyWrite(pid, d).catch(() => {});
       });
 
-      // Image paste / drop (TQ-2): capture an image BEFORE xterm's text-only
-      // paste, save it to a temp file, and type the path in for the agent. Plain
-      // text paste/drop falls through to xterm untouched.
+      // Image paste / drop (TQ-2): capture images BEFORE xterm's text-only paste,
+      // save them under .bezier/chat-attachments/, and stage them as deletable
+      // thumbnails in the tray (NO path typed into the pty — that happens on
+      // send). Plain text paste/drop falls through to xterm untouched.
       let pasteSeq = 0;
+      const stageImages = (imgs: { blob: Blob; mime: string }[]) => {
+        for (const img of imgs) {
+          const stamp = `${Date.now()}-${++pasteSeq}`;
+          void saveAttachment(img.blob, img.mime, cwd, stamp)
+            .then(({ name, absPath, relPath }) => {
+              setPending((prev) => [
+                ...prev,
+                {
+                  id: stamp,
+                  name,
+                  absPath,
+                  relPath,
+                  thumbUrl: URL.createObjectURL(img.blob),
+                  mime: img.mime,
+                },
+              ]);
+            })
+            .catch(() => {});
+        }
+      };
       const onPaste = (e: ClipboardEvent) => {
-        const img = firstImage(e.clipboardData?.items);
-        if (!img) return; // text → let xterm handle it
+        const imgs = allImages(e.clipboardData?.items);
+        if (imgs.length === 0) return; // text → let xterm handle it
         e.preventDefault();
         e.stopPropagation();
-        void attachImageToPty(img.blob, img.mime, pid, `${Date.now()}-${++pasteSeq}`)
-          .then((name) => flashImgHint.current(name))
-          .catch(() => {});
+        stageImages(imgs);
       };
       const onDragOver = (e: DragEvent) => {
         if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
       };
       const onDrop = (e: DragEvent) => {
-        const img = firstImage(e.dataTransfer?.items);
-        if (!img) return;
+        const imgs = allImages(e.dataTransfer?.items);
+        if (imgs.length === 0) return;
         e.preventDefault();
         e.stopPropagation();
-        void attachImageToPty(img.blob, img.mime, pid, `${Date.now()}-${++pasteSeq}`)
-          .then((name) => flashImgHint.current(name))
-          .catch(() => {});
+        stageImages(imgs);
       };
       // Copy (TQ-3): xterm's selection is a canvas selection, NOT a DOM one, so
       // the native Edit › Copy / ⌘C copies nothing. Fill the clipboard from
@@ -483,21 +584,61 @@ export default function TerminalPane({
   return (
     <div
       className={cn(
-        "relative h-full w-full overflow-hidden bg-[#0a0a0a]",
+        "relative flex h-full w-full flex-col overflow-hidden bg-[#0a0a0a]",
         className,
       )}
     >
-      <div ref={containerRef} className="h-full w-full" />
+      <div ref={containerRef} className="min-h-0 w-full flex-1" />
       {exitCode !== undefined && (
         <span className="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs text-zinc-400">
           exited{exitCode === null ? "" : ` (${exitCode})`}
         </span>
       )}
-      {imgHint && (
-        <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-1.5 rounded-md bg-emerald-600/90 px-2 py-1 text-xs font-medium text-white shadow">
-          <Paperclip className="size-3" />
-          {tt("previewServer.imageAttached", { name: imgHint })}
-        </span>
+      {/* Slack-style attachment tray (TQ-2): staged images live here, not in the
+          terminal line — the path is injected only on send. A flex row below the
+          terminal (the ResizeObserver refits xterm when it appears). It carries
+          NO text input, so it doesn't reintroduce the "two inputs" of DEC-076. */}
+      {pending.length > 0 && (
+        <div className="flex shrink-0 items-center gap-2 border-t border-white/10 bg-[#0a0a0a] px-2 py-1.5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-x-auto">
+            {pending.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center gap-1.5 rounded-md bg-white/5 py-1 pl-1 pr-1.5 ring-1 ring-white/10"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- local blob: thumbnail in a Tauri webview; next/image doesn't apply (same as design-annotations) */}
+                <img
+                  src={a.thumbUrl}
+                  alt={tt("chatAttach.imageAlt", { name: a.name })}
+                  className="size-8 rounded object-cover"
+                />
+                <span className="max-w-[8rem] truncate text-xs text-zinc-300">
+                  {a.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(a.id)}
+                  title={tt("chatAttach.remove")}
+                  aria-label={tt("chatAttach.remove")}
+                  className="rounded p-0.5 text-zinc-400 hover:text-destructive"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <span className="hidden shrink-0 text-[10px] text-zinc-500 sm:inline">
+            {tt("chatAttach.sendHint")}
+          </span>
+          <button
+            type="button"
+            onClick={() => void flushAttachments.current()}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs font-medium text-zinc-100 hover:bg-white/15"
+          >
+            <ArrowUp className="size-3.5" />
+            {tt("chatAttach.attachAndSend")}
+          </button>
+        </div>
       )}
     </div>
   );

@@ -169,6 +169,59 @@ export function openExternal(url: string): Promise<void> {
 }
 
 /**
+ * Open the local dev URL in a dedicated TOP-LEVEL Bezier window (not the embedded
+ * iframe) so OAuth (redirect + popup), 2FA, and `window.open`/new-tab flows — which
+ * providers refuse to run in an iframe — complete inside Bezier. Loopback URLs only.
+ * -> invoke("open_live_window", { url })
+ */
+export function openLiveWindow(url: string): Promise<void> {
+  return invoke<void>("open_live_window", { url });
+}
+
+/**
+ * Embedded browser (DEC-120, cmux-style) — a native child webview pinned INTO
+ * the Preview pane (not an iframe). First-party + top-level, so OAuth completes
+ * inline and the session persists. Coordinates are LOGICAL/CSS px relative to
+ * the window content top-left (pass getBoundingClientRect() values verbatim). A
+ * native webview always paints above HTML, so the caller hides it when the pane
+ * isn't the active surface.
+ */
+export function embedBrowserOpen(
+  url: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Promise<void> {
+  return invoke<void>("embed_browser_open", { url, x, y, width, height });
+}
+
+/** Reposition/resize the embedded browser to follow the pane (logical px). */
+export function embedBrowserSetBounds(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Promise<void> {
+  return invoke<void>("embed_browser_set_bounds", { x, y, width, height });
+}
+
+/** Navigate the embedded browser (route change / reload). */
+export function embedBrowserNavigate(url: string): Promise<void> {
+  return invoke<void>("embed_browser_navigate", { url });
+}
+
+/** Hide the embedded browser (kept alive; just not shown). */
+export function embedBrowserHide(): Promise<void> {
+  return invoke<void>("embed_browser_hide");
+}
+
+/** Destroy the embedded browser. */
+export function embedBrowserClose(): Promise<void> {
+  return invoke<void>("embed_browser_close");
+}
+
+/**
  * Capture a screen region (POINTS, global top-left origin) to a PNG (DEC-045 —
  * design feedback). Returns the written path. -> invoke("capture_region", …)
  */

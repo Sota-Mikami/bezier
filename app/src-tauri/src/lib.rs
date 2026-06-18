@@ -496,6 +496,177 @@ fn open_external(url: String) -> Result<(), String> {
     }
 }
 
+/// A `window.open` / `target=_blank` / OAuth popup raised inside a Live window,
+/// opened as a CHILD Bezier window that keeps the opener relationship — so
+/// `window.opener.postMessage`/`window.close()` work and popup-style logins
+/// complete in-app instead of dying or escaping to the browser. `window_features`
+/// carries the platform webview config (macOS) that preserves the opener.
+/// Recurses so nested popups are handled too; falls back to the default impl if
+/// the child can't be built (so nothing is silently swallowed).
+fn open_live_child_window(
+    app: &tauri::AppHandle,
+    url: tauri::Url,
+    features: tauri::webview::NewWindowFeatures,
+) -> tauri::webview::NewWindowResponse<tauri::Wry> {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let label = format!(
+        "live-popup-{}",
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let nested = app.clone();
+    let builder = tauri::WebviewWindowBuilder::new(
+        app,
+        label,
+        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
+    )
+    .title(url.as_str())
+    .window_features(features)
+    .on_document_title_changed(|window, title| {
+        let _ = window.set_title(&title);
+    })
+    .on_new_window(move |u, f| open_live_child_window(&nested, u, f));
+    match builder.build() {
+        Ok(window) => tauri::webview::NewWindowResponse::Create { window },
+        Err(_) => tauri::webview::NewWindowResponse::Allow,
+    }
+}
+
+/// Open the worktree dev URL in a dedicated TOP-LEVEL Bezier window (NOT the
+/// embedded iframe). OAuth providers refuse to be iframed (X-Frame-Options), so
+/// redirect/popup logins and 2FA only work top-level; this window is a real
+/// browser context where they complete — inside Bezier. The embedded iframe is
+/// untouched (id/pass, annotations, Map keep working). Reuses one window. Only
+/// http(s) on a loopback host is accepted (the caller passes the local dev URL).
+/// Parse + require an http(s) loopback URL (the local dev server). The Live
+/// window and the embedded browser only ever receive the local preview URL from
+/// the frontend; once loaded, the app itself can navigate anywhere (OAuth) —
+/// that's the webview doing its thing, not this command.
+fn parse_local_url(url: &str) -> Result<tauri::Url, String> {
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("bad url {url}: {e}"))?;
+    let loopback = matches!(
+        parsed.host_str(),
+        Some("localhost" | "127.0.0.1" | "0.0.0.0" | "::1" | "[::1]")
+    );
+    if !(matches!(parsed.scheme(), "http" | "https") && loopback) {
+        return Err(format!("refusing non-local url: {url}"));
+    }
+    Ok(parsed)
+}
+
+#[tauri::command]
+fn open_live_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = parse_local_url(&url)?;
+
+    // Reuse the single Live window if it's already open.
+    if let Some(win) = app.get_webview_window("live-preview") {
+        win.navigate(parsed).map_err(|e| e.to_string())?;
+        let _ = win.set_focus();
+        return Ok(());
+    }
+
+    let popups = app.clone();
+    tauri::WebviewWindowBuilder::new(&app, "live-preview", tauri::WebviewUrl::External(parsed))
+        .title("Live")
+        .inner_size(1024.0, 768.0)
+        .on_new_window(move |u, f| open_live_child_window(&popups, u, f))
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// === Embedded browser (DEC-120 — cmux-style) ============================
+// A native child webview pinned INTO the Preview pane, instead of an <iframe>.
+// Because it's a first-party, top-level browser (not a sandboxed cross-origin
+// frame), OAuth (Google/Facebook redirect + popup) completes inline and the
+// session persists — the maker logs in and uses the app on the right while
+// watching the agent chat on the left. One child at a time, labeled
+// "embedded-browser" and looked up by label (no extra state). Popups route to
+// in-app child windows via the same opener-preserving handler. All coordinates
+// are LOGICAL/CSS px relative to the main window's content top-left — i.e. the
+// frontend passes getBoundingClientRect() values verbatim. Requires tauri's
+// `unstable` feature (Window::add_child). A native webview always paints ABOVE
+// HTML, so the frontend hides it whenever the pane isn't the active surface.
+
+/// Open the embedded browser at `url`, pinned to the pane rect. First call
+/// builds the child (add_child) and loads `url`; later calls just reveal +
+/// reposition it (NO navigate → the logged-in page is preserved).
+#[tauri::command]
+fn embed_browser_open(
+    app: tauri::AppHandle,
+    url: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let parsed = parse_local_url(&url)?;
+    let pos = tauri::LogicalPosition::new(x, y);
+    let size = tauri::LogicalSize::new(width.max(1.0), height.max(1.0));
+    if let Some(wv) = app.get_webview("embedded-browser") {
+        wv.set_position(pos).map_err(|e| e.to_string())?;
+        wv.set_size(size).map_err(|e| e.to_string())?;
+        wv.show().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let win = app.get_window("main").ok_or("no main window")?;
+    let popups = app.clone();
+    let builder = tauri::webview::WebviewBuilder::new(
+        "embedded-browser",
+        tauri::WebviewUrl::External(parsed),
+    )
+    .on_new_window(move |u, f| open_live_child_window(&popups, u, f));
+    win.add_child(builder, pos, size).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Reposition/resize the embedded browser to follow the pane (logical px).
+#[tauri::command]
+fn embed_browser_set_bounds(
+    app: tauri::AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    if let Some(wv) = app.get_webview("embedded-browser") {
+        wv.set_position(tauri::LogicalPosition::new(x, y))
+            .map_err(|e| e.to_string())?;
+        wv.set_size(tauri::LogicalSize::new(width.max(1.0), height.max(1.0)))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Navigate the embedded browser (route change / reload button). The local URL
+/// gate applies — the maker drives external nav by clicking inside the page.
+#[tauri::command]
+fn embed_browser_navigate(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = parse_local_url(&url)?;
+    if let Some(wv) = app.get_webview("embedded-browser") {
+        wv.navigate(parsed).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Hide the embedded browser (pane not the active surface) — kept alive so the
+/// session/page survive; just not shown (a native webview ignores CSS display).
+#[tauri::command]
+fn embed_browser_hide(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(wv) = app.get_webview("embedded-browser") {
+        wv.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Destroy the embedded browser (leaving Browser mode / unmount).
+#[tauri::command]
+fn embed_browser_close(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(wv) = app.get_webview("embedded-browser") {
+        wv.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Capture a rectangular screen region to a PNG (DEC-045 — design feedback).
 /// Uses macOS `screencapture -x -R x,y,w,h` (no sound, non-interactive). The
 /// region is in POINTS in the global display coordinate space (top-left origin);
@@ -3224,6 +3395,12 @@ pub fn run() {
             nvm_node_versions,
             reveal_in_finder,
             open_external,
+            open_live_window,
+            embed_browser_open,
+            embed_browser_set_bounds,
+            embed_browser_navigate,
+            embed_browser_hide,
+            embed_browser_close,
             open_in_editor,
             capture_region,
             remove_path,

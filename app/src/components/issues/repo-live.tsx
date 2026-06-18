@@ -14,6 +14,7 @@ import {
   Loader2,
   RotateCcw,
   ExternalLink,
+  AppWindow,
   Square,
   MonitorPlay,
   Download,
@@ -27,13 +28,14 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { openExternal, openInEditor } from "@/lib/ipc";
+import { openExternal, openLiveWindow, openInEditor } from "@/lib/ipc";
 import { useT } from "@/lib/i18n";
 import { repoName } from "@/lib/workspace-root";
 import { packageCwd } from "@/lib/preview";
 import { cn } from "@/lib/utils";
 import { setRepoStatus } from "@/lib/repo-status";
 import { usePreviewServer } from "./use-preview-server";
+import { EmbeddedBrowser } from "./embedded-browser";
 import { useReadiness, type ReadinessController } from "./use-readiness";
 import { useRepoFreshness, type RepoFreshness } from "./use-repo-freshness";
 import { useSetupSignals } from "./use-setup-signals";
@@ -62,7 +64,7 @@ export function RepoLive({ root }: { root: string }) {
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, log, installing, installCmd, config, start, stop, installDeps, frameBlocked } = live;
+  const { status, url, error, log, installing, installCmd, config, start, stop, installDeps } = live;
   // Repo readiness (DEC-111): detect "cloned but not set up" before Run fails
   // cryptically, and offer bounded one-click fixes (Node / deps / .env).
   const readiness = useReadiness(root, config?.packageDir ?? "");
@@ -176,6 +178,15 @@ export function RepoLive({ root }: { root: string }) {
             </button>
             <button
               type="button"
+              onClick={() => src && void openLiveWindow(src)}
+              title={t("live.openWindowTip")}
+              aria-label={t("live.openWindow")}
+              className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <AppWindow className="size-3.5" />
+            </button>
+            <button
+              type="button"
               onClick={() => src && void openExternal(src)}
               title={t("live.openExternal")}
               aria-label={t("live.openExternal")}
@@ -204,26 +215,11 @@ export function RepoLive({ root }: { root: string }) {
             cwd={packageCwd(root, packageDir)}
             onClose={() => setShowTerminal(false)}
           />
-        ) : ready && frameBlocked ? (
-          // The app runs but forbids iframe embedding (X-Frame-Options / CSP) —
-          // can't show it inline; hand off to the browser instead of a blank pane.
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
-              <ExternalLink className="size-5 text-muted-foreground" />
-            </div>
-            <p className="max-w-sm text-sm text-muted-foreground">{t("live.frameBlocked")}</p>
-            <Button size="sm" className="gap-1.5" onClick={() => src && void openExternal(src)}>
-              <ExternalLink className="size-3.5" />
-              {t("live.openInBrowser")}
-            </Button>
-          </div>
         ) : ready ? (
-          <iframe
-            src={src!}
-            title="live"
-            sandbox="allow-scripts allow-same-origin allow-forms"
-            className="size-full border-0"
-          />
+          // Live = the same native embedded browser (DEC-120): OAuth/login works
+          // inline, and X-Frame-Options no longer matters (it's a real top-level
+          // browser, not an iframe). Path changes / reload re-point it via `src`.
+          <EmbeddedBrowser src={src!} active reloadKey={0} />
         ) : (
           <div className="flex h-full flex-col">
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center">

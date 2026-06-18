@@ -135,9 +135,16 @@ export const ja: Messages = {
     packageDirMissing: "パッケージディレクトリ「{dir}」に package.json がありません（このリポジトリに存在しない可能性）。設定で空にしてリポジトリのルートを使うか、正しいサブフォルダを指定してください。",
     processExited: "dev server プロセスが終了しました。下のログを確認してください。",
     noResponse: "{sec} 秒以内に {target} が応答しませんでした。dev コマンドとポートを確認してください。",
-    imageAttached: "画像を添付 · {name}",
     rustCacheMissing: "Rust ビルドキャッシュ (src-tauri/target) が本体リポジトリに無いため、初回ビルドはフルビルドになります（数分かかることがあります）。",
     rustCacheCloneFailed: "Rust ビルドキャッシュを clone できませんでした: {msg}",
+  },
+
+  // チャットの画像添付（エージェント端末の Slack 風トレイ・TQ-2）。
+  chatAttach: {
+    sendHint: "Enter で本文と一緒に送信",
+    attachAndSend: "添付して送信",
+    remove: "添付を削除",
+    imageAlt: "添付画像: {name}",
   },
 
   live: {
@@ -147,8 +154,11 @@ export const ja: Messages = {
     starting: "起動中…",
     routePlaceholder: "/route",
     reload: "再読み込み",
+    openWindow: "ウィンドウで開く",
+    openWindowTip: "ウィンドウで開く — ログインやポップアップはこちらで動作します（埋め込みプレビューでは不可）",
     openExternal: "ブラウザで開く",
-    frameBlocked: "このアプリは埋め込みプレビューを許可していません。ブラウザで開いてください。",
+    frameBlocked: "このアプリは埋め込みプレビューでは表示できません。ウィンドウで開いてください。ログイン（Google/Facebook）やポップアップが動作します。",
+    openInWindow: "ウィンドウで開く",
     openInBrowser: "ブラウザで開く",
     stop: "停止",
     newHint: "または左のサイドバーから Issue を選ぶ／New で作成。",
@@ -440,6 +450,7 @@ export const ja: Messages = {
     pathToShow: "表示するパス（Enter で移動）",
     reload: "再読み込み",
     openInBrowser: "外部ブラウザで開く",
+    frozenForAnnotation: "注釈用に固定したフレーム",
     start: "起動",
     devCommandPortSettings: "dev コマンド / ポート設定",
     settings: "設定",

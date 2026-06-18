@@ -136,9 +136,16 @@ export const en = {
     packageDirMissing: "No package.json in the package directory “{dir}” (it may not exist in this repo). Clear it in Settings to use the repo root, or set the right subfolder.",
     processExited: "The dev server process exited. Check the log below.",
     noResponse: "{target} didn't respond within {sec} seconds. Check the dev command and port.",
-    imageAttached: "Image attached · {name}",
     rustCacheMissing: "The Rust build cache (src-tauri/target) isn't in the main repo, so the first build is a full build (it can take a few minutes).",
     rustCacheCloneFailed: "Couldn't clone the Rust build cache: {msg}",
+  },
+
+  // Chat image attachments (Slack-style tray in the agent terminal, TQ-2).
+  chatAttach: {
+    sendHint: "Press Enter to send with your message",
+    attachAndSend: "Attach & send",
+    remove: "Remove attachment",
+    imageAlt: "Attached image: {name}",
   },
 
   live: {
@@ -148,8 +155,11 @@ export const en = {
     starting: "Starting…",
     routePlaceholder: "/route",
     reload: "Reload",
+    openWindow: "Open in a window",
+    openWindowTip: "Open in a window — sign-in and pop-ups work here (the embedded preview blocks them)",
     openExternal: "Open in browser",
-    frameBlocked: "This app doesn't allow embedded preview. Open it in your browser instead.",
+    frameBlocked: "This app can't be shown in the embedded preview. Open it in a window — sign-in (Google/Facebook) and pop-ups work there.",
+    openInWindow: "Open in a window",
     openInBrowser: "Open in browser",
     stop: "Stop",
     newHint: "Or pick an Issue from the sidebar, or create a New one.",
@@ -441,6 +451,7 @@ export const en = {
     pathToShow: "Path to show (press Enter to navigate)",
     reload: "Reload",
     openInBrowser: "Open in external browser",
+    frozenForAnnotation: "Frozen frame for annotation",
     start: "Start",
     devCommandPortSettings: "dev command / port settings",
     settings: "Settings",
