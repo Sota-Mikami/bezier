@@ -208,6 +208,7 @@ export const en = {
     serverErrorHint: "The page failed on the server — check the OUTPUT log below.",
     emptyTitle: "The server responded but sent no page ({status})",
     emptyHint: "It returned no HTML — this may be an API-only server or the wrong path.",
+    showLog: "Show output",
     dismiss: "Dismiss",
   },
 
@@ -489,6 +490,8 @@ export const en = {
     packageDirLabel: "Package directory (relative to worktree; empty = root)",
     saveAndStart: "Save & start",
     waitingForLog: "(Waiting for log output…)",
+    output: "Output",
+    outputTip: "Show the dev-server output log",
   },
 
   prototype: {

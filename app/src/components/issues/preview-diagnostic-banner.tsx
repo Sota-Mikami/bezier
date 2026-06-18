@@ -18,12 +18,16 @@ export function PreviewDiagnosticBanner({
   status,
   src,
   onDismiss,
+  onShowLog,
 }: {
   verdict: PreviewVerdict;
   status: number | null;
   /** Current URL — for the frameBlocked "open in window" CTA. */
   src: string | null;
   onDismiss: () => void;
+  /** When set (Issue Preview, which has no always-on log), show a "Show output"
+   *  button so the log the message refers to is actually reachable. */
+  onShowLog?: () => void;
 }) {
   const t = useT();
 
@@ -65,6 +69,11 @@ export function PreviewDiagnosticBanner({
           onClick={() => void openLiveWindow(src).catch(() => {})}
         >
           {t("live.openWindow")}
+        </Button>
+      )}
+      {onShowLog && (verdict === "serverError" || verdict === "empty") && (
+        <Button size="sm" variant="outline" className="h-6 shrink-0" onClick={onShowLog}>
+          {t("previewDiag.showLog")}
         </Button>
       )}
       <button

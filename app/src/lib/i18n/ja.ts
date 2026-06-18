@@ -207,6 +207,7 @@ export const ja: Messages = {
     serverErrorHint: "サーバー側でページが失敗しています。下の OUTPUT ログを確認してください。",
     emptyTitle: "サーバーは応答しましたが中身が空です（{status}）",
     emptyHint: "HTML が返っていません。API 専用サーバーか、パスが違う可能性があります。",
+    showLog: "出力を表示",
     dismiss: "閉じる",
   },
 
@@ -488,6 +489,8 @@ export const ja: Messages = {
     packageDirLabel: "パッケージディレクトリ（worktree 相対・空欄＝ルート）",
     saveAndStart: "保存して起動",
     waitingForLog: "（ログ出力を待っています…）",
+    output: "出力ログ",
+    outputTip: "dev サーバーの出力ログを表示",
   },
 
   prototype: {
