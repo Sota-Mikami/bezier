@@ -79,6 +79,32 @@
 
 ---
 
+## G. 実データ survey（2026-06-18・ローカル18 repo）
+
+Bezier の検出＋readiness ヒューリスティクスを**実際のローカル repo 18個**に headless 適用（`/tmp/bezier-survey.mjs`＝preview.ts/readiness.ts の忠実再現）。**検証範囲＝検出＋起動可否**（環境差の breakage はほぼここ）。**render（実際に表示されるか）は GUI 必須＝未検証**。
+
+| 区分 | 件数 | 例 |
+|---|---|---|
+| ◎ START（検出＋起動できる） | **16/18** | Next15/16・Vite5/6・モノレポ含む。SCR は **new-frontend を正しく自動選択**（smart default 動作）。 |
+| × 未対応→noApp カード | 1 | `mikan-for-school`（Ruby）→ DEC-128 の説明カードが出る（無言で詰まない）✓ |
+| △ render 要注意（起動はする） | 5 が auth 依存 | clerk(SCR) / supabase(chom-chom) / firebase(fs-student-web) / next-auth(eiken)。**起動◎だがログイン必須**（埋め込みで通る）、稀に dev 設定調整（SCR の **⚠turbo×clerk** を survey が検出）。 |
+
+**所見**:
+- 検出は強い：あなたの実 repo で **16/18 を正しく検出＋起動**（モノレポの app 選択も的中）。
+- 唯一の非 Node（Ruby）は **P0（DEC-128）で説明化済**＝真の行き止まりは解消。
+- 残る render リスクは **auth（5/18）**：起動はするがログイン＋稀に設定（turbo×clerk）。ここは **Fix with agent** が網。
+- 小さな気づき：`bezier` 自身は `app`/`site` の2アプリで **既定が `site` に**（.env.local/更新時刻で）。誤選択だが**picker で切替可**＝△（実害小）。
+- **未検証＝render**：ログイン後に実際に描画されるかは GUI 要。下の spot-check 推奨。
+
+**GUI spot-check 推奨（render 検証・各1分）**:
+1. 認証なし Next（例 `lumi`/`knot`/`scr-2075`）→ 即表示されるはず（end-to-end ◎）。
+2. auth（`chom-chom`=supabase）→ ログイン画面→ログイン→表示。
+3. Ruby（`mikan-for-school`）→ **「動かせる web アプリが見つかりません」カード**が出る（P0 検証）。
+4. Vite（`pagepeel`）→ 表示。
+5. `fs-student-web`（firebase・node pin 24・fw 不明）→ readiness（Node）→表示。
+
+---
+
 ## F. 一言で
 **「Node/JS web アプリ＝出せる。それ以外＝まず“理由を出す”ところから。」**
 配布の怖さを最短で下げる順: **P0（非 Node の無言 idle を説明に変える＋スコープ明示）→ P2（実アプリ実証）→ P1（△を◎へ）**。
