@@ -57,6 +57,17 @@ interface PromptPhrases {
 
   // --- AI conflict resolution ---
   conflict: (worktree: string, base: string, files: string | null) => string[];
+
+  // --- preview doctor (DEC-127): why won't the preview render, and fix it ---
+  doctorHeader: string;
+  doctorContext: (verdict: string, status: number | null, url: string) => string;
+  doctorEvidence: (logTail: string) => string;
+  /** Generic intro for the reusable /bezier:doctor command (agent reads the log). */
+  doctorCommandIntro: string;
+  /** Common failure classes to triage. */
+  doctorChecklist: string[];
+  /** PR-hygiene + minimal-change constraints. */
+  doctorConstraints: string[];
 }
 
 const JA: PromptPhrases = {
@@ -104,6 +115,33 @@ const JA: PromptPhrases = {
       files ? `衝突ファイル: ${files}。` : "",
       "各ファイルの衝突マーカー (<<<<<<< / ======= / >>>>>>>) を解決し、解決後に `git add` してください（commit は人間が UI の Commit から行います）。",
     ].filter(Boolean),
+
+  doctorHeader: "## プレビュー修復（preview doctor）",
+  doctorContext: (verdict, status, url) =>
+    `プレビューが「起動しているのに中身が出ない」状態です。${url ? `URL: \`${url}\` / ` : ""}HTTP ${status ?? "?"}（${verdict}）。dev サーバーは応答しているのにページがレンダリングされません。`,
+  doctorEvidence: (logTail) =>
+    logTail.trim()
+      ? `\n--- dev サーバーログ（末尾） ---\n${logTail.trim()}\n--- ここまで ---`
+      : "（ログは取得できませんでした。下部 OUTPUT を確認してください）",
+  doctorCommandIntro:
+    "プレビュー（Live / Issue Preview）が「Running なのに中身が出ない・500・404」になっています。下部 OUTPUT ログの dev サーバー出力を読み、原因を切り分けて、このローカル/worktree dev で表示できるよう直してください。",
+  doctorChecklist: [
+    "次の「よくある原因」を切り分けてください（このローカル/worktree dev で SSR が出ない典型）:",
+    "- **env 不足/空**: `.env` / `.env.local` に必要な値があるか（`NEXT_PUBLIC_*`・認証キー・API/GraphQL/REST エンドポイント等）。`process.env.X` を参照しているのに未設定で落ちていないか。",
+    "- **認証ゲート**: 未ログインでルートが 404/リダイレクトしていないか。未認証はサインインか公開ルートへ素直に流す（例: Clerk なら `auth.protect({ unauthenticatedUrl: '/sign-in' })`）。",
+    "- **プロキシ/ポート**: 到達不能な宛先へ proxy していないか（例: `http://localhost`(=80) や別ホスト・ハードコードされたポート）。ログの『Failed to proxy …』『ECONNREFUSED』を確認。",
+    "- **バックエンド未起動**: SSR/データ取得が API/GraphQL/DB に依存し、この dev 環境でそれが起動していない。",
+    "- **Node バージョン/依存**: `node -v` が `engines`/`.nvmrc` と一致するか、`node_modules` は入っているか。",
+  ],
+  doctorConstraints: [
+    "制約（重要）:",
+    "- **最小の変更**でローカル/worktree dev が表示できるようにする。",
+    "- dev 専用の設定は **`.env.local`（gitignore）** に置き、**コミット対象のコードに混ぜない**。",
+    "- コード修正が要る場合も**焦点を絞る**。**いま進行中の issue と無関係なら別の関心事として切り分け**、この issue の変更に混ぜない（PR を綺麗に保つ）。",
+    "- アプリの**挙動を必要以上に変えない**。",
+    "- 原因が**環境要因**（ユーザーが用意すべき backend/secret 等）なら、コードを無理に直さず **何を設定/起動すべきかをユーザーに伝える**。",
+    "- 最後に **変えた点 / ユーザーが用意すべき点** を簡潔に要約する（commit は人間が Bezier の UI から行います）。",
+  ],
 };
 
 const EN: PromptPhrases = {
@@ -152,6 +190,33 @@ const EN: PromptPhrases = {
       files ? `Conflicting files: ${files}.` : "",
       "Resolve the conflict markers (<<<<<<< / ======= / >>>>>>>) in each file and run `git add` once resolved (commits are made by a human from the UI's Commit).",
     ].filter(Boolean),
+
+  doctorHeader: "## Preview doctor",
+  doctorContext: (verdict, status, url) =>
+    `The preview is "running but shows nothing". ${url ? `URL: \`${url}\` / ` : ""}HTTP ${status ?? "?"} (${verdict}). The dev server responds, but the page doesn't render.`,
+  doctorEvidence: (logTail) =>
+    logTail.trim()
+      ? `\n--- dev-server log (tail) ---\n${logTail.trim()}\n--- end ---`
+      : "(No log captured — check the OUTPUT panel below.)",
+  doctorCommandIntro:
+    "The preview (Live / Issue Preview) is \"running but blank, or 500/404\". Read the dev-server output in the OUTPUT panel, triage the cause, and fix it so it renders in this local/worktree dev.",
+  doctorChecklist: [
+    "Triage these common causes (why an SSR preview won't render in local/worktree dev):",
+    "- **Missing/empty env**: are the needed values in `.env` / `.env.local` (`NEXT_PUBLIC_*`, auth keys, API/GraphQL/REST endpoints)? Is something reading `process.env.X` that isn't set and throwing?",
+    "- **Auth gate**: does an unauthenticated request 404/redirect? Send unauthenticated users cleanly to sign-in or a public route (e.g. for Clerk: `auth.protect({ unauthenticatedUrl: '/sign-in' })`).",
+    "- **Proxy/port**: is the app proxying to an unreachable target (e.g. `http://localhost` (=80), another host, or a hardcoded port)? Look for 'Failed to proxy …' / 'ECONNREFUSED' in the log.",
+    "- **Backend not running**: SSR/data fetch depends on an API/GraphQL/DB that isn't up in this dev env.",
+    "- **Node version / deps**: does `node -v` match `engines`/`.nvmrc`, and is `node_modules` installed?",
+  ],
+  doctorConstraints: [
+    "Constraints (important):",
+    "- Make the MINIMAL change to render in local/worktree dev.",
+    "- Put dev-only settings in **`.env.local` (gitignored)**, NOT in committed code.",
+    "- If a code fix is needed, keep it focused. **If it's unrelated to the current issue, isolate it as a separate concern** — don't fold it into this issue's changes (keep the PR clean).",
+    "- Don't change app behavior beyond what's needed.",
+    "- If the cause is environmental (a backend/secret the user must provide), don't hack the code — **tell the user exactly what to set/run**.",
+    "- End by summarizing what you changed / what the user must provide (commits are made by a human from Bezier's UI).",
+  ],
 };
 
 /** The active prompt phrase set (the maker's UI locale, DEC-108). */
@@ -209,6 +274,26 @@ export function designRevisePrompt(id: string, filePath: string, lines: string[]
 
 export function conflictResolvePrompt(worktree: string, base: string, files: string | null): string {
   return promptPhrases().conflict(worktree, base, files).join("\n");
+}
+
+/** Shared doctor body: header + context line(s) + the failure-class checklist +
+ *  the PR-hygiene constraints. Used by the one-click handoff and /bezier:doctor. */
+function doctorBody(p: PromptPhrases, context: string[]): string {
+  return [p.doctorHeader, ...context, "", ...p.doctorChecklist, "", ...p.doctorConstraints].join(
+    "\n",
+  );
+}
+
+/** "Fix preview with agent" (DEC-127): the live verdict + dev-log tail + playbook,
+ *  sent to the user's own agent so it diagnoses & fixes why the preview won't render. */
+export function previewDoctorPrompt(ctx: {
+  verdict: string;
+  status: number | null;
+  url: string;
+  logTail: string;
+}): string {
+  const p = promptPhrases();
+  return doctorBody(p, [p.doctorContext(ctx.verdict, ctx.status, ctx.url), p.doctorEvidence(ctx.logTail)]);
 }
 
 // ===========================================================================
@@ -680,6 +765,11 @@ const JA_COMMANDS: PackCommand[] = [
       "**commit はしない** — 人間が Bezier の UI（Commit / Ship）から行います。",
     ].join("\n"),
   },
+  {
+    name: "doctor",
+    description: "プレビューが「Running なのに中身が出ない/500/404」原因を切り分けて直す",
+    body: doctorBody(JA, [JA.doctorCommandIntro]),
+  },
 ];
 
 const EN_COMMANDS: PackCommand[] = [
@@ -770,6 +860,11 @@ const EN_COMMANDS: PackCommand[] = [
       "",
       "**Don't commit** — a human does that from Bezier's UI (Commit / Ship).",
     ].join("\n"),
+  },
+  {
+    name: "doctor",
+    description: "Triage & fix a preview that's 'running but blank / 500 / 404'",
+    body: doctorBody(EN, [EN.doctorCommandIntro]),
   },
 ];
 

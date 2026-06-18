@@ -209,6 +209,7 @@ export const en = {
     emptyTitle: "The server responded but sent no page ({status})",
     emptyHint: "It returned no HTML — this may be an API-only server or the wrong path.",
     showLog: "Show output",
+    fixWithAgent: "Fix with agent",
     dismiss: "Dismiss",
   },
 

@@ -38,6 +38,8 @@ export function PreviewBottomPanel({
   tab,
   onTab,
   onClose,
+  terminalSpawn,
+  spawnNonce = 0,
 }: {
   /** Dev-server output for the OUTPUT tab. */
   log: string;
@@ -46,6 +48,12 @@ export function PreviewBottomPanel({
   tab: PanelTab;
   onTab: (t: PanelTab) => void;
   onClose: () => void;
+  /** When set, the Terminal tab runs THIS command (e.g. claude seeded with the
+   *  doctor prompt) instead of a bare shell (DEC-127). `wrap` drops back to a
+   *  shell after it exits. */
+  terminalSpawn?: { cmd: string; args?: string[]; wrap?: boolean };
+  /** Bumped per launch so a new spawn remounts the terminal (fresh agent run). */
+  spawnNonce?: number;
 }) {
   const t = useT();
   const [height, setHeight] = React.useState<number>(() => {
@@ -131,6 +139,17 @@ export function PreviewBottomPanel({
               {log.trim() || t("preview.waitingForLog")}
             </pre>
           </ScrollArea>
+        ) : cwd && terminalSpawn ? (
+          // "Fix with agent" run (DEC-127): a fresh claude per launch (key by nonce).
+          // Keyed session → it keeps running while you switch to the OUTPUT tab
+          // (reattaches + replays backlog); `wrap` leaves a shell after it exits.
+          <TerminalPane
+            key={`agent-${spawnNonce}`}
+            cwd={cwd}
+            spawn={terminalSpawn}
+            sessionKey={`agent:${cwd}:${spawnNonce}`}
+            className="h-full"
+          />
         ) : cwd ? (
           // Keyed by cwd → the shell persists across tab-switch / panel-close / pane
           // navigation (reattaches + replays backlog). `shell:` prefix can't collide

@@ -40,6 +40,8 @@ import { AppPicker } from "./app-picker";
 import { usePreviewDiagnostic } from "./use-preview-diagnostic";
 import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
+import { detectAgents } from "@/lib/agents";
+import { previewDoctorPrompt } from "@/lib/prompts";
 import { useReadiness, type ReadinessController } from "./use-readiness";
 import { useRepoFreshness, type RepoFreshness } from "./use-repo-freshness";
 import { useSetupSignals } from "./use-setup-signals";
@@ -103,6 +105,14 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
   // VS-Code-style bottom panel (DEC-126): OUTPUT + Terminal under the running app.
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [panelTab, setPanelTab] = React.useState<PanelTab>("output");
+  // "Fix with agent" (DEC-127): Live has no chat, so launch claude (seeded with the
+  // doctor prompt) in the panel's Terminal tab. Nonce bumps per click → fresh run.
+  const [agentSpawn, setAgentSpawn] = React.useState<{
+    cmd: string;
+    args?: string[];
+    wrap?: boolean;
+  } | null>(null);
+  const [spawnNonce, setSpawnNonce] = React.useState(0);
 
   // Publish the active repo's truth to the sidebar badge store (DEC-111 Phase 4)
   // so its badge is instantly correct after a one-click fix / update — without
@@ -166,6 +176,26 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
   // Verify the loaded page actually renders; explain a 404/5xx/empty instead of a
   // silent blank (DEC-125). Re-probes ride EmbeddedBrowser.onNavigate (DEC-121).
   const diag = usePreviewDiagnostic({ ready, baseUrl: url, src });
+  // "Fix with agent": launch claude (seeded with the verdict + dev-log tail + the
+  // doctor playbook) in the Terminal tab. Live has no chat, so this IS the handoff.
+  const diagVerdict = diag.verdict;
+  const diagStatus = diag.status;
+  const fixWithAgent = React.useCallback(async () => {
+    if (!cwd || !diagVerdict) return;
+    const prompt = previewDoctorPrompt({
+      verdict: diagVerdict,
+      status: diagStatus,
+      url: src ?? "/",
+      logTail: log.split("\n").slice(-60).join("\n"),
+    });
+    const agents = await detectAgents().catch(() => []);
+    const claude =
+      agents.find((a) => a.id === "claude" && a.available) ?? agents.find((a) => a.available);
+    setAgentSpawn({ cmd: claude?.bin ?? "claude", args: [prompt], wrap: true });
+    setSpawnNonce((n) => n + 1);
+    setPanelTab("terminal");
+    setPanelOpen(true);
+  }, [cwd, diagVerdict, diagStatus, src, log]);
   // OUTPUT shows readiness-fix output while preparing, else the dev-server log.
   const panelLog = readiness.log.trim() ? readiness.log : log;
   const panelBusy = installing || !!readiness.busy;
@@ -268,6 +298,7 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
             setPanelTab("output");
             setPanelOpen(true);
           }}
+          onFixWithAgent={() => void fixWithAgent()}
         />
       )}
 
@@ -420,6 +451,8 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
           tab={panelTab}
           onTab={setPanelTab}
           onClose={() => setPanelOpen(false)}
+          terminalSpawn={agentSpawn ?? undefined}
+          spawnNonce={spawnNonce}
         />
       )}
     </div>

@@ -37,7 +37,7 @@ import { openExternal, openLiveWindow, captureRegion } from "@/lib/ipc";
 import { loadImageDataUrl } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
-import { previewFeedbackPrompt } from "@/lib/prompts";
+import { previewFeedbackPrompt, previewDoctorPrompt } from "@/lib/prompts";
 import type { PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
@@ -288,6 +288,21 @@ export function PreviewPane({
     },
     [onEmbedNavigate, diagNavigate],
   );
+
+  // "Fix with agent" (DEC-127): hand the verdict + dev-log tail + doctor playbook
+  // to THIS issue's agent (sendDesignFeedback relaunches claude seeded with it).
+  const diagVerdict = diag.verdict;
+  const diagStatus = diag.status;
+  const fixWithAgent = React.useCallback(() => {
+    if (!session || !diagVerdict) return;
+    const prompt = previewDoctorPrompt({
+      verdict: diagVerdict,
+      status: diagStatus,
+      url: src ?? path,
+      logTail: log.split("\n").slice(-60).join("\n"),
+    });
+    void session.sendDesignFeedback(prompt, "preview_doctor").catch(() => {});
+  }, [session, diagVerdict, diagStatus, src, path, log]);
 
   const handleSubmit = React.useCallback(
     async (cfg: PreviewConfig, alsoStart: boolean) => {
@@ -541,6 +556,7 @@ export function PreviewPane({
             setPanelTab("output");
             setPanelOpen(true);
           }}
+          onFixWithAgent={session ? fixWithAgent : undefined}
         />
       )}
 

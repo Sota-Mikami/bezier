@@ -6,7 +6,7 @@
 // trips the embedded browser's overlay-freeze (which keys off dialog/menu/listbox).
 
 import * as React from "react";
-import { TriangleAlert, X } from "lucide-react";
+import { TriangleAlert, X, Wand2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { openLiveWindow } from "@/lib/ipc";
@@ -19,6 +19,7 @@ export function PreviewDiagnosticBanner({
   src,
   onDismiss,
   onShowLog,
+  onFixWithAgent,
 }: {
   verdict: PreviewVerdict;
   status: number | null;
@@ -28,6 +29,8 @@ export function PreviewDiagnosticBanner({
   /** When set (Issue Preview, which has no always-on log), show a "Show output"
    *  button so the log the message refers to is actually reachable. */
   onShowLog?: () => void;
+  /** Hand the error + a doctor playbook to the user's own agent to fix (DEC-127). */
+  onFixWithAgent?: () => void;
 }) {
   const t = useT();
 
@@ -74,6 +77,12 @@ export function PreviewDiagnosticBanner({
       {onShowLog && (verdict === "serverError" || verdict === "empty") && (
         <Button size="sm" variant="outline" className="h-6 shrink-0" onClick={onShowLog}>
           {t("previewDiag.showLog")}
+        </Button>
+      )}
+      {onFixWithAgent && verdict !== "frameBlocked" && (
+        <Button size="sm" className="h-6 shrink-0 gap-1" onClick={onFixWithAgent}>
+          <Wand2 className="size-3" />
+          {t("previewDiag.fixWithAgent")}
         </Button>
       )}
       <button

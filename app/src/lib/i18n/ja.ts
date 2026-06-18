@@ -208,6 +208,7 @@ export const ja: Messages = {
     emptyTitle: "サーバーは応答しましたが中身が空です（{status}）",
     emptyHint: "HTML が返っていません。API 専用サーバーか、パスが違う可能性があります。",
     showLog: "出力を表示",
+    fixWithAgent: "Agent に直してもらう",
     dismiss: "閉じる",
   },
 
