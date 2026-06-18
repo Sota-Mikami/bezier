@@ -648,6 +648,22 @@ fn embed_browser_navigate(app: tauri::AppHandle, url: String) -> Result<(), Stri
     Ok(())
 }
 
+/// Read the embedded browser's CURRENT url — for syncing the preview address bar
+/// to where the page actually is. The page navigates itself constantly (link
+/// clicks, auth redirects, OAuth return) and `wv.url()` reflects the live
+/// document URL (WKWebView updates it on History API pushState too), so the
+/// frontend polls this and rewrites the path box. Returns None if no embedded
+/// browser exists yet (caller leaves the bar as-is).
+#[tauri::command]
+fn embed_browser_url(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    if let Some(wv) = app.get_webview("embedded-browser") {
+        let url = wv.url().map_err(|e| e.to_string())?;
+        Ok(Some(url.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Hide the embedded browser (pane not the active surface) — kept alive so the
 /// session/page survive; just not shown (a native webview ignores CSS display).
 #[tauri::command]
@@ -3433,6 +3449,7 @@ pub fn run() {
             embed_browser_open,
             embed_browser_set_bounds,
             embed_browser_navigate,
+            embed_browser_url,
             embed_browser_hide,
             embed_browser_close,
             open_in_editor,

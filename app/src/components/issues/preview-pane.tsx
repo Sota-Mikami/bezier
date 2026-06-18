@@ -188,6 +188,7 @@ export function PreviewPane({
   const [customH, setCustomH] = React.useState(900);
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
+  const pathInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const running = status === "starting" || status === "ready";
 
@@ -236,6 +237,30 @@ export function PreviewPane({
     setPathDraft(p);
     setReloadNonce((n) => n + 1); // navigate (force even if unchanged)
   }, [pathDraft]);
+
+  // Reflect the browser's OWN navigation in the address bar (DEC-120 follow-up):
+  // the page redirects (auth gate, OAuth return), follows links, or pushState's —
+  // mirror that into the path box so it always shows where the preview really is.
+  // Only same-origin (in-app) nav is reflected; during OAuth the browser is
+  // briefly on an external origin (accounts.google.com) which we can't express as
+  // an in-app path, so we leave the last in-app path showing until it returns.
+  const onEmbedNavigate = React.useCallback(
+    (rawUrl: string) => {
+      if (!url) return;
+      try {
+        const nav = new URL(rawUrl);
+        const base = new URL(url);
+        if (nav.origin !== base.origin) return; // external (OAuth) → don't reflect
+        const rel = (nav.pathname + nav.search + nav.hash) || "/";
+        setPath(rel);
+        // Don't clobber what the user is actively typing into the path box.
+        if (document.activeElement !== pathInputRef.current) setPathDraft(rel);
+      } catch {
+        /* unparseable URL → ignore */
+      }
+    },
+    [url],
+  );
 
   const handleSubmit = React.useCallback(
     async (cfg: PreviewConfig, alsoStart: boolean) => {
@@ -382,12 +407,13 @@ export function PreviewPane({
             >
               <Route className="size-3 shrink-0 text-muted-foreground" />
               <input
+                ref={pathInputRef}
                 value={pathDraft}
                 onChange={(e) => setPathDraft(e.target.value)}
                 spellCheck={false}
                 placeholder="/"
                 title={t("preview.pathToShow")}
-                className="h-6 w-28 bg-transparent font-mono text-[11px] outline-none placeholder:text-muted-foreground"
+                className="h-6 w-36 bg-transparent font-mono text-[11px] outline-none placeholder:text-muted-foreground"
               />
             </form>
             {/* Reload lives with the center viewport controls, not the right. */}
@@ -498,6 +524,7 @@ export function PreviewPane({
                   active={!(annotating && !!frozenShot)}
                   reloadKey={reloadNonce}
                   captureDir={issueDir ? `${issueDir}/feedback` : undefined}
+                  onNavigate={onEmbedNavigate}
                 />
                 {/* Frozen-frame annotation: the still + the shared AnnotationLayer
                     (DEC-045/046/056 → edits the worktree CODE). The native webview

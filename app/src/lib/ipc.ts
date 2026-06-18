@@ -211,6 +211,12 @@ export function embedBrowserNavigate(url: string): Promise<void> {
   return invoke<void>("embed_browser_navigate", { url });
 }
 
+/** Read the embedded browser's current URL (to sync the address bar to where
+ *  the page actually navigated). Null if no embedded browser exists yet. */
+export function embedBrowserUrl(): Promise<string | null> {
+  return invoke<string | null>("embed_browser_url");
+}
+
 /** Hide the embedded browser (kept alive; just not shown). */
 export function embedBrowserHide(): Promise<void> {
   return invoke<void>("embed_browser_hide");

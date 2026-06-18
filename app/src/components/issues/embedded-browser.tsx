@@ -24,6 +24,7 @@ import {
   embedBrowserOpen,
   embedBrowserSetBounds,
   embedBrowserNavigate,
+  embedBrowserUrl,
   embedBrowserHide,
   embedBrowserClose,
   captureRegion,
@@ -99,16 +100,20 @@ export function EmbeddedBrowser({
   active,
   reloadKey = 0,
   captureDir,
+  onNavigate,
 }: {
   /** Full URL (origin + path) the embedded browser should load. */
   src: string;
   /** Browser mode on AND this surface should show it (e.g. not annotating). */
   active: boolean;
-  /** Bump to force a navigate (reload button / route change). */
+  /** Bump to force a navigate (reload button / route submit). */
   reloadKey?: number;
   /** A granted `.bezier` dir to write the freeze screenshot into. Without it,
    *  an overlapping overlay falls back to hiding the browser (blank). */
   captureDir?: string;
+  /** Called (full URL) whenever the page navigates ITSELF — links, redirects,
+   *  OAuth return, SPA pushState — so the caller can sync its address bar. */
+  onNavigate?: (url: string) => void;
 }) {
   const slotRef = React.useRef<HTMLDivElement | null>(null);
   const createdRef = React.useRef(false); // add_child has run
@@ -116,6 +121,13 @@ export function EmbeddedBrowser({
   const lastRectRef = React.useRef<Rect | null>(null);
   const disposedRef = React.useRef(false);
   const capturingRef = React.useRef(false);
+  // Last URL reported to onNavigate (dedupe the poll) + the latest callback in a
+  // ref so the mount-keyed observer loop reads it without re-subscribing.
+  const lastUrlRef = React.useRef<string | null>(null);
+  const onNavigateRef = React.useRef(onNavigate);
+  React.useEffect(() => {
+    onNavigateRef.current = onNavigate;
+  }, [onNavigate]);
   // Freeze still shown while an overlay overlaps (ref mirrors state so the
   // mount-keyed sync loop reads the latest synchronously).
   const [freeze, setFreeze] = React.useState<string | null>(null);
@@ -241,6 +253,19 @@ export function EmbeddedBrowser({
     const mo = new MutationObserver(schedule);
     mo.observe(document.body, { childList: true, subtree: true });
     const tick = window.setInterval(sync, 300);
+    // Poll the webview's actual URL (separate, slower cadence than sync — sync
+    // fires on every DOM mutation) and report changes so the address bar tracks
+    // where the page went on its own. Only while the live webview is shown.
+    const urlTick = window.setInterval(() => {
+      if (!createdRef.current || disposedRef.current || !shownRef.current) return;
+      void embedBrowserUrl()
+        .then((u) => {
+          if (!u || disposedRef.current || u === lastUrlRef.current) return;
+          lastUrlRef.current = u;
+          onNavigateRef.current?.(u);
+        })
+        .catch(() => {});
+    }, 300);
     return () => {
       ro.disconnect();
       io.disconnect();
@@ -249,17 +274,32 @@ export function EmbeddedBrowser({
       window.removeEventListener("resize", onWin);
       window.removeEventListener("scroll", onWin, true);
       window.clearInterval(tick);
+      window.clearInterval(urlTick);
     };
   }, [sync]);
 
-  // Navigate on route/reload changes — but only once the child exists, and never
-  // on first mount (add_child already loads `src`, re-navigating would reload it).
+  // Keep the latest target URL in a ref (used by open + reload-driven navigate).
+  // NOTE: a `src` change alone must NOT navigate — the address-bar sync updates
+  // `src` from the page's OWN navigation (onNavigate → caller setPath), so
+  // re-navigating here would bounce the webview back / loop.
   React.useEffect(() => {
     srcRef.current = src;
-    if (createdRef.current && !disposedRef.current) {
-      void embedBrowserNavigate(src).catch(() => {});
+  }, [src]);
+
+  // Navigate ONLY on an explicit reload/route-submit (reloadKey bump from the
+  // address bar's submit or the reload button). Skip the initial mount —
+  // add_child already loaded `src`.
+  const mountedReloadRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!mountedReloadRef.current) {
+      mountedReloadRef.current = true;
+      return;
     }
-  }, [src, reloadKey]);
+    if (createdRef.current && !disposedRef.current) {
+      lastUrlRef.current = null; // force the next poll to re-report the new page
+      void embedBrowserNavigate(srcRef.current).catch(() => {});
+    }
+  }, [reloadKey]);
 
   // Destroy the native webview when this surface goes away (issue switch, mode
   // off, unmount). Runs once on unmount.
