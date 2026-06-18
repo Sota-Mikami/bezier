@@ -7,8 +7,13 @@
 // can explain it instead of blanking. Re-probes ride the embedded browser's
 // onNavigate signal (DEC-121) — no extra polling loop.
 //
-// SCOPE: server-observable only. A client-rendered SPA that 200s then blanks from a
-// JS error is invisible here (see verdictFor in lib/preview).
+// SCOPE: server-observable only, and SESSIONLESS — the probe is a raw server GET
+// with no login cookie, so it can't see the user's authenticated view. It is a
+// STARTUP SMOKE TEST: it explains an initial blank/error, re-probes slowly to clear
+// a transient/stale one, and the moment a probe sees a good page it SETTLES and goes
+// dormant — otherwise it would keep false-flagging an auth-gated app the moment the
+// user logs in (DEC-127 follow-up). A client-rendered SPA that 200s then blanks from
+// a JS error is also invisible here (see verdictFor in lib/preview).
 
 import * as React from "react";
 
@@ -42,6 +47,9 @@ export function usePreviewDiagnostic({
   const lastUrlRef = React.useRef<string | null>(null);
   const timerRef = React.useRef<number | null>(null);
   const seqRef = React.useRef(0); // supersede in-flight probes / cancellations
+  // Once a probe sees a good page, the smoke test passes → go dormant (the
+  // sessionless probe can't judge the app once the user logs in). Reset per ready.
+  const settledRef = React.useRef(false);
 
   // Dev-server origin; external pages (OAuth bounce) aren't ours to diagnose.
   const baseOrigin = React.useMemo(() => {
@@ -54,6 +62,7 @@ export function usePreviewDiagnostic({
   }, [baseUrl]);
 
   const runProbe = React.useCallback(async (url: string) => {
+    if (settledRef.current) return; // smoke test already passed → dormant
     const seq = ++seqRef.current;
     const res = await httpProbe(url);
     if (seq !== seqRef.current) return; // superseded by a newer nav / cancel
@@ -62,13 +71,23 @@ export function usePreviewDiagnostic({
     // Moving to a different page clears a prior dismissal.
     if (url !== dismissedUrlRef.current) dismissedUrlRef.current = null;
     const v = verdictFor(res);
-    if (v && url === dismissedUrlRef.current) return; // user dismissed this page
-    setVerdict(v); // null clears the banner (reached a good 200 HTML page)
+    if (!v) {
+      // Good page (200 HTML / redirect): the smoke test passed. Settle + go
+      // dormant so we never re-flag this (possibly auth-gated) app once the user
+      // is past the entry — the sessionless probe can't judge it from here on.
+      settledRef.current = true;
+      setVerdict(null);
+      setStatus(res.status);
+      return;
+    }
+    if (url === dismissedUrlRef.current) return; // user dismissed this page
+    setVerdict(v);
     setStatus(res.status);
   }, []);
 
   const request = React.useCallback(
     (url: string, debounceMs: number) => {
+      if (settledRef.current) return;
       if (timerRef.current) window.clearTimeout(timerRef.current);
       timerRef.current = window.setTimeout(() => {
         timerRef.current = null;
@@ -89,6 +108,7 @@ export function usePreviewDiagnostic({
       // supersedes it.
       dismissedUrlRef.current = null;
       lastUrlRef.current = null;
+      settledRef.current = false; // fresh start → run the smoke test again
       setVerdict(null);
       setStatus(null);
     };
@@ -100,6 +120,19 @@ export function usePreviewDiagnostic({
   React.useEffect(() => {
     if (ready && src) request(src, 0);
   }, [ready, src, request]);
+
+  // Slow re-probe until the smoke test passes: clears a stale/transient error once
+  // the page recovers (e.g. a startup 500 during recompile that the URL-change
+  // signal alone would miss). Stops the moment a probe settles (good page).
+  React.useEffect(() => {
+    if (!ready) return;
+    const id = window.setInterval(() => {
+      if (settledRef.current) return;
+      const u = lastUrlRef.current ?? src;
+      if (u) void runProbe(u);
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [ready, src, runProbe]);
 
   const onNavigate = React.useCallback(
     (rawUrl: string) => {
