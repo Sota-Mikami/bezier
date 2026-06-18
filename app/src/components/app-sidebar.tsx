@@ -245,12 +245,14 @@ export function AppSidebar() {
     };
   }, [recents]);
 
-  // Issues: load expanded repos (or all when searching, for a global filter).
+  // Issues: eager-load EVERY recent repo's issues (deduped via the in-flight
+  // guard; listIssues is one cheap IPC/repo). Eager so ⌘⇧↑/↓ can move between
+  // issues across ALL repos without first landing on (and remounting) each repo's
+  // heavy Live view (DEC-124) — and so per-repo counts are right while collapsed.
   const searching = query.trim().length > 0;
   React.useEffect(() => {
-    const paths = searching ? recents.map((r) => r.path) : [...expanded];
-    for (const p of paths) if (!(p in issuesByRepo)) void loadIssues(p);
-  }, [searching, recents, expanded, issuesByRepo, loadIssues]);
+    for (const r of recents) if (!(r.path in issuesByRepo)) void loadIssues(r.path);
+  }, [recents, issuesByRepo, loadIssues]);
 
   // Refresh the active repo's issues AND trash on navigation, so a detail-view
   // change (trash / restore / commit) reflects here when you come back. Deferred
@@ -497,56 +499,63 @@ export function AppSidebar() {
     [q],
   );
 
-  // Keyboard navigation through the sidebar (⌘⇧↓ / ⌘⇧↑): walk the SAME order the
-  // list renders — each repo's Live entry, then (if that repo is open) its visible
-  // issues — across all repos. Mirrors what the eye sees so next/prev is predictable.
-  const navTargets = React.useMemo(() => {
-    const out: (
-      | { kind: "live"; repo: string }
-      | { kind: "issue"; repo: string; id: string }
-    )[] = [];
+  // Keyboard navigation (⌘⇧↓ / ⌘⇧↑) walks ISSUES ONLY (DEC-124). Live entries are
+  // NOT keyboard targets — landing on one switches repos AND remounts the heavy
+  // Live view, which the CEO felt as もたつき even after the probe-deferral (DEC-123).
+  // Live stays reachable by clicking the repo name. The list spans ALL repos in
+  // render order (issues are eager-loaded above), respecting search + pagination;
+  // the landed repo is expanded on arrival so its row is visible.
+  const issueNav = React.useMemo(() => {
+    const out: { repo: string; id: string }[] = [];
     if (showTrash) return out;
     for (const r of recents) {
-      out.push({ kind: "live", repo: r.path });
-      if (!(expanded.has(r.path) || searching)) continue;
       const all = issuesByRepo[r.path] ?? [];
       const filtered = q ? all.filter(matches) : all;
       const shown = showAll.has(r.path) || q ? filtered : filtered.slice(0, PAGE);
-      for (const issue of shown) out.push({ kind: "issue", repo: r.path, id: issue.id });
+      for (const issue of shown) out.push({ repo: r.path, id: issue.id });
     }
     return out;
-  }, [showTrash, recents, expanded, searching, issuesByRepo, q, matches, showAll]);
+  }, [showTrash, recents, issuesByRepo, q, matches, showAll]);
   // Read the latest list from the keydown handler without re-subscribing per change.
-  const navTargetsRef = React.useRef(navTargets);
+  const issueNavRef = React.useRef(issueNav);
   React.useEffect(() => {
-    navTargetsRef.current = navTargets;
-  }, [navTargets]);
+    issueNavRef.current = issueNav;
+  }, [issueNav]);
 
   const moveSelection = React.useCallback(
     (dir: 1 | -1) => {
-      const list = navTargetsRef.current;
+      const list = issueNavRef.current;
       if (list.length === 0) return;
-      const cur = list.findIndex((tg) =>
-        selectedId
-          ? tg.kind === "issue" && tg.id === selectedId
-          : tg.kind === "live" && tg.repo === root,
-      );
-      const nextIdx =
-        cur < 0
-          ? dir === 1
-            ? 0
-            : list.length - 1
-          : Math.min(list.length - 1, Math.max(0, cur + dir));
+      let nextIdx: number;
+      const cur = selectedId ? list.findIndex((t) => t.id === selectedId) : -1;
+      if (cur >= 0) {
+        // On an issue → step to the adjacent issue (clamped at the ends).
+        nextIdx = Math.min(list.length - 1, Math.max(0, cur + dir));
+      } else {
+        // On a Live/home view (no issue selected) → anchor to the ACTIVE repo:
+        // ↓ enters its first issue, ↑ goes to the previous repo's last issue.
+        const recIdx = new Map(recents.map((r, i) => [r.path, i] as const));
+        const rootIdx = (root ? recIdx.get(root) : undefined) ?? 0;
+        if (dir === 1) {
+          nextIdx = list.findIndex((t) => (recIdx.get(t.repo) ?? 0) >= rootIdx);
+          if (nextIdx < 0) nextIdx = list.length - 1; // none at/after → last
+        } else {
+          nextIdx = -1;
+          for (let i = list.length - 1; i >= 0; i--) {
+            if ((recIdx.get(list[i].repo) ?? 0) < rootIdx) {
+              nextIdx = i; // last issue before the active repo's block
+              break;
+            }
+          }
+          if (nextIdx < 0) nextIdx = 0; // none before → first
+        }
+      }
       const tgt = list[nextIdx];
       if (!tgt) return;
-      if (tgt.kind === "live") {
-        expandRepo(tgt.repo); // open it so a further ↓ descends into its issues
-        selectLive(tgt.repo);
-      } else {
-        selectIssue(tgt.repo, tgt.id);
-      }
+      expandRepo(tgt.repo); // ensure the landed repo is open so its row is visible
+      selectIssue(tgt.repo, tgt.id);
     },
-    [selectedId, root, expandRepo, selectLive, selectIssue],
+    [selectedId, root, recents, expandRepo, selectIssue],
   );
 
   // ⌘⇧↑/↓ — move through the sidebar from anywhere (capture phase + exact chord, so
