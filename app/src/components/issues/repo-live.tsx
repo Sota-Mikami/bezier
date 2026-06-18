@@ -36,6 +36,9 @@ import { cn } from "@/lib/utils";
 import { setRepoStatus } from "@/lib/repo-status";
 import { usePreviewServer } from "./use-preview-server";
 import { EmbeddedBrowser } from "./embedded-browser";
+import { AppPicker } from "./app-picker";
+import { usePreviewDiagnostic } from "./use-preview-diagnostic";
+import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 import { useReadiness, type ReadinessController } from "./use-readiness";
 import { useRepoFreshness, type RepoFreshness } from "./use-repo-freshness";
 import { useSetupSignals } from "./use-setup-signals";
@@ -64,7 +67,8 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
   const t = useT();
   // worktreePath === root → the "live" path (no node_modules clone, read-only).
   const live = usePreviewServer(root, root, `live:${root}`);
-  const { status, url, error, log, installing, installCmd, config, start, stop, installDeps } = live;
+  const { status, url, error, log, installing, installCmd, config, apps, selectApp, start, stop, installDeps } =
+    live;
 
   // Defer the repo-health probes off the landing path (DEC-123). RepoLive is kept
   // MOUNTED while hidden under an issue (DEC-113) and is REMOUNTED on repo switch,
@@ -155,6 +159,9 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
 
   const src = url ? url.replace(/\/+$/, "") + (path.startsWith("/") ? path : `/${path}`) : null;
   const ready = status === "ready" && !!src;
+  // Verify the loaded page actually renders; explain a 404/5xx/empty instead of a
+  // silent blank (DEC-125). Re-probes ride EmbeddedBrowser.onNavigate (DEC-121).
+  const diag = usePreviewDiagnostic({ ready, baseUrl: url, src });
   // OUTPUT shows readiness-fix output while preparing, else the dev-server log.
   const panelLog = readiness.log.trim() ? readiness.log : log;
   const panelBusy = installing || !!readiness.busy;
@@ -171,6 +178,11 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
         <MonitorPlay className="size-4 text-muted-foreground" />
         <span className="text-sm font-medium">{t("live.title")}</span>
         <span className="truncate text-xs text-muted-foreground">{repoName(root)}</span>
+        <AppPicker
+          apps={apps}
+          active={config?.packageDir ?? ""}
+          onSelect={(pd) => void selectApp(pd)}
+        />
         {ready && (
           <div className="ml-auto flex items-center gap-1.5">
             <input
@@ -228,6 +240,15 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
 
       <FreshnessBanner f={freshness} root={root} />
 
+      {ready && !showTerminal && diag.verdict && (
+        <PreviewDiagnosticBanner
+          verdict={diag.verdict}
+          status={diag.status}
+          src={src}
+          onDismiss={diag.dismiss}
+        />
+      )}
+
       <div className={cn("relative min-h-0 flex-1", ready && !showTerminal && "bg-white")}>
         {showTerminal ? (
           <SetupTerminal
@@ -238,7 +259,13 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
           // Live = the same native embedded browser (DEC-120): OAuth/login works
           // inline, and X-Frame-Options no longer matters (it's a real top-level
           // browser, not an iframe). Path changes / reload re-point it via `src`.
-          <EmbeddedBrowser src={src!} active reloadKey={0} captureDir={`${root}/.bezier`} />
+          <EmbeddedBrowser
+            src={src!}
+            active
+            reloadKey={0}
+            captureDir={`${root}/.bezier`}
+            onNavigate={diag.onNavigate}
+          />
         ) : (
           <div className="flex h-full flex-col">
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-8 text-center">

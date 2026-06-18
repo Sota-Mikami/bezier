@@ -199,6 +199,24 @@ export const ja: Messages = {
     setupEscape: "自分でセットアップする",
   },
 
+  previewDiag: {
+    notFoundTitle: "このページは {status} を返しました",
+    notFoundHint:
+      "サインインが必要か、/ がルートでないかもしれません。アドレスバーで別のパス（例: /sign-in）を試してください。",
+    serverErrorTitle: "アプリがエラーになりました（{status}）",
+    serverErrorHint: "サーバー側でページが失敗しています。下の OUTPUT ログを確認してください。",
+    emptyTitle: "サーバーは応答しましたが中身が空です（{status}）",
+    emptyHint: "HTML が返っていません。API 専用サーバーか、パスが違う可能性があります。",
+    dismiss: "閉じる",
+  },
+
+  appPicker: {
+    label: "アプリ",
+    tip: "このリポジトリには実行可能なアプリが複数あります。プレビューするアプリを選んでください。",
+    appAt: "{name}（{dir}）",
+    appRoot: "{name}（ルート）",
+  },
+
   freshness: {
     behind: "{base} が origin より {n} 件遅れています",
     update: "最新化する",

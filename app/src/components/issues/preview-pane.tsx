@@ -43,6 +43,9 @@ import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
 import { useAnnotationMode } from "./annotation-mode";
 import { EmbeddedBrowser } from "./embedded-browser";
+import { AppPicker } from "./app-picker";
+import { usePreviewDiagnostic } from "./use-preview-diagnostic";
+import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 
 function statusLabel(status: PreviewStatus): string {
   switch (status) {
@@ -168,7 +171,7 @@ export function PreviewPane({
   session?: ImplementSession;
 }) {
   const t = useT();
-  const { status, config, scriptsDev, log, error, url, configLoaded } = server;
+  const { status, config, apps, selectApp, scriptsDev, log, error, url, configLoaded } = server;
   const { on: annotating } = useAnnotationMode();
 
   const [showSettings, setShowSettings] = React.useState(false);
@@ -262,6 +265,23 @@ export function PreviewPane({
     [url],
   );
 
+  // Self-diagnose a ready-but-blank page (DEC-125): probe the loaded URL and show
+  // a banner for 404/5xx/empty instead of a silent blank. Feed the same onNavigate
+  // signal that drives the address bar.
+  const diag = usePreviewDiagnostic({
+    ready: status === "ready" && !!url,
+    baseUrl: url,
+    src: src ?? null,
+  });
+  const diagNavigate = diag.onNavigate;
+  const handleNavigate = React.useCallback(
+    (u: string) => {
+      onEmbedNavigate(u);
+      diagNavigate(u);
+    },
+    [onEmbedNavigate, diagNavigate],
+  );
+
   const handleSubmit = React.useCallback(
     async (cfg: PreviewConfig, alsoStart: boolean) => {
       await server.saveConfig(cfg);
@@ -334,6 +354,11 @@ export function PreviewPane({
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <RunningBadge status={status} onStop={() => void server.stop()} />
+          <AppPicker
+            apps={apps}
+            active={config?.packageDir ?? ""}
+            onSelect={(pd) => void selectApp(pd)}
+          />
         </div>
 
         {/* Center: responsive viewport + navigated path (only once running). */}
@@ -487,6 +512,17 @@ export function PreviewPane({
         />
       )}
 
+      {/* Self-diagnosis banner (DEC-125) — above the pane so the device-cap
+          ResizeObserver recomputes; hidden while annotating a frozen frame. */}
+      {status === "ready" && diag.verdict && !(annotating && frozenShot) && (
+        <PreviewDiagnosticBanner
+          verdict={diag.verdict}
+          status={diag.status}
+          src={src ?? null}
+          onDismiss={diag.dismiss}
+        />
+      )}
+
       {/* Body */}
       <div ref={paneRef} className="relative min-h-0 flex-1">
         {status === "ready" && url ? (
@@ -524,7 +560,7 @@ export function PreviewPane({
                   active={!(annotating && !!frozenShot)}
                   reloadKey={reloadNonce}
                   captureDir={issueDir ? `${issueDir}/feedback` : undefined}
-                  onNavigate={onEmbedNavigate}
+                  onNavigate={handleNavigate}
                 />
                 {/* Frozen-frame annotation: the still + the shared AnnotationLayer
                     (DEC-045/046/056 → edits the worktree CODE). The native webview

@@ -200,6 +200,24 @@ export const en = {
     setupEscape: "Set it up yourself",
   },
 
+  previewDiag: {
+    notFoundTitle: "This page returned {status}",
+    notFoundHint:
+      "The app may need sign-in, or / isn't a route. Try another path in the address bar (e.g. /sign-in).",
+    serverErrorTitle: "The app errored ({status})",
+    serverErrorHint: "The page failed on the server — check the OUTPUT log below.",
+    emptyTitle: "The server responded but sent no page ({status})",
+    emptyHint: "It returned no HTML — this may be an API-only server or the wrong path.",
+    dismiss: "Dismiss",
+  },
+
+  appPicker: {
+    label: "App",
+    tip: "This repo has multiple runnable apps — choose which one to preview.",
+    appAt: "{name} (at {dir})",
+    appRoot: "{name} (root)",
+  },
+
   freshness: {
     behind: "{base} is {n} update(s) behind origin",
     update: "Update",

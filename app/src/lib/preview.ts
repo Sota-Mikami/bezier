@@ -18,7 +18,7 @@
 //      before launching.
 
 import { invoke } from "@tauri-apps/api/core";
-import { readFile, writeFile } from "@/lib/ipc";
+import { readFile, writeFile, listDir, pathMtime, type FileEntry } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
 
 /**
@@ -163,20 +163,8 @@ export function detectFramework(cmd: string): Framework {
 const DEV_SCRIPT_NAMES = ["dev", "develop", "serve", "start"];
 const PROD_START_RE = /\bnext start\b|^\s*node\b|\bserve\s+-s\b|NODE_ENV=production/;
 
-/** Find the best dev script in `<dir>/package.json`: its name + command, or null. */
-async function readDevScript(dir: string): Promise<{ name: string; cmd: string } | null> {
-  let text: string;
-  try {
-    text = await readFile(`${stripTrailingSlash(dir)}/package.json`);
-  } catch {
-    return null;
-  }
-  let scripts: Record<string, unknown>;
-  try {
-    scripts = (JSON.parse(text) as { scripts?: Record<string, unknown> }).scripts ?? {};
-  } catch {
-    return null;
-  }
+/** Pick the best dev script (dev/develop/serve/start, prod `start` excluded). */
+function pickDevScript(scripts: Record<string, unknown>): { name: string; cmd: string } | null {
   for (const name of DEV_SCRIPT_NAMES) {
     const cmd = scripts[name];
     if (typeof cmd !== "string" || !cmd.trim()) continue;
@@ -184,6 +172,37 @@ async function readDevScript(dir: string): Promise<{ name: string; cmd: string }
     return { name, cmd };
   }
   return null;
+}
+
+/** Read a package.json's scripts + (dev+prod) dependencies, or null if absent. */
+async function readPackageInfo(
+  dir: string,
+): Promise<{ scripts: Record<string, unknown>; deps: Record<string, string> } | null> {
+  let text: string;
+  try {
+    text = await readFile(`${stripTrailingSlash(dir)}/package.json`);
+  } catch {
+    return null;
+  }
+  try {
+    const pkg = JSON.parse(text) as {
+      scripts?: Record<string, unknown>;
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    return {
+      scripts: pkg.scripts ?? {},
+      deps: { ...(pkg.devDependencies ?? {}), ...(pkg.dependencies ?? {}) },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Find the best dev script in `<dir>/package.json`: its name + command, or null. */
+async function readDevScript(dir: string): Promise<{ name: string; cmd: string } | null> {
+  const info = await readPackageInfo(dir);
+  return info ? pickDevScript(info.scripts) : null;
 }
 
 /**
@@ -219,6 +238,113 @@ export async function detectDev(dir: string): Promise<DevDetect> {
   }
 
   return { scriptName: null, scriptsDev: null, framework: null, packageDir: "" };
+}
+
+/** A runnable app found in the repo (DEC-125 / ideas-backlog §G). */
+export interface DetectedApp {
+  /** Relative dir ("" = root). */
+  packageDir: string;
+  scriptName: string;
+  scriptsDev: string;
+  framework: Framework;
+  /** Framework version from package.json deps (e.g. "15.3.9"), or null. */
+  frameworkVersion: string | null;
+  /** `.env.local`/`.env` present in the package dir (a "configured/active" signal). */
+  hasEnvLocal: boolean;
+  /** package.json mtime (recency tiebreak). */
+  mtime: number;
+}
+
+// Monorepo container dirs whose CHILDREN are the apps — scanned one level deeper.
+const MONOREPO_CONTAINERS = ["packages", "apps", "prototypes", "examples"] as const;
+
+function frameworkVersionFrom(fw: Framework, deps: Record<string, string>): string | null {
+  if (!fw) return null;
+  const raw = deps[fw];
+  return typeof raw === "string" ? raw.replace(/^[\^~>=v\s]+/, "") : null;
+}
+
+/** `.env.local`/`.env` present (existence only — never reads the file/secrets). */
+async function dirHasEnvLocal(dir: string): Promise<boolean> {
+  try {
+    const entries = await listDir(stripTrailingSlash(dir));
+    return entries.some((e) => e.name === ".env.local" || e.name === ".env");
+  } catch {
+    return false;
+  }
+}
+
+async function appAt(root: string, packageDir: string): Promise<DetectedApp | null> {
+  const dir = packageCwd(root, packageDir);
+  const info = await readPackageInfo(dir);
+  if (!info) return null;
+  const dev = pickDevScript(info.scripts);
+  if (!dev) return null;
+  const framework = detectFramework(dev.cmd);
+  const [hasEnvLocal, mtime] = await Promise.all([
+    dirHasEnvLocal(dir),
+    pathMtime(`${stripTrailingSlash(dir)}/package.json`).catch(() => null),
+  ]);
+  return {
+    packageDir: normalizeRelDir(packageDir),
+    scriptName: dev.name,
+    scriptsDev: dev.cmd,
+    framework,
+    frameworkVersion: frameworkVersionFrom(framework, info.deps),
+    hasEnvLocal,
+    mtime: mtime ?? 0,
+  };
+}
+
+/**
+ * ALL runnable apps in a repo — root + every immediate subdir + one level inside
+ * monorepo containers (packages/apps/prototypes/examples). Powers the app-picker +
+ * smart default (DEC-125 / ideas-backlog §G), so a monorepo with multiple frontends
+ * (e.g. `frontend/` Next 13 vs `new-frontend/` Next 15) no longer silently runs the
+ * wrong one. `list_dir` already skips node_modules/.next/etc.
+ */
+export async function detectApps(dir: string): Promise<DetectedApp[]> {
+  const root = stripTrailingSlash(dir);
+  const candidates = new Set<string>([""]);
+  let children: FileEntry[] = [];
+  try {
+    children = await listDir(root);
+  } catch {
+    /* unreadable root */
+  }
+  for (const c of children) {
+    if (!c.isDir) continue;
+    candidates.add(c.name);
+    if ((MONOREPO_CONTAINERS as readonly string[]).includes(c.name)) {
+      try {
+        const grand = await listDir(c.path);
+        for (const g of grand) if (g.isDir) candidates.add(`${c.name}/${g.name}`);
+      } catch {
+        /* unreadable container */
+      }
+    }
+  }
+  const apps = await Promise.all([...candidates].map((pd) => appAt(root, pd).catch(() => null)));
+  return apps.filter((a): a is DetectedApp => a !== null);
+}
+
+/**
+ * Pick the "current" app when several exist (ideas-backlog §G heuristic): prefer one
+ * with local env, then a newer framework major, then most recently touched.
+ */
+export function pickDefaultApp(apps: DetectedApp[]): DetectedApp | undefined {
+  if (apps.length <= 1) return apps[0];
+  const major = (v: string | null) => {
+    const m = v?.match(/^(\d+)/);
+    return m ? Number(m[1]) : 0;
+  };
+  return [...apps].sort((a, b) => {
+    if (a.hasEnvLocal !== b.hasEnvLocal) return a.hasEnvLocal ? -1 : 1;
+    const ma = major(a.frameworkVersion);
+    const mb = major(b.frameworkVersion);
+    if (ma !== mb) return mb - ma;
+    return b.mtime - a.mtime;
+  })[0];
 }
 
 /** Package managers we know how to install with. */
@@ -377,9 +503,18 @@ export function buildTauriDevCommand(port: number): string {
  * framework, not the runner. Unknown commands run as-is (the user is expected to
  * encode the port themselves).
  */
+// A port already specified in the dev command itself (`-p 4001`, `--port=5173`,
+// `-p=3000`, `--port 8080`). When present, Bezier must NOT append its own — a
+// duplicate flag is fragile (e.g. Next `… -p 4001 … -p 54460` = last wins, but the
+// app no longer runs on the port the author intended). DEC-125.
+const PORT_FLAG_RE = /(^|\s)(-p|--port)(\s+|=)\d+/;
+
 export function buildDevCommand(cfg: PreviewConfig, fallback: Framework): string {
   const cmd = cfg.devCommand.trim();
   if (!cmd) return "";
+  // The command pins its own port → respect it (parseDevServerUrl reads the actual
+  // bound port from the output, so detection still follows it). Don't duplicate.
+  if (PORT_FLAG_RE.test(cmd)) return cmd;
   // Prefer the command's own framework; fall back to the package.json hint.
   const fw = detectFramework(cmd) ?? fallback;
   if (!fw || !cfg.port) return cmd;
@@ -429,6 +564,59 @@ export function httpPing(url: string): Promise<boolean> {
  */
 export function httpFrameBlocked(url: string): Promise<boolean> {
   return invoke<boolean>("http_frame_blocked", { url });
+}
+
+/** A dependency-free HTTP GET against the dev server (Rust `http_probe`, DEC-125). */
+export interface HttpProbeResult {
+  /** HTTP status code, or 0 if it couldn't be parsed. */
+  status: number;
+  /** X-Frame-Options / CSP frame-ancestors forbid embedding. */
+  frameBlocked: boolean;
+  /** Lowercased Content-Type header value ("" if absent). */
+  contentType: string;
+  /** Body bytes read (capped; a lower bound if truncated). */
+  bodyLen: number;
+}
+
+/**
+ * GET the currently-loaded preview URL to verify it actually renders (DEC-125).
+ * Best-effort: resolves null on any failure (server momentarily down / parse error)
+ * so callers keep their last verdict instead of flapping. (Rust `http_probe`)
+ */
+export function httpProbe(url: string): Promise<HttpProbeResult | null> {
+  return invoke<HttpProbeResult>("http_probe", { url }).catch(() => null);
+}
+
+/**
+ * A negative, server-observable diagnosis of the loaded page, or null when it's
+ * fine / non-actionable (DEC-125). The preview pane is a status surface: rather
+ * than a silent blank, a 404/5xx/empty page gets explained. SCOPE: this only sees
+ * what the SERVER returns — a client-rendered SPA that 200s then blanks from a JS
+ * error is invisible here (status 200 + body present → null). Do not try to detect
+ * client-side blank.
+ */
+export type PreviewVerdict = "notFound" | "serverError" | "empty" | "frameBlocked";
+
+const EMPTY_BODY_BYTES = 200;
+
+export function verdictFor(p: HttpProbeResult): PreviewVerdict | null {
+  if (p.status >= 500) return "serverError";
+  // 404 (no route) / 401 / 403 (auth-gated) — the common "blank" causes.
+  if (p.status === 404 || p.status === 401 || p.status === 403) return "notFound";
+  if (p.status >= 300 && p.status < 400) return null; // redirect → the final URL drives
+  if (p.status >= 200 && p.status < 300) {
+    const html =
+      p.contentType === "" || /text\/html|application\/xhtml/.test(p.contentType);
+    // 200 but no body, or non-HTML (e.g. an API-only server returning JSON at /).
+    if (p.bodyLen < EMPTY_BODY_BYTES || !html) return "empty";
+    return null; // ok
+  }
+  if (p.status >= 400) return "notFound"; // other 4xx
+  // NOTE: frameBlocked is intentionally NOT emitted — the DEC-120 native top-level
+  // webview ignores X-Frame-Options, and SAMEORIGIN is ubiquitous on healthy apps,
+  // so firing it would be constant false positives. Kept in the type/UI/i18n,
+  // one guarded line from live should an iframe fallback ever return.
+  return null;
 }
 
 /** Allocate a free TCP port so concurrent previews never collide (DEC-040). */

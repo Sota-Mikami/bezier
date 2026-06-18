@@ -73,7 +73,7 @@
 
 > CEO が `sotas-chemical-research`（ルート package.json 無しのモノレポ・複数フロント）を Live で開いたら、Bezier が**古い `frontend/`（Next 13・`.env.local` 無し）を黙って自動選択**→ アプリ自身が `FirebaseError: auth/invalid-api-key` で落ちた。現行は `new-frontend/`（Next 15・実 env あり）。根本＝**複数 runnable アプリがある時に「どれを動かすか」を選べない**（特に Live は packageDir 切替 UI が無い）。DEC-112 で "monorepo >1 level" を未対応として残していた箇所。
 
-- **#1【本命】アプリ選択 UI ＋賢い既定**：複数の dev-script 持ち package を検出→選択 UI。既定は `.env.local` 有無 / Next の新しさ / 最近の更新時刻で「現行っぽい方」を推定（今回なら `new-frontend/`）。選択は `.bezier/config.json` の packageDir に記憶。**Live にも packageDir 切替を出す**（今は Issue Preview の設定にしか無い）。
+- ~~**#1【本命】アプリ選択 UI ＋賢い既定**~~ → **実装＝DEC-125（2026-06-18）**。`detectApps`（root＋全直下＋`packages/apps/prototypes/examples` 1段下）＋`pickDefaultApp`（`.env.local` 有無→framework 新しさ→mtime）。`app-picker.tsx` を Live/Preview 両ヘッダに（複数時のみ）。選択は `.bezier/config.json` packageDir に記憶＋稼働中なら再起動。SCR 実証で `new-frontend` を既定選択。**加えて「ready なのに空白」の自己診断バナー（404/5xx/空）も同梱**（auth ゲート等を可視化）。
 - **#2 env 未設定の検知強化**：readiness が `.env.example` 依存なので、`.env-backup/` 等の非標準名だと検知漏れ。「`process.env.NEXT_PUBLIC_*` を参照しているのに `.env*` が無い」を警告する方向。
 - **#3【将来】アプリ自身のランタイムエラーのヒント化**：`auth/invalid-api-key` 等は app 内部エラーで Bezier から捕捉しづらいが、検知時に「.env が要るかも」を添える余地。
 - 回避策（現状）：Issue を作って Preview 設定で packageDir=`new-frontend`・port=4001 を指定すれば現行アプリを動かせる。

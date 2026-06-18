@@ -28,6 +28,8 @@ import {
   readPreviewConfig,
   writePreviewConfig,
   detectDev,
+  detectApps,
+  pickDefaultApp,
   detectRunner,
   defaultPort,
   tauriDevPort,
@@ -52,6 +54,7 @@ import {
   type PreviewConfig,
   type Framework,
   type DevDetect,
+  type DetectedApp,
   type RunnerKind,
 } from "@/lib/preview";
 import { getSettings } from "@/lib/settings";
@@ -165,6 +168,10 @@ export interface PreviewServer {
   tauriPort: number | null;
   /** Resolved config (saved, or detected default). Null until loaded. */
   config: PreviewConfig | null;
+  /** All runnable apps found in the repo — render a picker when length > 1 (DEC-125). */
+  apps: DetectedApp[];
+  /** Switch the active app (monorepo): persist its packageDir and restart if running. */
+  selectApp: (packageDir: string) => Promise<void>;
   /** package.json-derived framework hint (fallback for the port flag). */
   framework: Framework;
   /** package.json `scripts.dev`, surfaced in the settings UI. */
@@ -206,6 +213,8 @@ export function usePreviewServer(
   const [runner, setRunner] = React.useState<RunnerKind>("web");
   const [tauriPort, setTauriPort] = React.useState<number | null>(null);
   const [config, setConfig] = React.useState<PreviewConfig | null>(null);
+  // All runnable apps in the repo (DEC-125) — drives the app-picker when > 1.
+  const [apps, setApps] = React.useState<DetectedApp[]>([]);
   const [framework, setFramework] = React.useState<Framework>(null);
   const [scriptsDev, setScriptsDev] = React.useState<string | null>(null);
   const [log, setLog] = React.useState("");
@@ -254,32 +263,50 @@ export function usePreviewServer(
         if (!cancelled) setConfigLoaded(true);
         return;
       }
-      const [saved, detectWt] = await Promise.all([
+      const [saved, detectWt, appsWt] = await Promise.all([
         readPreviewConfig(root).catch(() => null),
         detectDev(worktreePath).catch(
           () =>
             ({ scriptName: null, scriptsDev: null, framework: null, packageDir: "" }) as DevDetect,
         ),
+        detectApps(worktreePath).catch(() => [] as DetectedApp[]),
       ]);
       if (cancelled) return;
       // Robustness: an issue worktree can be mid-creation, cleaned, or on a
       // branch without the package — detection then finds no dev script and the
       // command "disappears" after a restart. The dev script is COMMITTED, so the
-      // REAL repo root is a reliable fallback source. (Live runs with
+      // REAL repo root is a reliable fallback source (DEC-122). (Live runs with
       // worktreePath === root, so this only adds a fallback for issue worktrees.)
       let detect = detectWt;
+      let apps = appsWt;
       if (!detect.scriptsDev && worktreePath !== root) {
         const rootDetect = await detectDev(root).catch(() => null);
         if (cancelled) return;
         if (rootDetect?.scriptsDev) detect = rootDetect;
       }
-      setScriptsDev(detect.scriptsDev);
-      setFramework(detect.framework);
+      if (apps.length === 0 && worktreePath !== root) {
+        const rootApps = await detectApps(root).catch(() => [] as DetectedApp[]);
+        if (cancelled) return;
+        if (rootApps.length) apps = rootApps;
+      }
+      setApps(apps);
+
+      // Choose the active app (DEC-125 / ideas-backlog §G): a valid SAVED packageDir
+      // wins; otherwise the smart default (prefer .env.local / newer framework /
+      // recency) — so a monorepo with several frontends runs the CURRENT one, not
+      // the first hardcoded subdir match. `detect` is the legacy single-best
+      // fallback for the rare case detectApps finds nothing.
+      const savedDir = (saved?.packageDir ?? "").replace(/^\/+|\/+$/g, "");
+      const chosen = apps.find((a) => a.packageDir === savedDir) ?? pickDefaultApp(apps);
+      const chosenDir = chosen?.packageDir ?? detect.packageDir;
+
+      setScriptsDev(chosen?.scriptsDev ?? detect.scriptsDev);
+      setFramework(chosen?.framework ?? detect.framework);
 
       // Runner detection (slice 2.7): web (iframe) vs tauri (real dev window).
-      // A saved `runner` field overrides detection. Runs after detectDev because
-      // it needs the resolved packageDir to find <packageDir>/src-tauri.
-      const rd = await detectRunner(worktreePath, detect.packageDir).catch(() => ({
+      // A saved `runner` field overrides detection. Runs after app selection
+      // because it needs the chosen packageDir to find <packageDir>/src-tauri.
+      const rd = await detectRunner(worktreePath, chosenDir).catch(() => ({
         runner: "web" as RunnerKind,
         srcTauriRel: null,
       }));
@@ -289,15 +316,17 @@ export function usePreviewServer(
       srcTauriRelRef.current = rd.srcTauriRel;
       setRunner(resolvedRunner);
       setTauriPort(resolvedRunner === "tauri" ? tauriDevPort(root) : null);
-      // Auto-config from package.json detection; a saved config overrides
-      // per-field, but EACH empty field falls back to detection. So a stale
-      // config (e.g. `{devCommand:"",...}` written before detection existed) or a
-      // repo whose web app lives in a subdir (`app/`) still auto-resolves — the
-      // user almost never has to fill the form by hand.
+      // Auto-config from detection; a saved config overrides per-field, but EACH
+      // empty field falls back to detection. So a stale config or a subdir app
+      // still auto-resolves — the user almost never fills the form by hand.
       const detected: PreviewConfig = {
-        devCommand: detect.scriptsDev ? `npm run ${detect.scriptName ?? "dev"}` : "",
+        devCommand: chosen
+          ? `npm run ${chosen.scriptName}`
+          : detect.scriptsDev
+            ? `npm run ${detect.scriptName ?? "dev"}`
+            : "",
         port: defaultPort(root),
-        packageDir: detect.packageDir,
+        packageDir: chosenDir,
       };
       // packageDir is VALIDATED, not trusted: a stale/wrong saved value (e.g. a
       // persisted "App" that points nowhere) would otherwise target every check +
@@ -631,6 +660,36 @@ export function usePreviewServer(
     [root],
   );
 
+  // Switch the active app in a monorepo (DEC-125). Build a config for the chosen
+  // app, persist it (so it's remembered), and restart the dev server if one is
+  // running. Reads live `apps`/`status` via refs so the callback stays stable.
+  const appsRef = React.useRef(apps);
+  React.useEffect(() => {
+    appsRef.current = apps;
+  }, [apps]);
+  const statusRef = React.useRef(status);
+  React.useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const selectApp = React.useCallback(
+    async (packageDir: string) => {
+      const app = appsRef.current.find((a) => a.packageDir === packageDir);
+      if (!app) return;
+      const cfg: PreviewConfig = {
+        devCommand: `npm run ${app.scriptName}`,
+        port: defaultPort(root),
+        packageDir: app.packageDir,
+      };
+      await saveConfig(cfg);
+      // Restart onto the new app only if a server is already up.
+      if (statusRef.current === "ready" || statusRef.current === "starting") {
+        await start(cfg);
+      }
+    },
+    [root, saveConfig, start],
+  );
+
   // Cleanup on unmount: DETACH listeners + stop polling, but DO NOT kill the dev
   // server (DEC-040) — it persists (keyed pty) so returning to the issue
   // reattaches instead of restarting. It's stopped only by the idle sweep, the
@@ -723,6 +782,8 @@ export function usePreviewServer(
     runner,
     tauriPort,
     config,
+    apps,
+    selectApp,
     framework,
     scriptsDev,
     log,
