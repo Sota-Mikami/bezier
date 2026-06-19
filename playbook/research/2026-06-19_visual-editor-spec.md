@@ -205,3 +205,13 @@ CEO「デザイナー/PdM に触らせて feedback → UX を上げて」＋「F
 **ペルソナ別の要点**: Mai＝「触れる領域が狭すぎる」→拡張で前進、テキスト編集はまだ。Leo＝Undo/diff ビュー/flex 子/position が要・selector 脆さ懸念→将来ビルド計装。Kenji＝CSS 生値が怖い→ドロップダウン化で前進、まだ用語の平易化余地。Priya＝**今は組織配布不可**（ガバナンス穴）→個人向けは可・企業向けは延期項目が前提。Tom＝コピペ＆border/shadow＆↑↓が無いと量産に使えない→border/shadow/↑↓ は実装、コピペは次。
 
 > 次アクション: R2 = コピペ ⌘⌥C/V ＋ Priya 向けトークン警告（軽量版）。企業 strict/監査は配布判断時に別 DEC。
+
+## 追記 — R2（2026-06-19）: 並べ替えバグ根治 ＋ Figma/Framer UI 寄せ
+
+CEO「Layer の並び替えがうまくできてない・根本調査して」「もっと Figma/Framer を研究して UI も寄せて」。
+
+**並べ替え根治（commit aa6603e）**: 真因＝**Tauri/WKWebView では HTML5 DnD は dragstart で `dataTransfer.effectAllowed`＋dragover で `dropEffect` を設定しないと drop が成立しない**（既存の動く `useDragReorder`(`lib/use-ordered.ts`) はこれを設定している・初稿は欠落＝onDrop が発火していなかった）。+ overlay `moveNode` を「移動した子」でなく「選択中の親」を再報告するよう修正＝兄弟リストが更新され連続並べ替え可。**教訓: 本アプリの in-app DnD は effectAllowed/dropEffect 必須。**
+
+**Figma/Framer UI 寄せ（commit db8e735・principal-designer 仕様）**: Style パネルを Figma のセクション順（Frame/Position/Layout/Spacing/Fill/Stroke/Effects/Type）に再構成。2 カラムのペア数値入力（W/H・padding・margin・fs/fw・lh/ls・T/R/B/L）、**整列はドロップダウンでなくアイコン SegmentedControl**（flex-direction/justify/align/text-align/border-style・lucide 整列アイコン）、Fill/Stroke/文字色は**スウォッチ＋HEX 行**、flex/position は条件表示、override 行は ring＋hover ↺ reset。Layer パネルは**タグ別 lucide アイコン**＋h-[22px]＋選択=bg-accent の Figma 風ツリー。割り切り（spec §4）＝ラベルドラッグ scrub・複数 Fill・blend mode・grid inspector・dashed/dotted は文字代替・space-around/evenly 省略。
+
+> 次アクション（R3 候補）: ラベルドラッグ scrub・コピペ ⌘⌥C/V・Priya 向けトークン警告（軽量）。
