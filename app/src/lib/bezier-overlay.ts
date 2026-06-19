@@ -164,15 +164,18 @@ export const OVERLAY_JS = String.raw`(function () {
         if (el) { el.style.setProperty(prop, value); redraw(); }
       } catch (e) {}
     },
-    // Reorder: move src before/after dest among shared-parent siblings (live). The
-    // nth-of-type selectors shift after a move, so re-select src to refresh its path.
+    // Reorder: move src before/after dest among shared-parent siblings (live). After
+    // the move, re-report the CURRENTLY-SELECTED element (the parent whose children
+    // are listed) so the Layer panel's sibling list refreshes with fresh nth-of-type
+    // paths and selection stays on the parent — enabling consecutive reorders.
     moveNode: function (srcSel, destSel, before) {
       try {
         var s = document.querySelector(srcSel);
         var d = document.querySelector(destSel);
         if (s && d && s.parentNode && s.parentNode === d.parentNode && s !== d) {
           d.parentNode.insertBefore(s, before ? d : d.nextSibling);
-          select(s);
+          if (state.sel) select(state.sel);
+          else select(s);
         }
       } catch (e) {}
     },

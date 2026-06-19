@@ -326,9 +326,17 @@ export function EditLayerPanel({ vedit }: { vedit: VisualEdit }) {
         <div
           key={c.selector + i}
           draggable
-          onDragStart={() => setDragIdx(i)}
+          onDragStart={(e) => {
+            setDragIdx(i);
+            // WKWebView/Tauri requires effectAllowed (+ some data) for the drag to
+            // register a valid drop target — without it onDrop never fires. Matches
+            // the codebase's working useDragReorder helper.
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", String(i));
+          }}
           onDragOver={(e) => {
             e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
             if (overIdx !== i) setOverIdx(i);
           }}
           onDragEnd={() => {
