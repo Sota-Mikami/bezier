@@ -182,4 +182,26 @@ export interface Annotation { /* 既存 */ diffs?: StyleDiff[] }
 実 repo（Tailwind1 / 非 Tailwind1）で 選択→spacing/color 変更→「コードに反映」→agent が正しい idiom で書き HMR 一致、を 5 ケース実測。**操作感**（Mai ペルソナが GUI で完結し「次もこれで直す」と言うか）と **反映精度**（zero-correction 3/5 以上・完走 5/5）を `playbook/research/` に記録。検証前に本 §4/§9 の受け入れシナリオを固定。
 
 ---
-> 次アクション: 本 spec を CEO レビュー → 承認なら Stage 1 を着手（または Issue 化して spec.md へ）。Stage 1 は `bezier-overlay.js` と `use-visual-edit.ts` が実装の核、Rust 変更は最小（`initialization_script` 連鎖＋`embed_browser_eval` 1 本）。
+
+## 追記 — ペルソナ検証 R1 → 実装/延期（2026-06-19）
+
+CEO「デザイナー/PdM に触らせて feedback → UX を上げて」＋「Figma みたいな使い勝手（編集できる要素・ショートカット・キーボード操作）」「Layer で並べ替えたい」「Style パネルは できること少ない・分かりにくい・数字は ↑↓ で変えたい」。→ persona-{solo-maker Mai / design-engineer Leo / pm-cant-design Kenji / ds-lead Priya / agency-designer Tom} に as-shipped を触らせて率直 feedback を収集。
+
+**収束した Must（複数ペルソナ＋CEO）→ 実装済（commit d6a2858）**:
+- 数値の **↑/↓ ステッパー**（Shift ×10・Alt ×0.1・単位保持）。
+- **編集できるプロパティ大幅拡張**: margin L/R（**抜けていた＝バグ**）、border(width/style/color)、box-shadow、letter-spacing、flex-grow/align-self、Position（position+top/right/bottom/left/z-index）+overflow。
+- **enum はドロップダウン**（display/flex-direction/justify/align/text-align/position/overflow/border-style）＋flex/position フィールドの条件表示。
+- **per-prop リセット(↺)＋override 行ハイライト**、**Undo(⌘Z/ボタン・実履歴)**。
+- **Layer パネルで子をドラッグ並べ替え**（ライブ DOM 移動＋reorder intent を agent へ）。
+- **Esc→親 / ⌘Z→Undo**（Bezier フォーカス時）。Clarity（「反映するまで実コードは変わりません」・空状態のキーボードヒント）。
+
+**延期（次ラウンド・記録）**:
+- スタイル **コピペ ⌘⌥C/V**（Tom 強く要望・throughput）。
+- **トークンガバナンス**（Priya）: 逆引き表示・非トークン値の警告・**strict mode**・差分のトークン使用明示・**PR 経由必須/監査ログ export**。＝**企業配布の前提条件**。個人 dogfood では不要。
+- **インラインのテキスト/コピー編集**（Mai「ビジュアル編集なのにテキスト触れないのは看板倒れ」）＝構造編集寄り。
+- **複数選択一括 / 完全 DOM ツリー / font-family**。
+- **webview フォーカス中のショートカット**＝native menu accelerator（⌘K ブリッジと同型）。今は in-field ↑↓＋ボタンで代替。
+
+**ペルソナ別の要点**: Mai＝「触れる領域が狭すぎる」→拡張で前進、テキスト編集はまだ。Leo＝Undo/diff ビュー/flex 子/position が要・selector 脆さ懸念→将来ビルド計装。Kenji＝CSS 生値が怖い→ドロップダウン化で前進、まだ用語の平易化余地。Priya＝**今は組織配布不可**（ガバナンス穴）→個人向けは可・企業向けは延期項目が前提。Tom＝コピペ＆border/shadow＆↑↓が無いと量産に使えない→border/shadow/↑↓ は実装、コピペは次。
+
+> 次アクション: R2 = コピペ ⌘⌥C/V ＋ Priya 向けトークン警告（軽量版）。企業 strict/監査は配布判断時に別 DEC。
