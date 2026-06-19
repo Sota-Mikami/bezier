@@ -40,6 +40,11 @@ interface PromptPhrases {
   previewIntro: string;
   previewScreen: (route: string) => string;
 
+  // --- visual editor (DEC-131) ---
+  veHeader: string;
+  veIntro: (route: string) => string;
+  veConstraints: string[];
+
   // --- md doc / Map / QA surfaces ---
   docHeader: (label: string) => string;
   docIntro: (docPath: string) => string;
@@ -90,6 +95,16 @@ const JA: PromptPhrases = {
   previewIntro:
     "プレビュー上の注釈への修正依頼です。下記の番号付き指示に従い、この worktree 内の UI を修正してください。",
   previewScreen: (route) => `対象画面: \`${route}\``,
+
+  veHeader: "## ビジュアル編集を実コードに反映",
+  veIntro: (route) =>
+    `対象画面 \`${route}\` で、ユーザーが GUI で行った下記のスタイル変更（before→after）を、この worktree の実コードに反映してください。`,
+  veConstraints: [
+    "制約:",
+    "- **この repo の作法で書く**: Tailwind なら class、CSS Modules / styled-components / トークン等ならその方式。変更前後はブラウザの計算値（px・rgb 等）なので、最も近い既存の表現に落としてよい。design-system.md / tokens があれば優先。",
+    "- セレクタは目印（脆い場合あり）。tag / class / 周辺テキストから対象要素を特定すること。",
+    "- 最小変更。無関係な箇所は触らない。終わったら変更点を一言で要約（commit は人間が Bezier の UI から行う）。",
+  ],
 
   docHeader: (label) => `## ドキュメント「${label}」への注釈`,
   docIntro: (docPath) =>
@@ -166,6 +181,16 @@ const EN: PromptPhrases = {
     "These are fix requests for the annotations on the preview. Follow the numbered instructions below and fix the UI inside this worktree.",
   previewScreen: (route) => `Screen shown: \`${route}\``,
 
+  veHeader: "## Apply visual edits to the real code",
+  veIntro: (route) =>
+    `On screen \`${route}\`, apply the following style changes (before→after) the user made via the GUI to the real code in this worktree.`,
+  veConstraints: [
+    "Constraints:",
+    "- **Write it in THIS repo's idiom**: Tailwind → classes; CSS Modules / styled-components / tokens → that mechanism. The before/after are the browser's computed values (px, rgb, …) — map them to the nearest existing expression. Prefer design-system.md / tokens if present.",
+    "- The selector is a hint (it can be brittle). Identify the element from its tag / classes / nearby text.",
+    "- Minimal change; don't touch unrelated code. When done, summarize the change in one line (a human commits from Bezier's UI).",
+  ],
+
   docHeader: (label) => `## Annotations on the “${label}” document`,
   docIntro: (docPath) =>
     `Reflect the numbered annotations below into \`${docPath}\` (update the document, or carry them into the implementation).`,
@@ -241,6 +266,39 @@ function feedbackBody(p: PromptPhrases, header: string[], lines: string[], shot:
 export function previewFeedbackPrompt(route: string, lines: string[], shot: string | null): string {
   const p = promptPhrases();
   return feedbackBody(p, [p.previewHeader, p.previewIntro, p.previewScreen(route)], lines, shot);
+}
+
+/** Visual editor (DEC-131): turn GUI style edits into a code-reflection prompt for
+ *  the user's agent. Diffs are grouped per element; the agent writes them in the
+ *  repo's idiom (Tailwind / CSS / tokens / CSS-in-JS). */
+export function visualEditPrompt(
+  route: string,
+  diffs: {
+    selector: string;
+    tag: string;
+    classes: string[];
+    prop: string;
+    before: string;
+    after: string;
+  }[],
+): string {
+  const p = promptPhrases();
+  const bySel = new Map<string, typeof diffs>();
+  for (const d of diffs) {
+    const arr = bySel.get(d.selector) ?? [];
+    arr.push(d);
+    bySel.set(d.selector, arr);
+  }
+  const lines: string[] = [];
+  let n = 1;
+  for (const [selector, ds] of bySel) {
+    const head = ds[0];
+    const cls = head.classes.length ? "." + head.classes.join(".") : "";
+    lines.push(`${n}. \`${head.tag}${cls}\` (selector \`${selector}\`)`);
+    for (const d of ds) lines.push(`   - ${d.prop}: ${d.before} → ${d.after}`);
+    n++;
+  }
+  return [p.veHeader, p.veIntro(route), "", ...lines, "", ...p.veConstraints].join("\n");
 }
 
 export function docFeedbackPrompt(label: string, docPath: string, lines: string[], shot: string | null): string {

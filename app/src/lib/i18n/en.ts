@@ -522,6 +522,14 @@ export const en = {
     terminalNeedsServer: "Start the dev server to open a terminal here.",
   },
 
+  edit: {
+    selectPrompt: "Click an element in the preview to edit its styles.",
+    clickToSelect: "Click an element to select",
+    pendingCount: "{n} pending",
+    discard: "Discard",
+    applyToCode: "Apply to code",
+  },
+
   prototype: {
     tabPreview: "Preview",
     tabMap: "Map",

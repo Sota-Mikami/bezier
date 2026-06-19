@@ -227,6 +227,18 @@ export function embedBrowserClose(): Promise<void> {
   return invoke<void>("embed_browser_close");
 }
 
+/** Visual editor (DEC-131): push JS into the embedded browser (apply a style /
+ *  activate the overlay / inject the agent). Fire-and-forget. */
+export function embedBrowserEval(js: string): Promise<void> {
+  return invoke<void>("embed_browser_eval", { js });
+}
+
+/** Visual editor (DEC-131): evaluate `js` in the embedded browser and emit its
+ *  JSON-serialized result back as a `bz-edit` event (page→Bezier drain channel). */
+export function embedBrowserDrain(js: string): Promise<void> {
+  return invoke<void>("embed_browser_drain", { js });
+}
+
 /**
  * Capture a screen region (POINTS, global top-left origin) to a PNG (DEC-045 —
  * design feedback). Returns the written path. -> invoke("capture_region", …)

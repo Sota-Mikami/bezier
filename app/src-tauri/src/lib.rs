@@ -683,6 +683,37 @@ fn embed_browser_close(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Visual editor (DEC-131) — push JS INTO the embedded browser: apply a style,
+/// activate/deactivate the overlay, or inject the overlay agent. Fire-and-forget
+/// (Tauri `eval` returns nothing). The script is built by Bezier (never the page),
+/// so the only injection risk is our own bug. Loopback-only is already enforced at
+/// `embed_browser_open` — the webview can't be pointed off-box (DEC-120/130).
+#[tauri::command]
+fn embed_browser_eval(app: tauri::AppHandle, js: String) -> Result<(), String> {
+    if let Some(wv) = app.get_webview("embedded-browser") {
+        wv.eval(js).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Visual editor (DEC-131) — READ from the embedded browser: evaluate `js` and emit
+/// its JSON-serialized result back to the frontend as a `bz-edit` event. The page→
+/// Bezier channel: the in-page overlay queues selection/edit events, the frontend
+/// polls this to drain them. Uses `eval_with_callback` (plain `eval` returns nothing).
+/// No Tauri IPC is granted to the loopback page — the value rides OUR own event, so
+/// the SSRF/IPC posture from DEC-130 is unchanged.
+#[tauri::command]
+fn embed_browser_drain(app: tauri::AppHandle, js: String) -> Result<(), String> {
+    if let Some(wv) = app.get_webview("embedded-browser") {
+        let emit_app = app.clone();
+        wv.eval_with_callback(js, move |result| {
+            let _ = emit_app.emit("bz-edit", result);
+        })
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Capture a rectangular screen region to a PNG (DEC-045 — design feedback).
 /// Uses macOS `screencapture -x -R x,y,w,h` (no sound, non-interactive). The
 /// region is in POINTS in the global display coordinate space (top-left origin);
@@ -3506,6 +3537,8 @@ pub fn run() {
             embed_browser_url,
             embed_browser_hide,
             embed_browser_close,
+            embed_browser_eval,
+            embed_browser_drain,
             open_in_editor,
             capture_region,
             remove_path,

@@ -521,6 +521,14 @@ export const ja: Messages = {
     terminalNeedsServer: "dev サーバーを起動するとここでターミナルを開けます。",
   },
 
+  edit: {
+    selectPrompt: "プレビュー上の要素をクリックしてスタイルを編集します。",
+    clickToSelect: "要素をクリックして選択",
+    pendingCount: "{n} 件の変更",
+    discard: "破棄",
+    applyToCode: "コードに反映",
+  },
+
   prototype: {
     tabPreview: "プレビュー",
     tabMap: "マップ",

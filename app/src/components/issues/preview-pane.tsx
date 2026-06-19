@@ -40,7 +40,7 @@ import { openExternal, openLiveWindow, captureRegion } from "@/lib/ipc";
 import { loadImageDataUrl } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
-import { previewFeedbackPrompt, previewDoctorPrompt } from "@/lib/prompts";
+import { previewFeedbackPrompt, previewDoctorPrompt, visualEditPrompt } from "@/lib/prompts";
 import { isLoopbackUrl, type PreviewConfig } from "@/lib/preview";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
@@ -51,6 +51,8 @@ import { AppPicker } from "./app-picker";
 import { usePreviewDiagnostic } from "./use-preview-diagnostic";
 import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
+import { useVisualEdit } from "./use-visual-edit";
+import { EditLayerPanel, EditStylePanel, PendingEditsBar } from "./visual-edit-panels";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -442,6 +444,33 @@ export function PreviewPane({
     [server],
   );
 
+  // Visual edit engine (DEC-131): live only while Edit mode is on AND the webview is
+  // live. navKey=path so a full navigation re-injects the overlay. Edits apply live;
+  // "apply to code" hands the accumulated diffs to the issue's agent (repo idiom).
+  const vedit = useVisualEdit({
+    active: editing && status === "ready" && !!url,
+    navKey: path,
+  });
+  const [applyingEdits, setApplyingEdits] = React.useState(false);
+  const veDiffs = vedit.diffs;
+  const veClear = vedit.clearEdits;
+  const applyEditsToCode = React.useCallback(async () => {
+    if (!session || veDiffs.length === 0) return;
+    setApplyingEdits(true);
+    try {
+      const ok = await session.sendDesignFeedback(visualEditPrompt(path, veDiffs), "visual_edit");
+      if (ok) veClear();
+    } catch {
+      /* surfaced by the agent terminal */
+    } finally {
+      setApplyingEdits(false);
+    }
+  }, [session, veDiffs, veClear, path]);
+  const discardEdits = React.useCallback(() => {
+    setReloadNonce((n) => n + 1); // reload reverts the live inline styles
+    veClear();
+  }, [veClear]);
+
   // Freeze-to-annotate (DEC-120): a native webview can't be drawn over, so when
   // annotation mode turns on we screenshot the live (logged-in) browser, then
   // show that still + the annotation layer (the webview hides itself once the
@@ -658,8 +687,15 @@ export function PreviewPane({
         />
       )}
 
-      {/* Body */}
-      <div ref={paneRef} className="relative min-h-0 flex-1">
+      {/* Body — in Edit mode (DEC-131), flanked by the Layer (left) + Style (right)
+          panels; the webview center shrinks and its ResizeObserver follows. */}
+      <div className="flex min-h-0 flex-1">
+        {editing && (
+          <aside className="w-[200px] shrink-0 overflow-hidden border-r bg-card/40">
+            <EditLayerPanel vedit={vedit} />
+          </aside>
+        )}
+        <div ref={paneRef} className="relative min-h-0 flex-1">
         {attach && !(status === "ready" && url) ? (
           // Attach mode (DEC-129): waiting for the maker's own server (Docker/Rails…).
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
@@ -783,7 +819,22 @@ export function PreviewPane({
             detail={t("preview.previewNotStartedDetail")}
           />
         )}
+        </div>
+        {editing && (
+          <aside className="w-[240px] shrink-0 overflow-hidden border-l bg-card/40">
+            <EditStylePanel vedit={vedit} />
+          </aside>
+        )}
       </div>
+
+      {editing && (
+        <PendingEditsBar
+          diffs={vedit.diffs}
+          busy={applyingEdits}
+          onApply={() => void applyEditsToCode()}
+          onDiscard={discardEdits}
+        />
+      )}
 
       {/* Bottom panel (DEC-126): OUTPUT log + interactive Terminal in the worktree
           dir — so "check the OUTPUT log" is reachable AND the maker can run claude
