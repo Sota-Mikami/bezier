@@ -945,6 +945,13 @@ pub struct PtySpawnOpts {
     /// (deterministic "waiting" detection, not an idle heuristic).
     #[serde(default)]
     pub events_path: Option<String>,
+    /// How to decide "waiting" (DEC-132): "hooks" | "idle" | "exit-only". Default:
+    /// "hooks" when events_path is set, else "exit-only".
+    #[serde(default)]
+    pub waiting_strategy: Option<String>,
+    /// For "idle": output-quiet duration (ms) ⇒ waiting. Default ~8000.
+    #[serde(default)]
+    pub idle_waiting_ms: Option<u64>,
 }
 
 /// One live pty-backed session, held in tauri-managed state keyed by pty id.
@@ -983,6 +990,13 @@ pub struct Session {
     /// The events file length already consumed (baseline = its length at spawn,
     /// so only post-spawn hook writes count toward "awaiting").
     pub events_seen_len: std::sync::Arc<Mutex<u64>>,
+    /// "waiting" detection strategy (DEC-132): "hooks" | "idle" | "exit-only".
+    pub waiting_strategy: String,
+    /// For "idle" strategy: output-quiet duration (ms) ⇒ waiting.
+    pub idle_waiting_ms: u64,
+    /// True once the child has produced ANY output — guards idle "waiting" from
+    /// firing before a non-hook agent has even started printing.
+    pub had_output: std::sync::Arc<Mutex<bool>>,
 }
 
 /// Payload for the `pty://data` event. camelCase to match the frozen TS
@@ -1103,6 +1117,7 @@ fn pty_spawn(
     let id = uuid::Uuid::new_v4().to_string();
     let backlog = std::sync::Arc::new(Mutex::new(String::new()));
     let last_activity = std::sync::Arc::new(Mutex::new(std::time::Instant::now()));
+    let had_output = std::sync::Arc::new(Mutex::new(false));
     let exited = std::sync::Arc::new(Mutex::new(None::<i32>));
 
     // Reader thread: stream output as `pty://data`, then `pty://exit` on EOF.
@@ -1110,6 +1125,7 @@ fn pty_spawn(
     let thread_id = id.clone();
     let backlog_w = backlog.clone();
     let activity_w = last_activity.clone();
+    let had_output_w = had_output.clone();
     let exited_w = exited.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
@@ -1120,10 +1136,14 @@ fn pty_spawn(
         let emit_app = app_handle.clone();
         let emit_tid = thread_id.clone();
         let activity_emit = activity_w.clone();
+        let had_output_emit = had_output_w.clone();
         let emit_chunk = move |chunk: String| {
-            // Mark activity (drives the "waiting for input" idle heuristic).
+            // Mark activity (drives the idle "waiting" strategy) + that output exists.
             if let Ok(mut t) = activity_emit.lock() {
                 *t = std::time::Instant::now();
+            }
+            if let Ok(mut h) = had_output_emit.lock() {
+                *h = true;
             }
             // Append to the rolling backlog (capped to the last ~256KB, trimmed on
             // a char boundary) for replay when a terminal reattaches.
@@ -1214,6 +1234,16 @@ fn pty_spawn(
         );
     });
 
+    // DEC-132: default strategy = hooks when an events file is wired (claude), else
+    // exit-only; the frontend overrides with "idle" for non-hook agents.
+    let waiting_strategy = opts.waiting_strategy.clone().unwrap_or_else(|| {
+        if opts.events_path.is_some() {
+            "hooks".to_string()
+        } else {
+            "exit-only".to_string()
+        }
+    });
+    let idle_waiting_ms = opts.idle_waiting_ms.unwrap_or(8000);
     let session = Session {
         writer,
         master: pair.master,
@@ -1225,6 +1255,9 @@ fn pty_spawn(
         awaiting: std::sync::Arc::new(Mutex::new(false)),
         events_path: opts.events_path.clone(),
         events_seen_len,
+        waiting_strategy,
+        idle_waiting_ms,
+        had_output,
     };
     state
         .sessions
@@ -1330,25 +1363,47 @@ fn pty_statuses(state: tauri::State<'_, PtyState>) -> Result<Vec<AgentStatus>, S
             .map(|t| t.elapsed().as_millis() as u64)
             .unwrap_or(0);
 
-        // Deterministic "awaiting": did a hook append to the events file since we
-        // last looked? If so latch awaiting=true (cleared on user input).
-        if let Some(ep) = &s.events_path {
-            let len = fs::metadata(ep).map(|m| m.len()).unwrap_or(0);
-            let mut seen = s.events_seen_len.lock().unwrap_or_else(|p| p.into_inner());
-            if len > *seen {
-                *seen = len;
-                if let Ok(mut a) = s.awaiting.lock() {
-                    *a = true;
+        // "hooks" strategy: did a hook append to the events file since we last looked?
+        // If so latch awaiting=true (cleared on user input). Only for hook agents.
+        if s.waiting_strategy == "hooks" {
+            if let Some(ep) = &s.events_path {
+                let len = fs::metadata(ep).map(|m| m.len()).unwrap_or(0);
+                let mut seen = s.events_seen_len.lock().unwrap_or_else(|p| p.into_inner());
+                if len > *seen {
+                    *seen = len;
+                    if let Ok(mut a) = s.awaiting.lock() {
+                        *a = true;
+                    }
                 }
             }
         }
         let awaiting = s.awaiting.lock().map(|a| *a).unwrap_or(false);
+        let had_output = s.had_output.lock().map(|h| *h).unwrap_or(false);
 
+        // DEC-132: state per strategy. exit code wins for all. While alive:
+        //  - hooks: events-file growth ⇒ waiting (deterministic).
+        //  - idle: had output AND quiet ≥ idle_waiting_ms ⇒ waiting (best-effort).
+        //  - exit-only: always running until exit.
         let st = match exit_code {
             Some(0) => "done",
             Some(_) => "error",
-            None if awaiting => "waiting",
-            None => "running",
+            None => match s.waiting_strategy.as_str() {
+                "hooks" => {
+                    if awaiting {
+                        "waiting"
+                    } else {
+                        "running"
+                    }
+                }
+                "idle" => {
+                    if had_output && idle_ms >= s.idle_waiting_ms {
+                        "waiting"
+                    } else {
+                        "running"
+                    }
+                }
+                _ => "running",
+            },
         };
         out.push(AgentStatus {
             key,
@@ -1403,6 +1458,11 @@ fn pty_write(state: tauri::State<'_, PtyState>, id: String, data: String) -> Res
         if let Ok(mut seen) = session.events_seen_len.lock() {
             *seen = len;
         }
+    }
+    // DEC-132 (idle strategy): the user just typed → reset the activity clock so the
+    // agent isn't re-flagged "waiting" in the gap before it starts responding.
+    if let Ok(mut t) = session.last_activity.lock() {
+        *t = std::time::Instant::now();
     }
     session
         .writer

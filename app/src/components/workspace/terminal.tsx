@@ -39,7 +39,14 @@ export interface TerminalPaneProps {
    * command runs INSIDE an interactive shell that stays alive after it exits
    * (TQ-1) — so `/exit`-ing an embedded agent leaves a usable terminal.
    */
-  spawn?: { cmd: string; args?: string[]; wrap?: boolean };
+  spawn?: {
+    cmd: string;
+    args?: string[];
+    wrap?: boolean;
+    /** Agent-state detection strategy for this pty (DEC-132). */
+    waitingStrategy?: "hooks" | "idle" | "exit-only";
+    idleWaitingMs?: number;
+  };
   /** Fired once the pty is spawned, with its id. */
   onReady?: (id: string) => void;
   /** Fired once when the child process exits, with its exit code (null if signal-killed). */
@@ -336,6 +343,8 @@ export default function TerminalPane({
             rows,
             key: sessionKey,
             eventsPath,
+            waitingStrategy: spawn?.waitingStrategy,
+            idleWaitingMs: spawn?.idleWaitingMs,
           });
         } catch (err) {
           if (!disposed && term) {

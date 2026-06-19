@@ -60,6 +60,15 @@ export interface PtySpawnOpts {
    * backend watches this file for DETERMINISTIC "waiting" detection.
    */
   eventsPath?: string;
+  /**
+   * How the backend decides "waiting" for this session (DEC-132): "hooks" (events
+   * file growth — claude), "idle" (output quiet ≥ idleWaitingMs ⇒ waiting — agents
+   * without hooks), or "exit-only" (only done/error). Default: "hooks" if eventsPath
+   * is set, else "exit-only".
+   */
+  waitingStrategy?: "hooks" | "idle" | "exit-only";
+  /** For waitingStrategy="idle": quiet duration (ms) before "waiting". */
+  idleWaitingMs?: number;
 }
 
 /** Payload of the "pty://data" event. */
