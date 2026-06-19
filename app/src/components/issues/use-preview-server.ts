@@ -233,6 +233,11 @@ export function usePreviewServer(
   const [configLoaded, setConfigLoaded] = React.useState(false);
   const [installing, setInstalling] = React.useState(false);
   const [installCmd, setInstallCmd] = React.useState<string | null>(null);
+  // PE P2-3 (DEC-130): the packageDir the RUNNING server actually launched in. The
+  // terminal/cwd must follow THIS, not a config the maker edited (but didn't restart)
+  // — else `docker compose up` / a shell would open in the wrong dir. null = nothing
+  // running, so cwd falls back to the current config.
+  const [runningPackageDir, setRunningPackageDir] = React.useState<string | null>(null);
 
   const ptyIdRef = React.useRef<string | null>(null);
   const pollRef = React.useRef<number | null>(null);
@@ -421,6 +426,7 @@ export function usePreviewServer(
     // Stop button and by Discard.
     await dropPreview(previewKey);
     setUrl(null);
+    setRunningPackageDir(null); // PE P2-3: nothing running → cwd follows config again
     setStatus((s) => (s === "idle" ? "idle" : "stopped"));
   }, [clearTimers, detachListeners, previewKey]);
 
@@ -586,6 +592,9 @@ export function usePreviewServer(
         return;
       }
       ptyIdRef.current = id;
+      // Pin the dir this server actually launched in (PE P2-3) so the terminal opens
+      // there even if the maker later edits packageDir without restarting.
+      setRunningPackageDir(cfg.packageDir);
       // Track this running preview (port + viewed-time) for reattach / cap / idle.
       previewRegistry.set(previewKey, {
         port: launchPort,
@@ -803,7 +812,13 @@ export function usePreviewServer(
         if (up) {
           if (pollRef.current !== null) window.clearInterval(pollRef.current);
           pollRef.current = null;
-          if (!entry.isTauri) setUrl(target);
+          if (!entry.isTauri) {
+            setUrl(target);
+            // PE P2-2 (DEC-130): restore the X-Frame-Options verdict on reattach too,
+            // so returning to an un-embeddable app still offers "open in browser"
+            // instead of a blank pane (the fresh-start path already does this).
+            void httpFrameBlocked(target).then(setFrameBlocked).catch(() => {});
+          }
           if (entry.isTauri) setTauriPort(entry.port);
           setStatus("ready");
         }
@@ -819,7 +834,11 @@ export function usePreviewServer(
   }, [worktreePath, previewKey]);
 
   // The dir the dev server runs in — for the bottom-panel terminal (DEC-126).
-  const cwd = worktreePath ? packageCwd(worktreePath, config?.packageDir ?? "") : null;
+  // PE P2-3: prefer the RUNNING server's dir; fall back to the current config when
+  // nothing is running (install / first-run / attach terminal).
+  const cwd = worktreePath
+    ? packageCwd(worktreePath, runningPackageDir ?? config?.packageDir ?? "")
+    : null;
 
   // Attach mode (DEC-129): the maker runs their own server (Docker/Rails/etc.) and
   // gives us its loopback URL. Bezier doesn't spawn anything — it polls the URL and

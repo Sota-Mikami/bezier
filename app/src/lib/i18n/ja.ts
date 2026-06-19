@@ -175,10 +175,11 @@ export const ja: Messages = {
     retry: "もう一度起動",
     logLabel: "出力",
     depsHint: "すぐ終了した場合、プロジェクトの依存（node_modules）が未インストールの可能性が高いです。",
-    startFailedHint: "dev サーバーを確認できませんでした。下の OUTPUT を確認するか、ターミナルでご自身で起動してください。",
+    startFailedHint: "dev サーバーを確認できませんでした。依存をインストールするか、下のターミナルでご自身で起動してエラーを確認してください。",
     openTerminalManual: "ターミナルで起動",
     agentMissing:
       "コーディングエージェントが見つかりません。「Agent に直してもらう」を使うには Claude Code をインストールしてください（ここであなた自身のエージェントが動きます）。",
+    checkingRepo: "このリポジトリを確認中…",
     resizeLog: "ドラッグで高さ調整（ダブルクリックでリセット）",
     readyTitle: "この repo を準備する",
     readyIntro: "起動する前に、いくつか整えます。",
@@ -506,6 +507,7 @@ export const ja: Messages = {
     externalUrlHint:
       "例: Docker / Rails サーバー。設定すると dev サーバーを起動せず、この URL を表示します。loopback（localhost）のみ。",
     externalUrlInvalid: "loopback URL のみ指定できます — http://localhost:… または http://127.0.0.1:…",
+    attachDetach: "この URL の表示をやめる",
     attachWaiting: "{url} を待っています — サーバーを起動してください（例: docker compose up）。起動すると自動で表示されます。",
     terminal: "ターミナル",
     panelTip: "出力ログとターミナル",

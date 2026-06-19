@@ -42,6 +42,7 @@ import { usePreviewDiagnostic } from "./use-preview-diagnostic";
 import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
 import { detectAgents } from "@/lib/agents";
+import { ptyKillKey } from "@/lib/pty";
 import { previewDoctorPrompt } from "@/lib/prompts";
 import { isLoopbackUrl } from "@/lib/preview";
 import { useReadiness, type ReadinessController } from "./use-readiness";
@@ -130,6 +131,23 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
     wrap?: boolean;
   } | null>(null);
   const [spawnNonce, setSpawnNonce] = React.useState(0);
+  // QA 5.A / PE P1-4 (DEC-130): the agent terminal is a PERSISTENT keyed pty
+  // (`agent:<cwd>:<nonce>`). Re-clicking "Fix with agent" bumps the nonce → a new
+  // keyed pty, orphaning the previous claude run (it keeps running, burning tokens).
+  // Track the last key so we can kill it before respawning and on unmount.
+  const lastAgentKeyRef = React.useRef<string | null>(null);
+  // Record the current agent pty key after each (re)spawn — used by fixWithAgent to
+  // kill the prior run, and by the unmount cleanup below. Set in an effect (not in a
+  // setState updater) to avoid writing a ref during render.
+  React.useEffect(() => {
+    if (spawnNonce > 0 && cwd) lastAgentKeyRef.current = `agent:${cwd}:${spawnNonce}`;
+  }, [spawnNonce, cwd]);
+  React.useEffect(() => {
+    // Kill the orphaned agent pty when leaving Live entirely.
+    return () => {
+      if (lastAgentKeyRef.current) void ptyKillKey(lastAgentKeyRef.current).catch(() => {});
+    };
+  }, []);
   // QA 2.B (DEC-130): if no coding agent (Claude Code) is installed, "Fix with agent"
   // would spawn `claude` → `command not found` in the terminal — opaque to a
   // non-engineer. Detect first and show install guidance instead of opening the panel.
@@ -223,6 +241,10 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
       setAgentMissing(true);
       return;
     }
+    // QA 5.A (DEC-130): kill the previous run's agent pty before launching a new one
+    // (each is keyed `agent:<cwd>:<nonce>` in PreviewBottomPanel) so they don't pile
+    // up. The new key is recorded by the effect below once the nonce updates.
+    if (lastAgentKeyRef.current) await ptyKillKey(lastAgentKeyRef.current).catch(() => {});
     setAgentSpawn({ cmd: claude.bin, args: [prompt], wrap: true });
     setSpawnNonce((n) => n + 1);
     setPanelTab("terminal");
@@ -414,7 +436,11 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
                   </div>
                 </>
               ) : !readiness.loaded ? (
-                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                // QA 1.A (DEC-130): label the readiness probe so it isn't a silent spinner.
+                <>
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">{t("live.checkingRepo")}</p>
+                </>
               ) : noApp ? (
                 <>
                   <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">

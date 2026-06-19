@@ -571,18 +571,39 @@ export function PreviewPane({
             <p className="max-w-md text-sm text-muted-foreground">
               {t("preview.attachWaiting", { url: externalUrl })}
             </p>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5"
-              onClick={() => {
-                setPanelTab("terminal");
-                setPanelOpen(true);
-              }}
-            >
-              <Terminal className="size-3.5" />
-              {t("preview.terminal")}
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5"
+                onClick={() => {
+                  setPanelTab("terminal");
+                  setPanelOpen(true);
+                }}
+              >
+                <Terminal className="size-3.5" />
+                {t("preview.terminal")}
+              </Button>
+              {/* QA 4.D (DEC-130): a detach button (Live already had one) — save the
+                  config WITHOUT externalUrl to leave attach mode. */}
+              {config && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={() =>
+                    void server.saveConfig({
+                      devCommand: config.devCommand,
+                      port: config.port,
+                      packageDir: config.packageDir,
+                      ...(config.runner ? { runner: config.runner } : {}),
+                    })
+                  }
+                >
+                  {t("preview.attachDetach")}
+                </Button>
+              )}
+            </div>
           </div>
         ) : status === "ready" && url ? (
           // Single mode (DEC-120): the preview IS a native embedded browser, so
