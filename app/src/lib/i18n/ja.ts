@@ -523,8 +523,11 @@ export const ja: Messages = {
 
   edit: {
     selectPrompt: "プレビュー上の要素をクリックしてスタイルを編集します。",
+    kbdHint: "↑/↓ で数値を増減（Shift ×10・Alt ×0.1）・Esc で親要素・⌘Z で取り消し",
     clickToSelect: "要素をクリックして選択",
     pendingCount: "{n} 件の変更",
+    notYetCommitted: "「コードに反映」するまで実コードは変わりません",
+    undo: "取り消し（⌘Z）",
     discard: "破棄",
     applyToCode: "コードに反映",
   },

@@ -1,12 +1,11 @@
 "use client";
 
 // Visual-edit engine (DEC-131). Drives the in-page overlay agent (bezier-overlay.ts)
-// inside the embedded webview and surfaces selection + live style editing to the
-// Style/Layer panels. Bezier→page = embed_browser_eval (apply/activate/inject);
-// page→Bezier = embed_browser_drain (eval_with_callback → `bz-edit` event) which we
-// listen to and parse. Edits apply LIVE as inline styles (instant feedback) and
-// accumulate as diffs; "apply to code" hands the diffs to the user's agent via the
-// existing sendDesignFeedback rail (preview-pane owns that call).
+// inside the embedded webview and surfaces selection + live style/structure editing
+// to the Style/Layer panels. Bezier→page = embed_browser_eval (apply/activate/inject/
+// move); page→Bezier = embed_browser_drain (eval_with_callback → `bz-edit` event).
+// Edits apply LIVE (instant) and accumulate as diffs + reorder ops; "apply to code"
+// hands them to the user's agent via sendDesignFeedback (preview-pane owns that call).
 
 import * as React from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -35,10 +34,23 @@ export interface StyleDiff {
   before: string;
   after: string;
 }
+export interface ReorderOp {
+  src: ElBrief;
+  dest: ElBrief;
+  before: boolean;
+}
 
 interface DrainEvent {
   type: string;
   el?: SelectedInfo;
+}
+interface HistoryEntry {
+  selector: string;
+  tag: string;
+  classes: string[];
+  prop: string;
+  prevValue: string;
+  origBefore: string;
 }
 
 function q(s: string) {
@@ -47,13 +59,20 @@ function q(s: string) {
 
 export interface VisualEdit {
   selected: SelectedInfo | null;
-  /** Current applied overrides for the SELECTED element (prop → value), for display. */
+  /** Applied overrides for the SELECTED element (prop → value), for display. */
   overrides: Record<string, string>;
-  /** All pending edits across elements (last write per selector+prop wins). */
   diffs: StyleDiff[];
+  reorders: ReorderOp[];
+  /** diffs + reorders count — drives the pending bar. */
+  editCount: number;
   applyStyle: (prop: string, value: string) => void;
+  resetProp: (prop: string) => void;
+  undo: () => void;
+  canUndo: boolean;
   selectParent: () => void;
   selectPath: (path: string) => void;
+  /** Reorder: move `src` before/after `dest` (shared-parent siblings). */
+  moveChild: (src: ElBrief, dest: ElBrief, before: boolean) => void;
   clearEdits: () => void;
 }
 
@@ -61,16 +80,16 @@ export function useVisualEdit({
   active,
   navKey,
 }: {
-  /** Edit mode on AND the embedded webview is live (ready + url). */
   active: boolean;
-  /** Changes when the preview navigates (full reload) → re-inject the overlay. */
   navKey: string;
 }): VisualEdit {
   const [selected, setSelected] = React.useState<SelectedInfo | null>(null);
   const [overrides, setOverrides] = React.useState<Record<string, string>>({});
-  // diffs keyed by `${selector}|${prop}` so re-editing the same prop overwrites.
   const diffsRef = React.useRef<Map<string, StyleDiff>>(new Map());
   const [diffs, setDiffs] = React.useState<StyleDiff[]>([]);
+  const [reorders, setReorders] = React.useState<ReorderOp[]>([]);
+  const historyRef = React.useRef<HistoryEntry[]>([]);
+  const [canUndo, setCanUndo] = React.useState(false);
   const selectedRef = React.useRef<SelectedInfo | null>(null);
   React.useEffect(() => {
     selectedRef.current = selected;
@@ -80,29 +99,95 @@ export function useVisualEdit({
     setDiffs(Array.from(diffsRef.current.values()));
   }, []);
 
+  const evalApplyTo = (selector: string, prop: string, value: string) =>
+    void embedBrowserEval(
+      `window.__bzEdit && window.__bzEdit.applyTo(${q(selector)}, ${q(prop)}, ${q(value)})`,
+    ).catch(() => {});
+
+  // Forward edit (apply / reset / paste): records history + diff, updates the live DOM.
+  const recordEdit = React.useCallback(
+    (info: ElBrief, prop: string, value: string, computedBefore: string) => {
+      const key = `${info.selector}|${prop}`;
+      const existing = diffsRef.current.get(key);
+      const origBefore = existing ? existing.before : computedBefore;
+      const prevValue = existing ? existing.after : origBefore;
+      historyRef.current.push({
+        selector: info.selector,
+        tag: info.tag,
+        classes: info.classes,
+        prop,
+        prevValue,
+        origBefore,
+      });
+      setCanUndo(true);
+      if (value === origBefore) diffsRef.current.delete(key);
+      else
+        diffsRef.current.set(key, {
+          selector: info.selector,
+          tag: info.tag,
+          classes: info.classes,
+          prop,
+          before: origBefore,
+          after: value,
+        });
+      syncDiffs();
+    },
+    [syncDiffs],
+  );
+
   const applyStyle = React.useCallback(
     (prop: string, value: string) => {
       const sel = selectedRef.current;
       if (!sel) return;
-      const key = `${sel.selector}|${prop}`;
-      const existing = diffsRef.current.get(key);
-      const before = existing ? existing.before : sel.computed[prop] ?? "";
-      diffsRef.current.set(key, {
-        selector: sel.selector,
-        tag: sel.tag,
-        classes: sel.classes,
-        prop,
-        before,
-        after: value,
-      });
-      syncDiffs();
-      setOverrides((o) => ({ ...o, [prop]: value }));
+      recordEdit(sel, prop, value, sel.computed[prop] ?? "");
+      setOverrides((o) =>
+        value === (sel.computed[prop] ?? "") ? omit(o, prop) : { ...o, [prop]: value },
+      );
       void embedBrowserEval(`window.__bzEdit && window.__bzEdit.apply(${q(prop)}, ${q(value)})`).catch(
         () => {},
       );
     },
-    [syncDiffs],
+    [recordEdit],
   );
+
+  const resetProp = React.useCallback(
+    (prop: string) => {
+      const sel = selectedRef.current;
+      if (!sel) return;
+      const key = `${sel.selector}|${prop}`;
+      const d = diffsRef.current.get(key);
+      const orig = d ? d.before : sel.computed[prop] ?? "";
+      recordEdit(sel, prop, orig, sel.computed[prop] ?? "");
+      setOverrides((o) => omit(o, prop));
+      evalApplyTo(sel.selector, prop, orig);
+    },
+    [recordEdit],
+  );
+
+  const undo = React.useCallback(() => {
+    const e = historyRef.current.pop();
+    setCanUndo(historyRef.current.length > 0);
+    if (!e) return;
+    const key = `${e.selector}|${e.prop}`;
+    if (e.prevValue === e.origBefore) diffsRef.current.delete(key);
+    else
+      diffsRef.current.set(key, {
+        selector: e.selector,
+        tag: e.tag,
+        classes: e.classes,
+        prop: e.prop,
+        before: e.origBefore,
+        after: e.prevValue,
+      });
+    syncDiffs();
+    evalApplyTo(e.selector, e.prop, e.prevValue);
+    const sel = selectedRef.current;
+    if (sel && sel.selector === e.selector) {
+      setOverrides((o) =>
+        e.prevValue === e.origBefore ? omit(o, e.prop) : { ...o, [e.prop]: e.prevValue },
+      );
+    }
+  }, [syncDiffs]);
 
   const selectParent = React.useCallback(() => {
     void embedBrowserEval("window.__bzEdit && window.__bzEdit.selectParent()").catch(() => {});
@@ -113,8 +198,19 @@ export function useVisualEdit({
     );
   }, []);
 
+  const moveChild = React.useCallback((src: ElBrief, dest: ElBrief, before: boolean) => {
+    if (src.selector === dest.selector) return;
+    void embedBrowserEval(
+      `window.__bzEdit && window.__bzEdit.moveNode(${q(src.selector)}, ${q(dest.selector)}, ${before})`,
+    ).catch(() => {});
+    setReorders((r) => [...r, { src, dest, before }]);
+  }, []);
+
   const clearEdits = React.useCallback(() => {
     diffsRef.current.clear();
+    historyRef.current = [];
+    setCanUndo(false);
+    setReorders([]);
     syncDiffs();
     setOverrides({});
   }, [syncDiffs]);
@@ -127,8 +223,6 @@ export function useVisualEdit({
     let unlisten: UnlistenFn | null = null;
 
     (async () => {
-      // New page context → drop stale selection/overrides (the diffs persist: they're
-      // an accumulating edit list the maker still wants to send).
       setSelected(null);
       setOverrides({});
       try {
@@ -142,8 +236,14 @@ export function useVisualEdit({
           }
           for (const ev of evs) {
             if (ev.type === "selected" && ev.el) {
-              setSelected(ev.el);
-              setOverrides({}); // fresh element → no pending overrides shown yet
+              const el = ev.el;
+              setSelected(el);
+              // Re-selecting an already-edited element → show its pending overrides.
+              const ov: Record<string, string> = {};
+              diffsRef.current.forEach((d) => {
+                if (d.selector === el.selector) ov[d.prop] = d.after;
+              });
+              setOverrides(ov);
             }
           }
         });
@@ -166,5 +266,26 @@ export function useVisualEdit({
     };
   }, [active, navKey]);
 
-  return { selected, overrides, diffs, applyStyle, selectParent, selectPath, clearEdits };
+  return {
+    selected,
+    overrides,
+    diffs,
+    reorders,
+    editCount: diffs.length + reorders.length,
+    applyStyle,
+    resetProp,
+    undo,
+    canUndo,
+    selectParent,
+    selectPath,
+    moveChild,
+    clearEdits,
+  };
+}
+
+function omit(o: Record<string, string>, k: string): Record<string, string> {
+  if (!(k in o)) return o;
+  const n = { ...o };
+  delete n[k];
+  return n;
 }

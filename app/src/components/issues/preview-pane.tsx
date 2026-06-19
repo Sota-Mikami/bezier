@@ -452,24 +452,52 @@ export function PreviewPane({
     navKey: path,
   });
   const [applyingEdits, setApplyingEdits] = React.useState(false);
+  const veCount = vedit.editCount;
   const veDiffs = vedit.diffs;
+  const veReorders = vedit.reorders;
   const veClear = vedit.clearEdits;
+  const veSelectParent = vedit.selectParent;
+  const veUndo = vedit.undo;
   const applyEditsToCode = React.useCallback(async () => {
-    if (!session || veDiffs.length === 0) return;
+    if (!session || veCount === 0) return;
     setApplyingEdits(true);
     try {
-      const ok = await session.sendDesignFeedback(visualEditPrompt(path, veDiffs), "visual_edit");
+      const ok = await session.sendDesignFeedback(
+        visualEditPrompt(path, veDiffs, veReorders),
+        "visual_edit",
+      );
       if (ok) veClear();
     } catch {
       /* surfaced by the agent terminal */
     } finally {
       setApplyingEdits(false);
     }
-  }, [session, veDiffs, veClear, path]);
+  }, [session, veCount, veDiffs, veReorders, veClear, path]);
   const discardEdits = React.useCallback(() => {
     setReloadNonce((n) => n + 1); // reload reverts the live inline styles
     veClear();
   }, [veClear]);
+
+  // Edit-mode keyboard (DEC-131): Escape → select parent, ⌘Z → undo. Only fires when
+  // focus is in Bezier's UI (when the webview itself is focused, JS shortcuts don't
+  // reach us — DEC-120; the panel's Undo button + ↑/↓ steppers cover that case).
+  React.useEffect(() => {
+    if (!editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      const inField = tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+      if (inField) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        veSelectParent();
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.code === "KeyZ") {
+        e.preventDefault();
+        veUndo();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editing, veSelectParent, veUndo]);
 
   // Freeze-to-annotate (DEC-120): a native webview can't be drawn over, so when
   // annotation mode turns on we screenshot the live (logged-in) browser, then
@@ -829,7 +857,7 @@ export function PreviewPane({
 
       {editing && (
         <PendingEditsBar
-          diffs={vedit.diffs}
+          vedit={vedit}
           busy={applyingEdits}
           onApply={() => void applyEditsToCode()}
           onDiscard={discardEdits}

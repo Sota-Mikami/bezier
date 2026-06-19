@@ -157,6 +157,25 @@ export const OVERLAY_JS = String.raw`(function () {
       try { state.sel.style.setProperty(prop, value); } catch (e) {}
       redraw();
     },
+    // Apply to an ARBITRARY element (undo / reset / paste — may not be selected).
+    applyTo: function (sel, prop, value) {
+      try {
+        var el = document.querySelector(sel);
+        if (el) { el.style.setProperty(prop, value); redraw(); }
+      } catch (e) {}
+    },
+    // Reorder: move src before/after dest among shared-parent siblings (live). The
+    // nth-of-type selectors shift after a move, so re-select src to refresh its path.
+    moveNode: function (srcSel, destSel, before) {
+      try {
+        var s = document.querySelector(srcSel);
+        var d = document.querySelector(destSel);
+        if (s && d && s.parentNode && s.parentNode === d.parentNode && s !== d) {
+          d.parentNode.insertBefore(s, before ? d : d.nextSibling);
+          select(s);
+        }
+      } catch (e) {}
+    },
     selectParent: function () {
       if (state.sel && state.sel.parentElement && state.sel.parentElement !== document.body) select(state.sel.parentElement);
     },

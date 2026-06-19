@@ -44,6 +44,9 @@ interface PromptPhrases {
   veHeader: string;
   veIntro: (route: string) => string;
   veConstraints: string[];
+  veReorder: (src: string, pos: string, dest: string) => string;
+  veBefore: string;
+  veAfter: string;
 
   // --- md doc / Map / QA surfaces ---
   docHeader: (label: string) => string;
@@ -103,8 +106,12 @@ const JA: PromptPhrases = {
     "制約:",
     "- **この repo の作法で書く**: Tailwind なら class、CSS Modules / styled-components / トークン等ならその方式。変更前後はブラウザの計算値（px・rgb 等）なので、最も近い既存の表現に落としてよい。design-system.md / tokens があれば優先。",
     "- セレクタは目印（脆い場合あり）。tag / class / 周辺テキストから対象要素を特定すること。",
+    "- 並べ替えは DOM 上の兄弟移動。`.map()` や条件分岐の中なら、ソース側の要素順を意図通りに変えること。",
     "- 最小変更。無関係な箇所は触らない。終わったら変更点を一言で要約（commit は人間が Bezier の UI から行う）。",
   ],
+  veReorder: (src, pos, dest) => `${src} を ${dest} の${pos}へ移動（兄弟内で並べ替え）`,
+  veBefore: "前",
+  veAfter: "後ろ",
 
   docHeader: (label) => `## ドキュメント「${label}」への注釈`,
   docIntro: (docPath) =>
@@ -188,8 +195,12 @@ const EN: PromptPhrases = {
     "Constraints:",
     "- **Write it in THIS repo's idiom**: Tailwind → classes; CSS Modules / styled-components / tokens → that mechanism. The before/after are the browser's computed values (px, rgb, …) — map them to the nearest existing expression. Prefer design-system.md / tokens if present.",
     "- The selector is a hint (it can be brittle). Identify the element from its tag / classes / nearby text.",
+    "- Reorders are DOM sibling moves. If the element is inside a `.map()` or a conditional, change the SOURCE order to match the intent.",
     "- Minimal change; don't touch unrelated code. When done, summarize the change in one line (a human commits from Bezier's UI).",
   ],
+  veReorder: (src, pos, dest) => `Move ${src} ${pos} ${dest} (reordered among siblings)`,
+  veBefore: "before",
+  veAfter: "after",
 
   docHeader: (label) => `## Annotations on the “${label}” document`,
   docIntro: (docPath) =>
@@ -271,18 +282,18 @@ export function previewFeedbackPrompt(route: string, lines: string[], shot: stri
 /** Visual editor (DEC-131): turn GUI style edits into a code-reflection prompt for
  *  the user's agent. Diffs are grouped per element; the agent writes them in the
  *  repo's idiom (Tailwind / CSS / tokens / CSS-in-JS). */
+interface VEBrief {
+  selector: string;
+  tag: string;
+  classes: string[];
+}
 export function visualEditPrompt(
   route: string,
-  diffs: {
-    selector: string;
-    tag: string;
-    classes: string[];
-    prop: string;
-    before: string;
-    after: string;
-  }[],
+  diffs: (VEBrief & { prop: string; before: string; after: string })[],
+  reorders: { src: VEBrief & { text?: string }; dest: VEBrief & { text?: string }; before: boolean }[] = [],
 ): string {
   const p = promptPhrases();
+  const label = (b: VEBrief) => `\`${b.tag}${b.classes.length ? "." + b.classes.join(".") : ""}\``;
   const bySel = new Map<string, typeof diffs>();
   for (const d of diffs) {
     const arr = bySel.get(d.selector) ?? [];
@@ -292,10 +303,14 @@ export function visualEditPrompt(
   const lines: string[] = [];
   let n = 1;
   for (const [selector, ds] of bySel) {
-    const head = ds[0];
-    const cls = head.classes.length ? "." + head.classes.join(".") : "";
-    lines.push(`${n}. \`${head.tag}${cls}\` (selector \`${selector}\`)`);
+    lines.push(`${n}. ${label(ds[0])} (selector \`${selector}\`)`);
     for (const d of ds) lines.push(`   - ${d.prop}: ${d.before} → ${d.after}`);
+    n++;
+  }
+  for (const r of reorders) {
+    lines.push(
+      `${n}. ${p.veReorder(label(r.src), r.before ? p.veBefore : p.veAfter, label(r.dest))}`,
+    );
     n++;
   }
   return [p.veHeader, p.veIntro(route), "", ...lines, "", ...p.veConstraints].join("\n");

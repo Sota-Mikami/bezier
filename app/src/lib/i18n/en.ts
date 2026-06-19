@@ -524,8 +524,11 @@ export const en = {
 
   edit: {
     selectPrompt: "Click an element in the preview to edit its styles.",
+    kbdHint: "↑/↓ to nudge numbers (Shift ×10, Alt ×0.1) · Esc to select parent · ⌘Z to undo",
     clickToSelect: "Click an element to select",
     pendingCount: "{n} pending",
+    notYetCommitted: "the real code isn't changed until you Apply",
+    undo: "Undo (⌘Z)",
     discard: "Discard",
     applyToCode: "Apply to code",
   },
