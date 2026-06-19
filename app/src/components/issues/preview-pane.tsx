@@ -458,6 +458,7 @@ export function PreviewPane({
   const veClear = vedit.clearEdits;
   const veSelectParent = vedit.selectParent;
   const veUndo = vedit.undo;
+  const veMove = vedit.moveSelectedBy;
   const applyEditsToCode = React.useCallback(async () => {
     if (!session || veCount === 0) return;
     setApplyingEdits(true);
@@ -493,11 +494,17 @@ export function PreviewPane({
       } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.code === "KeyZ") {
         e.preventDefault();
         veUndo();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        veMove(-1);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        veMove(1);
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [editing, veSelectParent, veUndo]);
+  }, [editing, veSelectParent, veUndo, veMove]);
 
   // Freeze-to-annotate (DEC-120): a native webview can't be drawn over, so when
   // annotation mode turns on we screenshot the live (logged-in) browser, then

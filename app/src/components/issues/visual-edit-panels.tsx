@@ -11,8 +11,8 @@
 import * as React from "react";
 import {
   MousePointerSquareDashed,
-  ChevronUp,
   ChevronDown,
+  ChevronRight,
   Loader2,
   Undo2,
   RotateCcw,
@@ -48,13 +48,12 @@ import {
   FileText,
   Shapes,
   Box,
-  Eye,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
-import type { ElBrief, SelectedInfo, VisualEdit } from "./use-visual-edit";
+import type { ElBrief, SelectedInfo, TreeNode, VisualEdit } from "./use-visual-edit";
 
 function briefLabel(b: ElBrief): string {
   const cls = b.classes.length ? "." + b.classes.slice(0, 2).join(".") : "";
@@ -473,96 +472,175 @@ function TagIcon({ tag, className }: { tag: string; className?: string }) {
   return <Icon className={className} />;
 }
 
+function nodeLabel(n: TreeNode): string {
+  const cls = n.classes.length ? "." + n.classes.slice(0, 2).join(".") : "";
+  return n.tag + cls;
+}
+function briefOf(n: TreeNode): ElBrief {
+  return { selector: n.sel, tag: n.tag, classes: n.classes, text: n.text };
+}
+
+interface DragState {
+  node: TreeNode;
+  parentSel: string;
+  idx: number;
+}
+
+function TreeRow({
+  node,
+  depth,
+  parentSel,
+  idx,
+  vedit,
+  collapsed,
+  toggle,
+  drag,
+  setDrag,
+  over,
+  setOver,
+}: {
+  node: TreeNode;
+  depth: number;
+  parentSel: string;
+  idx: number;
+  vedit: VisualEdit;
+  collapsed: Set<string>;
+  toggle: (sel: string) => void;
+  drag: DragState | null;
+  setDrag: (d: DragState | null) => void;
+  over: string | null;
+  setOver: (s: string | null) => void;
+}) {
+  const isSel = node.sel === vedit.selectedSelector;
+  const hasKids = node.children.length > 0;
+  const open = !collapsed.has(node.sel);
+  const brief: ElBrief = { selector: node.sel, tag: node.tag, classes: node.classes, text: node.text };
+  const rowRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (isSel) rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [isSel]);
+  return (
+    <>
+      <div
+        ref={rowRef}
+        draggable
+        onDragStart={(e) => {
+          setDrag({ node, parentSel, idx });
+          // WKWebView/Tauri needs effectAllowed (+ data) or onDrop never fires.
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", node.sel);
+        }}
+        onDragOver={(e) => {
+          if (drag && drag.parentSel === parentSel && drag.node.sel !== node.sel) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (over !== node.sel) setOver(node.sel);
+          }
+        }}
+        onDragEnd={() => {
+          setDrag(null);
+          setOver(null);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (drag && drag.parentSel === parentSel && drag.node.sel !== node.sel) {
+            vedit.moveChild(briefOf(drag.node), brief, drag.idx > idx);
+          }
+          setDrag(null);
+          setOver(null);
+        }}
+        style={{ paddingLeft: 4 + depth * 12 }}
+        className={cn(
+          "group flex h-[22px] items-center gap-1 truncate rounded pr-1.5 font-mono",
+          isSel
+            ? "bg-accent font-medium text-foreground"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          over === node.sel && drag && "ring-1 ring-primary/50",
+        )}
+      >
+        <GripVertical className="size-3 shrink-0 cursor-grab opacity-0 group-hover:opacity-40" />
+        {hasKids ? (
+          <button
+            type="button"
+            onClick={() => toggle(node.sel)}
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          </button>
+        ) : (
+          <span className="size-3 shrink-0" />
+        )}
+        <button
+          type="button"
+          onClick={() => vedit.selectPath(node.sel)}
+          className="flex min-w-0 flex-1 items-center gap-1 truncate text-left"
+        >
+          <TagIcon tag={node.tag} className="size-3 shrink-0 opacity-60" />
+          <span className="truncate">{nodeLabel(node)}</span>
+          {node.text && <span className="truncate text-[10px] opacity-40">{node.text.slice(0, 14)}</span>}
+        </button>
+      </div>
+      {hasKids &&
+        open &&
+        node.children.map((c, i) => (
+          <TreeRow
+            key={c.sel + i}
+            node={c}
+            depth={depth + 1}
+            parentSel={node.sel}
+            idx={i}
+            vedit={vedit}
+            collapsed={collapsed}
+            toggle={toggle}
+            drag={drag}
+            setDrag={setDrag}
+            over={over}
+            setOver={setOver}
+          />
+        ))}
+    </>
+  );
+}
+
 export function EditLayerPanel({ vedit }: { vedit: VisualEdit }) {
   const t = useT();
-  const sel = vedit.selected;
-  const [dragIdx, setDragIdx] = React.useState<number | null>(null);
-  const [overIdx, setOverIdx] = React.useState<number | null>(null);
-  if (!sel) {
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
+  const [drag, setDrag] = React.useState<DragState | null>(null);
+  const [over, setOver] = React.useState<string | null>(null);
+  const toggle = React.useCallback((sel: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(sel)) next.delete(sel);
+      else next.add(sel);
+      return next;
+    });
+  }, []);
+  const root = vedit.tree;
+  if (!root) {
     return (
       <div className="flex h-full items-center justify-center p-3 text-center text-[11px] text-muted-foreground">
         {t("edit.clickToSelect")}
       </div>
     );
   }
-  const selPad = 4 + sel.ancestors.length * 12;
-  const childPad = 4 + (sel.ancestors.length + 1) * 12;
+  // Render the root's children as the top level (skip the <body> node itself).
   return (
-    <div className="flex h-full flex-col overflow-y-auto py-1 text-[11px]">
-      {sel.ancestors
-        .slice()
-        .reverse()
-        .map((a, i) => (
-          <button
-            key={a.selector + i}
-            type="button"
-            onClick={() => vedit.selectPath(a.selector)}
-            style={{ paddingLeft: 4 + i * 12 }}
-            className="flex h-[22px] items-center gap-1 truncate rounded pr-1.5 text-left font-mono text-muted-foreground/70 hover:bg-muted hover:text-foreground"
-          >
-            <ChevronUp className="size-3 shrink-0 opacity-40" />
-            <TagIcon tag={a.tag} className="size-3 shrink-0 opacity-60" />
-            <span className="truncate">{briefLabel(a)}</span>
-          </button>
-        ))}
-      <div
-        style={{ paddingLeft: selPad }}
-        className="flex h-[22px] items-center gap-1 truncate rounded bg-accent pr-1.5 font-mono font-medium text-foreground"
-      >
-        {sel.children.length > 0 ? (
-          <ChevronDown className="size-3 shrink-0" />
-        ) : (
-          <span className="size-3 shrink-0" />
-        )}
-        <TagIcon tag={sel.tag} className="size-3 shrink-0 opacity-70" />
-        <span className="truncate">{briefLabel(sel)}</span>
-      </div>
-      {sel.children.map((c, i) => (
-        <div
-          key={c.selector + i}
-          draggable
-          onDragStart={(e) => {
-            setDragIdx(i);
-            // WKWebView/Tauri requires effectAllowed (+ data) for the drag to register
-            // a valid drop target — without it onDrop never fires. (DEC-131 fix.)
-            e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("text/plain", String(i));
-          }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            if (overIdx !== i) setOverIdx(i);
-          }}
-          onDragEnd={() => {
-            setDragIdx(null);
-            setOverIdx(null);
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            if (dragIdx !== null && dragIdx !== i) {
-              vedit.moveChild(sel.children[dragIdx], c, dragIdx > i);
-            }
-            setDragIdx(null);
-            setOverIdx(null);
-          }}
-          style={{ paddingLeft: childPad }}
-          className={cn(
-            "group flex h-[22px] items-center gap-1 truncate rounded pr-1.5 font-mono text-muted-foreground hover:bg-muted hover:text-foreground",
-            overIdx === i && dragIdx !== null && "ring-1 ring-primary/50",
-          )}
-        >
-          <GripVertical className="size-3 shrink-0 cursor-grab opacity-0 group-hover:opacity-40" />
-          <button
-            type="button"
-            onClick={() => vedit.selectPath(c.selector)}
-            className="flex min-w-0 flex-1 items-center gap-1 truncate text-left"
-          >
-            <TagIcon tag={c.tag} className="size-3 shrink-0 opacity-50" />
-            <span className="truncate">{briefLabel(c)}</span>
-            {c.text && <span className="truncate text-[10px] opacity-40">{c.text.slice(0, 12)}</span>}
-          </button>
-          <Eye className="size-3 shrink-0 opacity-0" />
-        </div>
+    <div className="flex h-full flex-col overflow-auto py-1 text-[11px]">
+      {root.children.map((c, i) => (
+        <TreeRow
+          key={c.sel + i}
+          node={c}
+          depth={0}
+          parentSel={root.sel}
+          idx={i}
+          vedit={vedit}
+          collapsed={collapsed}
+          toggle={toggle}
+          drag={drag}
+          setDrag={setDrag}
+          over={over}
+          setOver={setOver}
+        />
       ))}
     </div>
   );

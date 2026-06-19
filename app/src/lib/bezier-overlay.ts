@@ -132,6 +132,58 @@ export const OVERLAY_JS = String.raw`(function () {
     select(el);
   }
 
+  // --- full layer tree (the left panel shows the WHOLE page, always) ---
+  var SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, LINK: 1, META: 1, HEAD: 1, BR: 1 };
+  function buildTree(el, depth, budget) {
+    if (!el || budget.n <= 0) return null;
+    budget.n--;
+    var b = brief(el);
+    var node = { sel: b.selector, tag: b.tag, classes: b.classes, text: el.children.length === 0 ? b.text : "", children: [] };
+    if (depth < 16) {
+      for (var i = 0; i < el.children.length; i++) {
+        var c = el.children[i];
+        if (isOurs(c) || SKIP[c.tagName]) continue;
+        var ch = buildTree(c, depth + 1, budget);
+        if (ch) node.children.push(ch);
+        if (budget.n <= 0) break;
+      }
+    }
+    return node;
+  }
+  function emitTree() {
+    q.push({ type: "tree", root: buildTree(document.body, 0, { n: 800 }), sel: state.sel ? cssPath(state.sel) : null });
+  }
+  // Move the selected element among its siblings by delta (-1 up / +1 down) — the
+  // keyboard reorder. Records a reorder intent + refreshes selection + tree.
+  function moveSel(delta) {
+    var s = state.sel;
+    if (!s || !s.parentNode) return;
+    var sibs = [];
+    for (var i = 0; i < s.parentNode.children.length; i++) {
+      if (!isOurs(s.parentNode.children[i])) sibs.push(s.parentNode.children[i]);
+    }
+    var idx = sibs.indexOf(s);
+    var j = idx + delta;
+    if (j < 0 || j >= sibs.length) return;
+    var ref = sibs[j];
+    var srcB = brief(s), destB = brief(ref);
+    if (delta > 0) s.parentNode.insertBefore(s, ref.nextSibling);
+    else s.parentNode.insertBefore(s, ref);
+    q.push({ type: "reorder", src: srcB, dest: destB, before: delta < 0 });
+    select(s);
+    emitTree();
+  }
+  // ↑/↓ reorder while editing — handled IN-PAGE so it works right after clicking an
+  // element in the preview (the webview is focused then, so Bezier's window keydown
+  // wouldn't fire). Ignored while typing in a page field.
+  function onKey(e) {
+    if (!state.active || !state.sel) return;
+    var a = document.activeElement;
+    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable)) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); moveSel(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); moveSel(-1); }
+  }
+
   window.__bzEdit = {
     __v: 1,
     q: q,
@@ -140,17 +192,26 @@ export const OVERLAY_JS = String.raw`(function () {
       state.active = true;
       document.addEventListener("mousemove", onMove, true);
       document.addEventListener("click", onClick, true);
+      document.addEventListener("keydown", onKey, true);
       window.addEventListener("scroll", redraw, true);
       window.addEventListener("resize", redraw, true);
+      emitTree(); // publish the full page tree immediately (panel shows it before any selection)
     },
     deactivate: function () {
       state.active = false;
       document.removeEventListener("mousemove", onMove, true);
       document.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("scroll", redraw, true);
       window.removeEventListener("resize", redraw, true);
       if (state.host && state.host.parentNode) state.host.parentNode.removeChild(state.host);
       state.host = null; state.sel = null;
+    },
+    moveSelectedBy: function (delta) {
+      moveSel(delta);
+    },
+    refreshTree: function () {
+      emitTree();
     },
     apply: function (prop, value) {
       if (!state.sel) return;
@@ -176,6 +237,7 @@ export const OVERLAY_JS = String.raw`(function () {
           d.parentNode.insertBefore(s, before ? d : d.nextSibling);
           if (state.sel) select(state.sel);
           else select(s);
+          emitTree();
         }
       } catch (e) {}
     },

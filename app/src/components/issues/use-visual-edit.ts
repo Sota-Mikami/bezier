@@ -39,10 +39,23 @@ export interface ReorderOp {
   dest: ElBrief;
   before: boolean;
 }
+/** A node in the full page layer tree (left panel shows the whole page). */
+export interface TreeNode {
+  sel: string;
+  tag: string;
+  classes: string[];
+  text: string;
+  children: TreeNode[];
+}
 
 interface DrainEvent {
   type: string;
   el?: SelectedInfo;
+  root?: TreeNode;
+  sel?: string | null;
+  src?: ElBrief;
+  dest?: ElBrief;
+  before?: boolean;
 }
 interface HistoryEntry {
   selector: string;
@@ -59,6 +72,10 @@ function q(s: string) {
 
 export interface VisualEdit {
   selected: SelectedInfo | null;
+  /** The full page layer tree (left panel), refreshed on activate / reorder. */
+  tree: TreeNode | null;
+  /** Selector of the currently-selected node, for highlighting in the tree. */
+  selectedSelector: string | null;
   /** Applied overrides for the SELECTED element (prop → value), for display. */
   overrides: Record<string, string>;
   diffs: StyleDiff[];
@@ -73,6 +90,8 @@ export interface VisualEdit {
   selectPath: (path: string) => void;
   /** Reorder: move `src` before/after `dest` (shared-parent siblings). */
   moveChild: (src: ElBrief, dest: ElBrief, before: boolean) => void;
+  /** Keyboard reorder: move the selected element among its siblings (-1 up / +1 down). */
+  moveSelectedBy: (delta: number) => void;
   clearEdits: () => void;
 }
 
@@ -84,6 +103,8 @@ export function useVisualEdit({
   navKey: string;
 }): VisualEdit {
   const [selected, setSelected] = React.useState<SelectedInfo | null>(null);
+  const [tree, setTree] = React.useState<TreeNode | null>(null);
+  const [selectedSelector, setSelectedSelector] = React.useState<string | null>(null);
   const [overrides, setOverrides] = React.useState<Record<string, string>>({});
   const diffsRef = React.useRef<Map<string, StyleDiff>>(new Map());
   const [diffs, setDiffs] = React.useState<StyleDiff[]>([]);
@@ -206,6 +227,14 @@ export function useVisualEdit({
     setReorders((r) => [...r, { src, dest, before }]);
   }, []);
 
+  // Keyboard reorder (↑/↓). The overlay performs the move in-page and emits a
+  // `reorder` event we record (so it works even when the webview has focus).
+  const moveSelectedBy = React.useCallback((delta: number) => {
+    void embedBrowserEval(`window.__bzEdit && window.__bzEdit.moveSelectedBy(${delta})`).catch(
+      () => {},
+    );
+  }, []);
+
   const clearEdits = React.useCallback(() => {
     diffsRef.current.clear();
     historyRef.current = [];
@@ -238,12 +267,19 @@ export function useVisualEdit({
             if (ev.type === "selected" && ev.el) {
               const el = ev.el;
               setSelected(el);
+              setSelectedSelector(el.selector);
               // Re-selecting an already-edited element → show its pending overrides.
               const ov: Record<string, string> = {};
               diffsRef.current.forEach((d) => {
                 if (d.selector === el.selector) ov[d.prop] = d.after;
               });
               setOverrides(ov);
+            } else if (ev.type === "tree" && ev.root) {
+              setTree(ev.root);
+              if (ev.sel !== undefined) setSelectedSelector(ev.sel);
+            } else if (ev.type === "reorder" && ev.src && ev.dest) {
+              const op = { src: ev.src, dest: ev.dest, before: !!ev.before };
+              setReorders((r) => [...r, op]);
             }
           }
         });
@@ -268,6 +304,8 @@ export function useVisualEdit({
 
   return {
     selected,
+    tree,
+    selectedSelector,
     overrides,
     diffs,
     reorders,
@@ -279,6 +317,7 @@ export function useVisualEdit({
     selectParent,
     selectPath,
     moveChild,
+    moveSelectedBy,
     clearEdits,
   };
 }
