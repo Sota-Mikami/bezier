@@ -228,4 +228,8 @@ CEO「Layer パネルは選択物に関連するものだけでなく**ページ
 
 **R3.1（commit 直後）— 大規模ページのノイズ対策**: 全展開をやめ、**既定は 2 階層の概観**（トップレベル＋その直下）。**選択するとその要素までのパスが auto-expand** し選択は常に可視（選択パスは手動 collapse より優先）＋scroll-into-view。手動の開閉は次の選択まで保持。実装＝pathSet(root→selected)＋expanded/collapsed override。`open = onPath || (!collapsed && (depth===0 || manuallyExpanded))`。
 
-> 次アクション（R4 候補）: scrub（ラベルドラッグ数値）・スタイルコピペ ⌘⌥C/V・Priya 向けトークン警告（軽量）。
+## 追記 — R4（2026-06-19）: テキスト要素のテキスト編集
+
+CEO「テキストの場合はテキストそのものを編集できてほしい」。→ **リーフのテキスト要素**（button/heading/label/span/link＝element 子を持たない）を選ぶと Style パネル先頭に **Content 欄**（textarea）が出て、打つと**ライブで textContent が変わる**＋text intent を記録→「コードに反映」で agent がソースの文言を更新（`visualEditPrompt` に `veText` 行）。element 子を持つ要素は textContent 上書きで子を壊すため対象外（割り切り）。実装＝overlay info() が content/editableText を報告＋`setText`、hook が textEdits＋editCount＋clearEdits（discard/reload で live テキストも戻る）。commit R4。
+
+> 次アクション（R5 候補）: 画面内インライン編集（ダブルクリックで contenteditable）・scrub・スタイルコピペ ⌘⌥C/V・Priya 向けトークン警告。
