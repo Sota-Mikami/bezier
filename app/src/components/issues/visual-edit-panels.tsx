@@ -324,6 +324,21 @@ export function EditStylePanel({ vedit }: { vedit: VisualEdit }) {
       </div>
 
       <div className="space-y-1 p-2">
+        {/* CONTENT (text elements only) — edit the text itself */}
+        {sel.editableText && (
+          <>
+            <SecHead>{t("edit.secContent")}</SecHead>
+            <textarea
+              key={sel.selector}
+              defaultValue={sel.content}
+              onChange={(e) => vedit.setText(e.target.value)}
+              spellCheck={false}
+              rows={2}
+              className="w-full resize-y rounded-md border bg-transparent px-1.5 py-1 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </>
+        )}
+
         {/* FRAME */}
         <SecHead>{t("edit.secFrame")}</SecHead>
         <div className="grid grid-cols-2 gap-1.5">

@@ -530,6 +530,7 @@ export const ja: Messages = {
     undo: "取り消し（⌘Z）",
     discard: "破棄",
     applyToCode: "コードに反映",
+    secContent: "テキスト内容",
     secFrame: "フレーム",
     secPosition: "位置",
     secLayout: "レイアウト",

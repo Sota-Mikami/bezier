@@ -25,6 +25,16 @@ export interface SelectedInfo extends ElBrief {
   computed: Record<string, string>;
   ancestors: ElBrief[];
   children: ElBrief[];
+  /** Full direct text (leaf text elements only) — editable in the Content field. */
+  content: string;
+  editableText: boolean;
+}
+export interface TextEdit {
+  selector: string;
+  tag: string;
+  classes: string[];
+  before: string;
+  after: string;
 }
 export interface StyleDiff {
   selector: string;
@@ -80,9 +90,12 @@ export interface VisualEdit {
   overrides: Record<string, string>;
   diffs: StyleDiff[];
   reorders: ReorderOp[];
-  /** diffs + reorders count — drives the pending bar. */
+  textEdits: TextEdit[];
+  /** diffs + reorders + text edits count — drives the pending bar. */
   editCount: number;
   applyStyle: (prop: string, value: string) => void;
+  /** Edit the selected element's text content (leaf text elements). */
+  setText: (value: string) => void;
   resetProp: (prop: string) => void;
   undo: () => void;
   canUndo: boolean;
@@ -109,6 +122,8 @@ export function useVisualEdit({
   const diffsRef = React.useRef<Map<string, StyleDiff>>(new Map());
   const [diffs, setDiffs] = React.useState<StyleDiff[]>([]);
   const [reorders, setReorders] = React.useState<ReorderOp[]>([]);
+  const textEditsRef = React.useRef<Map<string, TextEdit>>(new Map());
+  const [textEdits, setTextEdits] = React.useState<TextEdit[]>([]);
   const historyRef = React.useRef<HistoryEntry[]>([]);
   const [canUndo, setCanUndo] = React.useState(false);
   const selectedRef = React.useRef<SelectedInfo | null>(null);
@@ -227,6 +242,26 @@ export function useVisualEdit({
     setReorders((r) => [...r, { src, dest, before }]);
   }, []);
 
+  // Edit the selected element's text content (live + recorded as a text intent).
+  const setText = React.useCallback((value: string) => {
+    const sel = selectedRef.current;
+    if (!sel) return;
+    const key = sel.selector;
+    const existing = textEditsRef.current.get(key);
+    const before = existing ? existing.before : sel.content;
+    if (value === before) textEditsRef.current.delete(key);
+    else
+      textEditsRef.current.set(key, {
+        selector: sel.selector,
+        tag: sel.tag,
+        classes: sel.classes,
+        before,
+        after: value,
+      });
+    setTextEdits(Array.from(textEditsRef.current.values()));
+    void embedBrowserEval(`window.__bzEdit && window.__bzEdit.setText(${q(value)})`).catch(() => {});
+  }, []);
+
   // Keyboard reorder (↑/↓). The overlay performs the move in-page and emits a
   // `reorder` event we record (so it works even when the webview has focus).
   const moveSelectedBy = React.useCallback((delta: number) => {
@@ -238,8 +273,10 @@ export function useVisualEdit({
   const clearEdits = React.useCallback(() => {
     diffsRef.current.clear();
     historyRef.current = [];
+    textEditsRef.current.clear();
     setCanUndo(false);
     setReorders([]);
+    setTextEdits([]);
     syncDiffs();
     setOverrides({});
   }, [syncDiffs]);
@@ -309,8 +346,10 @@ export function useVisualEdit({
     overrides,
     diffs,
     reorders,
-    editCount: diffs.length + reorders.length,
+    textEdits,
+    editCount: diffs.length + reorders.length + textEdits.length,
     applyStyle,
+    setText,
     resetProp,
     undo,
     canUndo,

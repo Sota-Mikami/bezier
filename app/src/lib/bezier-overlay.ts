@@ -75,8 +75,13 @@ export const OVERLAY_JS = String.raw`(function () {
     if (el.children) {
       for (var c = 0; c < el.children.length && children.length < 12; c++) children.push(brief(el.children[c]));
     }
+    // Text is editable only for a LEAF (no element children) so setting textContent
+    // can't destroy nested elements. Covers buttons/headings/labels/spans/links.
+    var editableText = el.children.length === 0 && (el.textContent || "").trim().length > 0;
     return {
       selector: b.selector, tag: b.tag, classes: b.classes, text: b.text,
+      content: editableText ? (el.textContent || "").slice(0, 2000) : "",
+      editableText: editableText,
       computed: computed, ancestors: ancestors, children: children
     };
   }
@@ -217,6 +222,13 @@ export const OVERLAY_JS = String.raw`(function () {
       if (!state.sel) return;
       try { state.sel.style.setProperty(prop, value); } catch (e) {}
       redraw();
+    },
+    // Edit the selected element's TEXT content (leaf text elements only).
+    setText: function (value) {
+      if (state.sel && state.sel.children.length === 0) {
+        state.sel.textContent = value;
+        redraw();
+      }
     },
     // Apply to an ARBITRARY element (undo / reset / paste — may not be selected).
     applyTo: function (sel, prop, value) {

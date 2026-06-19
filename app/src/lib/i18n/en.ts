@@ -531,6 +531,7 @@ export const en = {
     undo: "Undo (⌘Z)",
     discard: "Discard",
     applyToCode: "Apply to code",
+    secContent: "Content",
     secFrame: "Frame",
     secPosition: "Position",
     secLayout: "Layout",

@@ -47,6 +47,7 @@ interface PromptPhrases {
   veReorder: (src: string, pos: string, dest: string) => string;
   veBefore: string;
   veAfter: string;
+  veText: (before: string, after: string) => string;
 
   // --- md doc / Map / QA surfaces ---
   docHeader: (label: string) => string;
@@ -112,6 +113,7 @@ const JA: PromptPhrases = {
   veReorder: (src, pos, dest) => `${src} を ${dest} の${pos}へ移動（兄弟内で並べ替え）`,
   veBefore: "前",
   veAfter: "後ろ",
+  veText: (before, after) => `テキストを ${before} → ${after} に変更`,
 
   docHeader: (label) => `## ドキュメント「${label}」への注釈`,
   docIntro: (docPath) =>
@@ -201,6 +203,7 @@ const EN: PromptPhrases = {
   veReorder: (src, pos, dest) => `Move ${src} ${pos} ${dest} (reordered among siblings)`,
   veBefore: "before",
   veAfter: "after",
+  veText: (before, after) => `change text ${before} → ${after}`,
 
   docHeader: (label) => `## Annotations on the “${label}” document`,
   docIntro: (docPath) =>
@@ -291,6 +294,7 @@ export function visualEditPrompt(
   route: string,
   diffs: (VEBrief & { prop: string; before: string; after: string })[],
   reorders: { src: VEBrief & { text?: string }; dest: VEBrief & { text?: string }; before: boolean }[] = [],
+  textEdits: (VEBrief & { before: string; after: string })[] = [],
 ): string {
   const p = promptPhrases();
   const label = (b: VEBrief) => `\`${b.tag}${b.classes.length ? "." + b.classes.join(".") : ""}\``;
@@ -311,6 +315,10 @@ export function visualEditPrompt(
     lines.push(
       `${n}. ${p.veReorder(label(r.src), r.before ? p.veBefore : p.veAfter, label(r.dest))}`,
     );
+    n++;
+  }
+  for (const te of textEdits) {
+    lines.push(`${n}. ${label(te)} ${p.veText(JSON.stringify(te.before), JSON.stringify(te.after))}`);
     n++;
   }
   return [p.veHeader, p.veIntro(route), "", ...lines, "", ...p.veConstraints].join("\n");

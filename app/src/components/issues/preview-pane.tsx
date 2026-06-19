@@ -455,6 +455,7 @@ export function PreviewPane({
   const veCount = vedit.editCount;
   const veDiffs = vedit.diffs;
   const veReorders = vedit.reorders;
+  const veTextEdits = vedit.textEdits;
   const veClear = vedit.clearEdits;
   const veSelectParent = vedit.selectParent;
   const veUndo = vedit.undo;
@@ -464,7 +465,7 @@ export function PreviewPane({
     setApplyingEdits(true);
     try {
       const ok = await session.sendDesignFeedback(
-        visualEditPrompt(path, veDiffs, veReorders),
+        visualEditPrompt(path, veDiffs, veReorders, veTextEdits),
         "visual_edit",
       );
       if (ok) veClear();
@@ -473,7 +474,7 @@ export function PreviewPane({
     } finally {
       setApplyingEdits(false);
     }
-  }, [session, veCount, veDiffs, veReorders, veClear, path]);
+  }, [session, veCount, veDiffs, veReorders, veTextEdits, veClear, path]);
   const discardEdits = React.useCallback(() => {
     setReloadNonce((n) => n + 1); // reload reverts the live inline styles
     veClear();
