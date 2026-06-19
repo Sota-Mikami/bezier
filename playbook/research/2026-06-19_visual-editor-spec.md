@@ -226,4 +226,6 @@ CEO「Layer パネルは選択物に関連するものだけでなく**ページ
 - キーボード並べ替えも reorder intent として記録 → agent に渡る。
 - 既定は全展開（"常時表示"）。auto-collapse は将来の改善候補。
 
-> 次アクション（R4 候補）: 大規模ページでの全展開ノイズ対策（選択へ auto-expand＋既定折りたたみ）・scrub・コピペ。
+**R3.1（commit 直後）— 大規模ページのノイズ対策**: 全展開をやめ、**既定は 2 階層の概観**（トップレベル＋その直下）。**選択するとその要素までのパスが auto-expand** し選択は常に可視（選択パスは手動 collapse より優先）＋scroll-into-view。手動の開閉は次の選択まで保持。実装＝pathSet(root→selected)＋expanded/collapsed override。`open = onPath || (!collapsed && (depth===0 || manuallyExpanded))`。
+
+> 次アクション（R4 候補）: scrub（ラベルドラッグ数値）・スタイルコピペ ⌘⌥C/V・Priya 向けトークン警告（軽量）。
