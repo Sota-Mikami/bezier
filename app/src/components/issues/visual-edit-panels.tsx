@@ -2,26 +2,59 @@
 
 // Visual-edit panels (DEC-131): Layer panel (left) + Style panel (right) + pending
 // bar that wrap the embedded webview while Edit mode is on. Driven by useVisualEdit.
-// Aiming at a Figma-like feel: number fields support ↑/↓ (Shift ×10, Alt ×0.1) +
-// drag-scrub, enums are dropdowns, flex/position fields appear conditionally, and the
-// Layer panel reorders direct children by drag. Structural depth (full DOM tree, text
-// editing, multi-select, token governance) is tracked for later in the spec.
+// The inspector mirrors Figma/Framer's UI language (DEC-131 R2): Figma-ordered
+// sections (Frame / Position / Layout / Spacing / Fill / Stroke / Effects / Type),
+// 2-col paired number fields, icon SegmentedControls for alignment, color swatches,
+// and a Figma-style layer tree with per-tag icons. Spec:
+// playbook/research/2026-06-19_visual-editor-spec.md (R2 append) + principal-designer.
 
 import * as React from "react";
 import {
   MousePointerSquareDashed,
   ChevronUp,
-  CornerDownRight,
+  ChevronDown,
   Loader2,
   Undo2,
   RotateCcw,
   GripVertical,
+  ArrowRight,
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  AlignHorizontalJustifyStart,
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyEnd,
+  AlignHorizontalSpaceBetween,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  Maximize2,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  CircleDashed,
+  Layers,
+  // tag icons
+  Square,
+  Type,
+  Image as ImageIcon,
+  Link as LinkIcon,
+  List as ListIcon,
+  Navigation2,
+  PanelTop,
+  PanelBottom,
+  TextCursorInput,
+  FileText,
+  Shapes,
+  Box,
+  Eye,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
-import type { ElBrief, VisualEdit } from "./use-visual-edit";
+import type { ElBrief, SelectedInfo, VisualEdit } from "./use-visual-edit";
 
 function briefLabel(b: ElBrief): string {
   const cls = b.classes.length ? "." + b.classes.slice(0, 2).join(".") : "";
@@ -47,112 +80,22 @@ function stepValue(raw: string, delta: number): string | null {
   return `${next}${m[2] || ""}`;
 }
 
-type FieldKind = "number" | "color" | "select" | "text";
-interface Field {
-  prop: string;
-  label: string;
-  kind: FieldKind;
-  options?: string[];
-}
-
-const SELECT = (prop: string, label: string, options: string[]): Field => ({
-  prop,
-  label,
-  kind: "select",
-  options,
-});
-const NUM = (prop: string, label: string): Field => ({ prop, label, kind: "number" });
-
-// Conditional groups are computed per selection (flex children, position offsets).
-function groupsFor(display: string, position: string): { label: string; fields: Field[] }[] {
-  const isFlex = display === "flex" || display === "inline-flex";
-  const positioned = position !== "static" && position !== "";
-  return [
-    {
-      label: "Layout",
-      fields: [
-        SELECT("display", "display", [
-          "block",
-          "flex",
-          "inline-flex",
-          "grid",
-          "inline-block",
-          "inline",
-          "none",
-        ]),
-        ...(isFlex
-          ? [
-              SELECT("flex-direction", "direction", ["row", "column", "row-reverse", "column-reverse"]),
-              SELECT("justify-content", "justify", [
-                "flex-start",
-                "center",
-                "flex-end",
-                "space-between",
-                "space-around",
-                "space-evenly",
-              ]),
-              SELECT("align-items", "align", ["stretch", "flex-start", "center", "flex-end", "baseline"]),
-              NUM("gap", "gap"),
-            ]
-          : []),
-        NUM("flex-grow", "grow"),
-        SELECT("align-self", "self", ["auto", "stretch", "flex-start", "center", "flex-end"]),
-      ],
-    },
-    {
-      label: "Spacing",
-      fields: [
-        NUM("padding-top", "pad ↑"),
-        NUM("padding-right", "pad →"),
-        NUM("padding-bottom", "pad ↓"),
-        NUM("padding-left", "pad ←"),
-        NUM("margin-top", "mar ↑"),
-        NUM("margin-right", "mar →"),
-        NUM("margin-bottom", "mar ↓"),
-        NUM("margin-left", "mar ←"),
-      ],
-    },
-    { label: "Size", fields: [NUM("width", "W"), NUM("height", "H")] },
-    {
-      label: "Type",
-      fields: [
-        NUM("font-size", "size"),
-        NUM("font-weight", "weight"),
-        { prop: "line-height", label: "leading", kind: "text" },
-        NUM("letter-spacing", "spacing"),
-        SELECT("text-align", "align", ["left", "center", "right", "justify"]),
-        { prop: "color", label: "color", kind: "color" },
-      ],
-    },
-    {
-      label: "Appearance",
-      fields: [
-        { prop: "background-color", label: "bg", kind: "color" },
-        NUM("border-width", "border"),
-        SELECT("border-style", "style", ["none", "solid", "dashed", "dotted"]),
-        { prop: "border-color", label: "b-color", kind: "color" },
-        NUM("border-radius", "radius"),
-        { prop: "box-shadow", label: "shadow", kind: "text" },
-        NUM("opacity", "opacity"),
-      ],
-    },
-    {
-      label: "Position",
-      fields: [
-        SELECT("position", "position", ["static", "relative", "absolute", "fixed", "sticky"]),
-        ...(positioned
-          ? [NUM("top", "top"), NUM("right", "right"), NUM("bottom", "bottom"), NUM("left", "left"), NUM("z-index", "z")]
-          : []),
-        SELECT("overflow", "overflow", ["visible", "hidden", "scroll", "auto"]),
-      ],
-    },
-  ];
-}
-
 const fieldCls =
   "h-6 min-w-0 flex-1 rounded-md border bg-transparent px-1.5 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
-function NumberField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+function valOf(vedit: VisualEdit, sel: SelectedInfo, prop: string): string {
+  return vedit.overrides[prop] ?? sel.computed[prop] ?? "";
+}
+
+function NumberField({
+  value,
+  onCommit,
+  className,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  className?: string;
+}) {
   // ↑/↓ nudge the numeric value (keeping its unit); Shift ×10, Alt ×0.1 — Figma feel.
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const dir = e.key === "ArrowUp" ? 1 : e.key === "ArrowDown" ? -1 : 0;
@@ -171,73 +114,180 @@ function NumberField({ value, onCommit }: { value: string; onCommit: (v: string)
       onKeyDown={onKeyDown}
       spellCheck={false}
       inputMode="decimal"
-      className={fieldCls}
+      className={cn(fieldCls, className)}
     />
   );
 }
 
-function StyleField({ f, vedit }: { f: Field; vedit: VisualEdit }) {
-  const sel = vedit.selected!;
-  const val = vedit.overrides[f.prop] ?? sel.computed[f.prop] ?? "";
-  const overridden = f.prop in vedit.overrides;
-  const commit = (v: string) => vedit.applyStyle(f.prop, v);
+function ResetBtn({ show, onClick }: { show: boolean; onClick: () => void }) {
+  if (!show) return null;
   return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 rounded px-1 py-0.5",
-        overridden && "bg-secondary/60",
-      )}
+    <button
+      type="button"
+      onClick={onClick}
+      title="reset"
+      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/row:opacity-100"
     >
-      <span
-        className={cn(
-          "w-14 shrink-0 truncate text-[10px]",
-          overridden ? "font-medium text-foreground" : "text-muted-foreground",
-        )}
-        title={f.prop}
-      >
-        {f.label}
+      <RotateCcw className="size-3" />
+    </button>
+  );
+}
+
+/** Label + number field (2-col grid cell). Overridden → ring + hover-reset. */
+function PairField({ vedit, sel, label, prop }: { vedit: VisualEdit; sel: SelectedInfo; label: string; prop: string }) {
+  const val = valOf(vedit, sel, prop);
+  const ov = prop in vedit.overrides;
+  return (
+    <div className="group/row flex items-center gap-1">
+      <span className="w-5 shrink-0 text-center font-mono text-[10px] text-muted-foreground" title={prop}>
+        {label}
       </span>
-      {f.kind === "color" && (
-        <input
-          type="color"
-          value={toHex(val)}
-          onChange={(e) => commit(e.target.value)}
-          className="size-5 shrink-0 cursor-pointer rounded border bg-transparent p-0"
-        />
-      )}
-      {f.kind === "select" ? (
-        <select value={val} onChange={(e) => commit(e.target.value)} className={fieldCls}>
-          {!f.options!.includes(val) && <option value={val}>{val || "—"}</option>}
-          {f.options!.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
-      ) : f.kind === "number" ? (
-        <NumberField value={val} onCommit={commit} />
-      ) : (
-        <input
-          value={val}
-          onChange={(e) => commit(e.target.value)}
-          spellCheck={false}
-          className={fieldCls}
-        />
-      )}
-      <button
-        type="button"
-        onClick={() => vedit.resetProp(f.prop)}
-        title="reset"
-        className={cn(
-          "shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground",
-          overridden ? "visible" : "invisible",
-        )}
-      >
-        <RotateCcw className="size-3" />
-      </button>
+      <NumberField value={val} onCommit={(v) => vedit.applyStyle(prop, v)} className={cn(ov && "ring-1 ring-primary/40")} />
+      <ResetBtn show={ov} onClick={() => vedit.resetProp(prop)} />
     </div>
   );
 }
+
+function SelectInline({ vedit, sel, prop, options }: { vedit: VisualEdit; sel: SelectedInfo; prop: string; options: string[] }) {
+  const val = valOf(vedit, sel, prop);
+  const ov = prop in vedit.overrides;
+  return (
+    <div className="group/row flex items-center gap-1">
+      <select
+        value={val}
+        onChange={(e) => vedit.applyStyle(prop, e.target.value)}
+        className={cn(fieldCls, ov && "ring-1 ring-primary/40")}
+      >
+        {!options.includes(val) && <option value={val}>{val || "—"}</option>}
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+      <ResetBtn show={ov} onClick={() => vedit.resetProp(prop)} />
+    </div>
+  );
+}
+
+type SegOpt = { value: string; icon?: React.ReactNode; label?: string };
+function SegRow({
+  vedit,
+  sel,
+  prop,
+  label,
+  options,
+}: {
+  vedit: VisualEdit;
+  sel: SelectedInfo;
+  prop: string;
+  label?: string;
+  options: SegOpt[];
+}) {
+  const val = valOf(vedit, sel, prop);
+  return (
+    <div className="group/row flex items-center gap-2">
+      {label && <span className="w-12 shrink-0 text-[10px] text-muted-foreground">{label}</span>}
+      <div className="flex flex-1 gap-0.5 rounded-md bg-muted p-0.5">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={val === o.value}
+            title={o.value}
+            onClick={() => vedit.applyStyle(prop, o.value)}
+            className={cn(
+              "flex h-5 flex-1 items-center justify-center rounded text-[10px]",
+              val === o.value
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {o.icon ?? <span className="font-mono">{o.label}</span>}
+          </button>
+        ))}
+      </div>
+      <ResetBtn show={prop in vedit.overrides} onClick={() => vedit.resetProp(prop)} />
+    </div>
+  );
+}
+
+function ColorRow({
+  vedit,
+  sel,
+  prop,
+  trailing,
+}: {
+  vedit: VisualEdit;
+  sel: SelectedInfo;
+  prop: string;
+  trailing?: React.ReactNode;
+}) {
+  const val = valOf(vedit, sel, prop);
+  const ov = prop in vedit.overrides;
+  return (
+    <div className="group/row flex items-center gap-1.5">
+      <label
+        className="relative size-5 shrink-0 cursor-pointer overflow-hidden rounded border"
+        style={{ background: toHex(val) }}
+      >
+        <input
+          type="color"
+          value={toHex(val)}
+          onChange={(e) => vedit.applyStyle(prop, e.target.value)}
+          className="absolute inset-0 cursor-pointer opacity-0"
+        />
+      </label>
+      <input
+        value={val}
+        onChange={(e) => vedit.applyStyle(prop, e.target.value)}
+        spellCheck={false}
+        className={cn(fieldCls, ov && "ring-1 ring-primary/40")}
+      />
+      {trailing}
+      <ResetBtn show={ov} onClick={() => vedit.resetProp(prop)} />
+    </div>
+  );
+}
+
+function SecHead({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-0.5 pt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+      {children}
+    </p>
+  );
+}
+
+const FLEX_DIR: SegOpt[] = [
+  { value: "row", icon: <ArrowRight className="size-3" /> },
+  { value: "column", icon: <ArrowDown className="size-3" /> },
+  { value: "row-reverse", icon: <ArrowLeft className="size-3" /> },
+  { value: "column-reverse", icon: <ArrowUp className="size-3" /> },
+];
+const JUSTIFY: SegOpt[] = [
+  { value: "flex-start", icon: <AlignHorizontalJustifyStart className="size-3" /> },
+  { value: "center", icon: <AlignHorizontalJustifyCenter className="size-3" /> },
+  { value: "flex-end", icon: <AlignHorizontalJustifyEnd className="size-3" /> },
+  { value: "space-between", icon: <AlignHorizontalSpaceBetween className="size-3" /> },
+];
+const ALIGN_ITEMS: SegOpt[] = [
+  { value: "flex-start", icon: <AlignVerticalJustifyStart className="size-3" /> },
+  { value: "center", icon: <AlignVerticalJustifyCenter className="size-3" /> },
+  { value: "flex-end", icon: <AlignVerticalJustifyEnd className="size-3" /> },
+  { value: "stretch", icon: <Maximize2 className="size-3" /> },
+];
+const TEXT_ALIGN: SegOpt[] = [
+  { value: "left", icon: <AlignLeft className="size-3" /> },
+  { value: "center", icon: <AlignCenter className="size-3" /> },
+  { value: "right", icon: <AlignRight className="size-3" /> },
+  { value: "justify", icon: <AlignJustify className="size-3" /> },
+];
+const BORDER_STYLE: SegOpt[] = [
+  { value: "none", label: "—" },
+  { value: "solid", label: "──" },
+  { value: "dashed", label: "- -" },
+  { value: "dotted", label: "···" },
+];
 
 export function EditStylePanel({ vedit }: { vedit: VisualEdit }) {
   const t = useT();
@@ -251,14 +301,18 @@ export function EditStylePanel({ vedit }: { vedit: VisualEdit }) {
       </div>
     );
   }
-  const display = vedit.overrides["display"] ?? sel.computed["display"] ?? "";
-  const position = vedit.overrides["position"] ?? sel.computed["position"] ?? "";
+  const display = valOf(vedit, sel, "display");
+  const position = valOf(vedit, sel, "position");
+  const isFlex = display === "flex" || display === "inline-flex";
+  const positioned = position !== "static" && position !== "";
+  const P = (label: string, prop: string) => <PairField vedit={vedit} sel={sel} label={label} prop={prop} />;
+
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="flex shrink-0 items-center gap-1 border-b px-2 py-1.5">
-        <p className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
+      <div className="flex h-8 shrink-0 items-center gap-1.5 border-b px-2.5">
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
           {briefLabel(sel)}
-        </p>
+        </span>
         <button
           type="button"
           onClick={vedit.undo}
@@ -269,20 +323,154 @@ export function EditStylePanel({ vedit }: { vedit: VisualEdit }) {
           <Undo2 className="size-3.5" />
         </button>
       </div>
-      <div className="space-y-3 p-2">
-        {groupsFor(display, position).map((g) => (
-          <div key={g.label} className="space-y-0.5">
-            <p className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-              {g.label}
-            </p>
-            {g.fields.map((f) => (
-              <StyleField key={f.prop} f={f} vedit={vedit} />
-            ))}
-          </div>
-        ))}
+
+      <div className="space-y-1 p-2">
+        {/* FRAME */}
+        <SecHead>{t("edit.secFrame")}</SecHead>
+        <div className="grid grid-cols-2 gap-1.5">
+          {P("W", "width")}
+          {P("H", "height")}
+          {P("r", "border-radius")}
+          <SelectInline vedit={vedit} sel={sel} prop="overflow" options={["visible", "hidden", "scroll", "auto"]} />
+        </div>
+
+        {/* POSITION */}
+        <SecHead>{t("edit.secPosition")}</SecHead>
+        <div className="grid grid-cols-2 gap-1.5">
+          <SelectInline vedit={vedit} sel={sel} prop="position" options={["static", "relative", "absolute", "fixed", "sticky"]} />
+          {P("z", "z-index")}
+          {positioned && P("T", "top")}
+          {positioned && P("R", "right")}
+          {positioned && P("B", "bottom")}
+          {positioned && P("L", "left")}
+        </div>
+
+        {/* LAYOUT */}
+        <SecHead>{t("edit.secLayout")}</SecHead>
+        <SelectInline vedit={vedit} sel={sel} prop="display" options={["block", "flex", "inline-flex", "grid", "inline-block", "inline", "none"]} />
+        {isFlex && (
+          <>
+            <SegRow vedit={vedit} sel={sel} prop="flex-direction" label={t("edit.lDir")} options={FLEX_DIR} />
+            <SegRow vedit={vedit} sel={sel} prop="justify-content" label={t("edit.lJustify")} options={JUSTIFY} />
+            <SegRow vedit={vedit} sel={sel} prop="align-items" label={t("edit.lAlign")} options={ALIGN_ITEMS} />
+            <div className="grid grid-cols-2 gap-1.5">
+              {P("gap", "gap")}
+              {P("grow", "flex-grow")}
+            </div>
+            <SelectInline vedit={vedit} sel={sel} prop="align-self" options={["auto", "stretch", "flex-start", "center", "flex-end"]} />
+          </>
+        )}
+
+        {/* SPACING */}
+        <SecHead>{t("edit.secSpacing")}</SecHead>
+        <p className="px-0.5 text-[10px] text-muted-foreground/60">{t("edit.padding")}</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {P("↑", "padding-top")}
+          {P("↓", "padding-bottom")}
+          {P("←", "padding-left")}
+          {P("→", "padding-right")}
+        </div>
+        <p className="px-0.5 text-[10px] text-muted-foreground/60">{t("edit.margin")}</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {P("↑", "margin-top")}
+          {P("↓", "margin-bottom")}
+          {P("←", "margin-left")}
+          {P("→", "margin-right")}
+        </div>
+
+        {/* FILL */}
+        <SecHead>{t("edit.secFill")}</SecHead>
+        <ColorRow vedit={vedit} sel={sel} prop="background-color" />
+
+        {/* STROKE */}
+        <SecHead>{t("edit.secStroke")}</SecHead>
+        <ColorRow
+          vedit={vedit}
+          sel={sel}
+          prop="border-color"
+          trailing={
+            <input
+              value={valOf(vedit, sel, "border-width")}
+              onChange={(e) => vedit.applyStyle("border-width", e.target.value)}
+              spellCheck={false}
+              title="border-width"
+              className="h-6 w-12 rounded-md border bg-transparent px-1.5 text-right font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          }
+        />
+        <SegRow vedit={vedit} sel={sel} prop="border-style" options={BORDER_STYLE} />
+
+        {/* EFFECTS */}
+        <SecHead>{t("edit.secEffects")}</SecHead>
+        <div className="group/row flex items-center gap-1.5">
+          <CircleDashed className="size-3.5 shrink-0 text-muted-foreground" />
+          <NumberField
+            value={valOf(vedit, sel, "opacity")}
+            onCommit={(v) => vedit.applyStyle("opacity", v)}
+            className={cn("opacity" in vedit.overrides && "ring-1 ring-primary/40")}
+          />
+          <ResetBtn show={"opacity" in vedit.overrides} onClick={() => vedit.resetProp("opacity")} />
+        </div>
+        <div className="group/row flex items-center gap-1.5">
+          <Layers className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            value={valOf(vedit, sel, "box-shadow")}
+            onChange={(e) => vedit.applyStyle("box-shadow", e.target.value)}
+            spellCheck={false}
+            placeholder="none"
+            className={cn(fieldCls, "box-shadow" in vedit.overrides && "ring-1 ring-primary/40")}
+          />
+          <ResetBtn show={"box-shadow" in vedit.overrides} onClick={() => vedit.resetProp("box-shadow")} />
+        </div>
+
+        {/* TYPOGRAPHY */}
+        <SecHead>{t("edit.secType")}</SecHead>
+        <div className="grid grid-cols-2 gap-1.5">
+          {P("fs", "font-size")}
+          {P("fw", "font-weight")}
+          {P("lh", "line-height")}
+          {P("ls", "letter-spacing")}
+        </div>
+        <SegRow vedit={vedit} sel={sel} prop="text-align" options={TEXT_ALIGN} />
+        <ColorRow vedit={vedit} sel={sel} prop="color" />
       </div>
     </div>
   );
+}
+
+// --- Layer panel (Figma-style tree) -----------------------------------------
+
+const TAG_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  div: Square,
+  section: Square,
+  article: Square,
+  main: Square,
+  aside: Square,
+  header: PanelTop,
+  footer: PanelBottom,
+  nav: Navigation2,
+  form: FileText,
+  p: Type,
+  h1: Type,
+  h2: Type,
+  h3: Type,
+  h4: Type,
+  h5: Type,
+  h6: Type,
+  span: Type,
+  li: Type,
+  a: LinkIcon,
+  button: Square,
+  input: TextCursorInput,
+  textarea: TextCursorInput,
+  img: ImageIcon,
+  svg: Shapes,
+  ul: ListIcon,
+  ol: ListIcon,
+};
+function TagIcon({ tag, className }: { tag: string; className?: string }) {
+  const Icon = TAG_ICON[tag.toLowerCase()] ?? Box;
+  return <Icon className={className} />;
 }
 
 export function EditLayerPanel({ vedit }: { vedit: VisualEdit }) {
@@ -297,9 +485,10 @@ export function EditLayerPanel({ vedit }: { vedit: VisualEdit }) {
       </div>
     );
   }
-  const childPad = 6 + (sel.ancestors.length + 1) * 10;
+  const selPad = 4 + sel.ancestors.length * 12;
+  const childPad = 4 + (sel.ancestors.length + 1) * 12;
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-1 text-[11px]">
+    <div className="flex h-full flex-col overflow-y-auto py-1 text-[11px]">
       {sel.ancestors
         .slice()
         .reverse()
@@ -308,29 +497,34 @@ export function EditLayerPanel({ vedit }: { vedit: VisualEdit }) {
             key={a.selector + i}
             type="button"
             onClick={() => vedit.selectPath(a.selector)}
-            style={{ paddingLeft: 6 + i * 10 }}
-            className="flex items-center gap-1 truncate rounded py-0.5 pr-1 text-left font-mono text-muted-foreground hover:bg-muted hover:text-foreground"
+            style={{ paddingLeft: 4 + i * 12 }}
+            className="flex h-[22px] items-center gap-1 truncate rounded pr-1.5 text-left font-mono text-muted-foreground/70 hover:bg-muted hover:text-foreground"
           >
-            <ChevronUp className="size-3 shrink-0 opacity-50" />
+            <ChevronUp className="size-3 shrink-0 opacity-40" />
+            <TagIcon tag={a.tag} className="size-3 shrink-0 opacity-60" />
             <span className="truncate">{briefLabel(a)}</span>
           </button>
         ))}
       <div
-        style={{ paddingLeft: 6 + sel.ancestors.length * 10 }}
-        className="flex items-center gap-1 truncate rounded bg-secondary py-0.5 pr-1 font-mono font-medium text-foreground"
+        style={{ paddingLeft: selPad }}
+        className="flex h-[22px] items-center gap-1 truncate rounded bg-accent pr-1.5 font-mono font-medium text-foreground"
       >
+        {sel.children.length > 0 ? (
+          <ChevronDown className="size-3 shrink-0" />
+        ) : (
+          <span className="size-3 shrink-0" />
+        )}
+        <TagIcon tag={sel.tag} className="size-3 shrink-0 opacity-70" />
         <span className="truncate">{briefLabel(sel)}</span>
       </div>
-      {/* Direct children — click to descend, drag to reorder (live + agent intent). */}
       {sel.children.map((c, i) => (
         <div
           key={c.selector + i}
           draggable
           onDragStart={(e) => {
             setDragIdx(i);
-            // WKWebView/Tauri requires effectAllowed (+ some data) for the drag to
-            // register a valid drop target — without it onDrop never fires. Matches
-            // the codebase's working useDragReorder helper.
+            // WKWebView/Tauri requires effectAllowed (+ data) for the drag to register
+            // a valid drop target — without it onDrop never fires. (DEC-131 fix.)
             e.dataTransfer.effectAllowed = "move";
             e.dataTransfer.setData("text/plain", String(i));
           }}
@@ -353,20 +547,21 @@ export function EditLayerPanel({ vedit }: { vedit: VisualEdit }) {
           }}
           style={{ paddingLeft: childPad }}
           className={cn(
-            "group flex items-center gap-1 truncate rounded py-0.5 pr-1 font-mono text-muted-foreground hover:bg-muted hover:text-foreground",
+            "group flex h-[22px] items-center gap-1 truncate rounded pr-1.5 font-mono text-muted-foreground hover:bg-muted hover:text-foreground",
             overIdx === i && dragIdx !== null && "ring-1 ring-primary/50",
           )}
         >
-          <GripVertical className="size-3 shrink-0 cursor-grab opacity-0 group-hover:opacity-50" />
+          <GripVertical className="size-3 shrink-0 cursor-grab opacity-0 group-hover:opacity-40" />
           <button
             type="button"
             onClick={() => vedit.selectPath(c.selector)}
             className="flex min-w-0 flex-1 items-center gap-1 truncate text-left"
           >
-            <CornerDownRight className="size-3 shrink-0 opacity-40" />
+            <TagIcon tag={c.tag} className="size-3 shrink-0 opacity-50" />
             <span className="truncate">{briefLabel(c)}</span>
-            {c.text && <span className="truncate opacity-50">{c.text.slice(0, 14)}</span>}
+            {c.text && <span className="truncate text-[10px] opacity-40">{c.text.slice(0, 12)}</span>}
           </button>
+          <Eye className="size-3 shrink-0 opacity-0" />
         </div>
       ))}
     </div>
