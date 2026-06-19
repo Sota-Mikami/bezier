@@ -95,6 +95,21 @@ async function captureSlot(rect: Rect, dir: string): Promise<string | null> {
   }
 }
 
+// --- Native-webview singleton coordinator (PE P0-2, DEC-130) ------------------
+// The Rust webview labelled "embedded-browser" is ONE global object, but several
+// EmbeddedBrowser React instances can be mounted at once — Live stays mounted but
+// hidden behind an open issue's Preview (issues/page.tsx). Without coordination they
+// (a) show each other's page (open() reuses the existing webview WITHOUT navigating,
+// so the second instance inherits the first's URL) and (b) either one's unmount
+// embedBrowserClose()s it from under the other. So: track mounted instances + which
+// one currently OWNS (drives) the webview. An instance that takes over a webview
+// another built navigates it to its own src; we only CLOSE on the LAST unmount —
+// otherwise hide it and let whoever remains adopt the live (session-intact) webview.
+// In the common single-instance case this is identical to the old behavior (owner is
+// always self → never re-navigates → OAuth session preserved; last-out → close).
+const embedInstances = new Set<string>();
+let embedOwner: string | null = null;
+
 export function EmbeddedBrowser({
   src,
   active,
@@ -115,6 +130,9 @@ export function EmbeddedBrowser({
    *  OAuth return, SPA pushState — so the caller can sync its address bar. */
   onNavigate?: (url: string) => void;
 }) {
+  // Stable per-instance identity for the singleton coordinator (PE P0-2). useId is
+  // hook-legal during render (unlike reading a ref) and unique per mounted instance.
+  const instanceId = React.useId();
   const slotRef = React.useRef<HTMLDivElement | null>(null);
   const createdRef = React.useRef(false); // add_child has run
   const shownRef = React.useRef(false); // webview currently visible
@@ -206,9 +224,18 @@ export function EmbeddedBrowser({
       createdRef.current = true;
       shownRef.current = true;
       lastRectRef.current = rect;
+      // Adopting a webview ANOTHER instance built (it shows that instance's page)?
+      // Then point it at OUR src after revealing it. If embedOwner is null we're the
+      // first/only one → open() builds it with our src, no navigate needed.
+      const adopting = embedOwner !== null && embedOwner !== instanceId;
+      embedOwner = instanceId;
       void embedBrowserOpen(srcRef.current, rect.x, rect.y, rect.width, rect.height)
         .then(() => {
-          if (disposedRef.current) void embedBrowserClose().catch(() => {});
+          if (disposedRef.current) {
+            if (embedInstances.size === 0) void embedBrowserClose().catch(() => {});
+            return;
+          }
+          if (adopting) void embedBrowserNavigate(srcRef.current).catch(() => {});
         })
         .catch(() => {});
       return;
@@ -216,16 +243,25 @@ export function EmbeddedBrowser({
     if (!shownRef.current) {
       shownRef.current = true;
       lastRectRef.current = rect;
-      void embedBrowserOpen(srcRef.current, rect.x, rect.y, rect.width, rect.height).catch(
-        () => {},
-      );
+      // Re-showing after a hide. If another instance drove the webview while we were
+      // hidden (embedOwner changed), it now shows their page → navigate back to ours.
+      // If we're still the owner, DON'T navigate (preserve our live/OAuth session).
+      const adopting = embedOwner !== instanceId;
+      embedOwner = instanceId;
+      void embedBrowserOpen(srcRef.current, rect.x, rect.y, rect.width, rect.height)
+        .then(() => {
+          if (adopting && !disposedRef.current) {
+            void embedBrowserNavigate(srcRef.current).catch(() => {});
+          }
+        })
+        .catch(() => {});
       return;
     }
     if (!sameRect(rect, lastRectRef.current)) {
       lastRectRef.current = rect;
       void embedBrowserSetBounds(rect.x, rect.y, rect.width, rect.height).catch(() => {});
     }
-  }, [active, captureDir]);
+  }, [active, captureDir, instanceId]);
 
   // Observe everything that can move/resize/hide the slot or open an overlay.
   // ResizeObserver catches pane resize + the `hidden` toggle (size → 0); the
@@ -301,14 +337,23 @@ export function EmbeddedBrowser({
     }
   }, [reloadKey]);
 
-  // Destroy the native webview when this surface goes away (issue switch, mode
-  // off, unmount). Runs once on unmount.
+  // Register with the singleton coordinator on mount; on unmount, destroy the native
+  // webview only when we're the LAST instance (PE P0-2). If another instance remains
+  // (e.g. Live behind a closing issue's Preview), just hide it — that instance adopts
+  // the live webview on its next sync instead of cold-reloading. Runs once.
   React.useEffect(() => {
+    embedInstances.add(instanceId);
     return () => {
       disposedRef.current = true;
-      void embedBrowserClose().catch(() => {});
+      embedInstances.delete(instanceId);
+      if (embedOwner === instanceId) embedOwner = null;
+      if (embedInstances.size === 0) {
+        void embedBrowserClose().catch(() => {});
+      } else {
+        void embedBrowserHide().catch(() => {});
+      }
     };
-  }, []);
+  }, [instanceId]);
 
   return (
     <div ref={slotRef} className="h-full w-full bg-white">

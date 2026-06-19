@@ -374,7 +374,11 @@ export function usePreviewServer(
         saved.packageDir !== resolved.packageDir ||
         saved.port !== resolved.port;
       const worthWriting = resolved.devCommand.trim().length > 0 || !!saved;
-      if (differs && worthWriting) {
+      // P1-5 (DEC-130): don't persist if the effect was torn down (issue/worktree
+      // switched) — `root` here is the OLD worktree's. Belt-and-suspenders today (no
+      // await sits between the cancelled check above and here), but it keeps the
+      // write correct if a future await is inserted before it.
+      if (differs && worthWriting && !cancelled) {
         void writePreviewConfig(root, persisted).catch(() => {});
       }
 
@@ -466,7 +470,7 @@ export function usePreviewServer(
     }
   }, [worktreePath, installing, config]);
 
-  const start = React.useCallback(
+  const startImpl = React.useCallback(
     async (override?: PreviewConfig) => {
       if (!worktreePath) return;
       const cfg = override ?? config;
@@ -662,6 +666,25 @@ export function usePreviewServer(
     [root, worktreePath, config, framework, clearTimers, detachListeners, ptyKey, previewKey],
   );
 
+  // Single-flight guard (P1-1, DEC-130): start() is long & async (free-port alloc,
+  // node_modules clone, env mirror, pty spawn). A second concurrent call — a
+  // double-click on Start, or selectApp() racing a manual Start — would ptyKillKey
+  // the first server mid-spawn and double-register data/exit listeners, orphaning
+  // it. Bail while one is already starting; the in-flight start owns the key.
+  const startingRef = React.useRef(false);
+  const start = React.useCallback(
+    async (override?: PreviewConfig) => {
+      if (startingRef.current) return;
+      startingRef.current = true;
+      try {
+        await startImpl(override);
+      } finally {
+        startingRef.current = false;
+      }
+    },
+    [startImpl],
+  );
+
   const saveConfig = React.useCallback(
     async (cfg: PreviewConfig) => {
       setConfig(cfg);
@@ -738,6 +761,10 @@ export function usePreviewServer(
         previewRegistry.delete(previewKey);
         return;
       }
+      // P1-2 (DEC-130): a start() already spawned/adopted the pty for this key while
+      // this reattach was awaiting the lookup — don't clobber ptyIdRef or double-add
+      // listeners. The running start owns it; leave it alone.
+      if (ptyIdRef.current !== null) return;
       ptyIdRef.current = id;
       touchPreview(previewKey);
       const backlog = await ptyBacklog(id).catch(() => "");
@@ -761,6 +788,10 @@ export function usePreviewServer(
           ptyIdRef.current = null;
           previewRegistry.delete(previewKey);
           setStatus((s) => (s === "ready" ? "stopped" : "error"));
+          // QA 1.B (DEC-130): set the error so a crash AFTER ready (status→stopped)
+          // renders as an error, not the misleading "not started" EmptyState. The
+          // start() exit handler already does this; the reattach path had not.
+          setError(tt("previewServer.processExited"));
         }),
       );
       // Poll the known port; it's already up, so this resolves fast.

@@ -25,6 +25,7 @@ import {
   FileText,
   Container,
   Terminal as TerminalIcon,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -129,6 +130,10 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
     wrap?: boolean;
   } | null>(null);
   const [spawnNonce, setSpawnNonce] = React.useState(0);
+  // QA 2.B (DEC-130): if no coding agent (Claude Code) is installed, "Fix with agent"
+  // would spawn `claude` → `command not found` in the terminal — opaque to a
+  // non-engineer. Detect first and show install guidance instead of opening the panel.
+  const [agentMissing, setAgentMissing] = React.useState(false);
 
   // Publish the active repo's truth to the sidebar badge store (DEC-111 Phase 4)
   // so its badge is instantly correct after a one-click fix / update — without
@@ -213,11 +218,27 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
     const agents = await detectAgents().catch(() => []);
     const claude =
       agents.find((a) => a.id === "claude" && a.available) ?? agents.find((a) => a.available);
-    setAgentSpawn({ cmd: claude?.bin ?? "claude", args: [prompt], wrap: true });
+    // QA 2.B (DEC-130): no agent installed → guide instead of spawning a missing bin.
+    if (!claude) {
+      setAgentMissing(true);
+      return;
+    }
+    setAgentSpawn({ cmd: claude.bin, args: [prompt], wrap: true });
     setSpawnNonce((n) => n + 1);
     setPanelTab("terminal");
     setPanelOpen(true);
-  }, [cwd, diagVerdict, diagStatus, src, log, setAgentSpawn, setSpawnNonce, setPanelTab, setPanelOpen]);
+  }, [
+    cwd,
+    diagVerdict,
+    diagStatus,
+    src,
+    log,
+    setAgentSpawn,
+    setSpawnNonce,
+    setPanelTab,
+    setPanelOpen,
+    setAgentMissing,
+  ]);
   // OUTPUT shows readiness-fix output while preparing, else the dev-server log.
   const panelLog = readiness.log.trim() ? readiness.log : log;
   const panelBusy = installing || !!readiness.busy;
@@ -313,6 +334,24 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
 
       <FreshnessBanner f={freshness} root={root} />
 
+      {/* QA 2.B (DEC-130): "Fix with agent" needs a coding agent installed. */}
+      {agentMissing && (
+        <div className="flex shrink-0 items-start gap-2 border-b bg-amber-500/10 px-3 py-2">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+          <p className="min-w-0 flex-1 text-[11px] leading-snug text-muted-foreground">
+            {t("live.agentMissing")}
+          </p>
+          <button
+            type="button"
+            onClick={() => setAgentMissing(false)}
+            aria-label={t("common.close")}
+            className="shrink-0 rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
       {ready && !showTerminal && diag.verdict && (
         <PreviewDiagnosticBanner
           verdict={diag.verdict}
@@ -339,7 +378,12 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
           // browser, not an iframe). Path changes / reload re-point it via `src`.
           <EmbeddedBrowser
             src={src!}
-            active
+            // Forward Live's real visibility (PE P0-2, DEC-130): RepoLive stays
+            // MOUNTED but hidden when an issue opens (issues/page.tsx active={!detail}).
+            // Hardcoding active={true} made the backgrounded Live keep driving the
+            // shared singleton webview, fighting the issue's own Preview. Pass `active`
+            // so a hidden Live goes idle and yields the webview.
+            active={active}
             reloadKey={reloadNonce}
             captureDir={`${root}/.bezier`}
             onNavigate={diag.onNavigate}
@@ -718,7 +762,11 @@ function SetupTerminal({ cwd, onClose }: { cwd: string; onClose: () => void }) {
         </button>
       </div>
       <div className="min-h-0 flex-1">
-        <TerminalPane cwd={cwd} />
+        {/* QA 4.C (DEC-130): a PERSISTENT keyed session (same `shell:<cwd>` as the
+            bottom-panel Terminal) so closing this view does NOT kill what's running
+            in it — e.g. `docker compose up` for an attach-mode server keeps running,
+            and reopening reattaches the same session. */}
+        <TerminalPane cwd={cwd} sessionKey={`shell:${cwd}`} />
       </div>
     </div>
   );

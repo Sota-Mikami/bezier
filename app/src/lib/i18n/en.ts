@@ -178,6 +178,8 @@ export const en = {
     depsHint: "If it exited right away, the project's dependencies probably aren't installed.",
     startFailedHint: "Couldn't confirm the dev server. Check the OUTPUT below — or run it yourself in a terminal.",
     openTerminalManual: "Run in a terminal",
+    agentMissing:
+      "No coding agent found. Install Claude Code to use “Fix with agent” (it runs your own agent here).",
     resizeLog: "Drag to resize (double-click to reset)",
     readyTitle: "Get this repo ready",
     readyIntro: "A couple of things to set up before it can run.",
@@ -504,6 +506,7 @@ export const en = {
     externalUrlLabel: "External URL (a server you're already running)",
     externalUrlHint:
       "e.g. a Docker / Rails server. When set, Bezier shows this URL instead of starting a dev server. Loopback (localhost) only.",
+    externalUrlInvalid: "Must be a loopback URL — http://localhost:… or http://127.0.0.1:…",
     attachWaiting: "Waiting for {url} — start your server (e.g. docker compose up); this updates when it's up.",
     terminal: "Terminal",
     panelTip: "Output & terminal",

@@ -581,7 +581,7 @@ export function PreviewPane({
               }}
             >
               <Terminal className="size-3.5" />
-              {t("preview.output")}
+              {t("preview.terminal")}
             </Button>
           </div>
         ) : status === "ready" && url ? (
@@ -650,7 +650,10 @@ export function PreviewPane({
             detail={url ?? undefined}
             log={log}
           />
-        ) : status === "error" ? (
+        ) : status === "error" || (status === "stopped" && error) ? (
+          // QA 1.B (DEC-130): a server that CRASHED after ready goes to "stopped"
+          // WITH an error — surface it (the old code fell through to the "not started"
+          // EmptyState, hiding the crash). An explicit Stop clears error → EmptyState.
           <StartingOrError
             title={error ?? t("preview.startFailed")}
             log={log}
@@ -796,7 +799,14 @@ function SettingsForm({
   const [draftPkgDir, setDraftPkgDir] = React.useState(config.packageDir);
   const [draftExternalUrl, setDraftExternalUrl] = React.useState(config.externalUrl ?? "");
 
+  // QA 4.A (DEC-130): validate the attach URL inline. A non-loopback value used to be
+  // silently dropped on save (the form looked saved but attach never engaged) — now
+  // we flag it and block Save until it's a loopback URL or empty.
+  const extTrim = draftExternalUrl.trim();
+  const extInvalid = extTrim.length > 0 && !isLoopbackUrl(extTrim);
+
   const submit = (alsoStart: boolean) => {
+    if (extInvalid) return;
     const port = Number.parseInt(draftPort, 10);
     const ext = draftExternalUrl.trim();
     void onSubmit(
@@ -859,10 +869,16 @@ function SettingsForm({
           value={draftExternalUrl}
           onChange={(e) => setDraftExternalUrl(e.target.value)}
           placeholder="http://localhost:3000"
-          className="h-8 font-mono text-xs"
+          aria-invalid={extInvalid}
+          className={cn("h-8 font-mono text-xs", extInvalid && "border-destructive")}
         />
-        <span className="block text-[10px] text-muted-foreground/70">
-          {t("preview.externalUrlHint")}
+        <span
+          className={cn(
+            "block text-[10px]",
+            extInvalid ? "text-destructive" : "text-muted-foreground/70",
+          )}
+        >
+          {extInvalid ? t("preview.externalUrlInvalid") : t("preview.externalUrlHint")}
         </span>
       </label>
       {scriptsDev && (
@@ -873,13 +889,14 @@ function SettingsForm({
         </p>
       )}
       <div className="flex items-center gap-2">
-        <Button size="sm" className="h-7" onClick={() => submit(false)}>
+        <Button size="sm" className="h-7" disabled={extInvalid} onClick={() => submit(false)}>
           {t("common.save")}
         </Button>
         <Button
           size="sm"
           variant="outline"
           className="h-7 gap-1.5"
+          disabled={extInvalid}
           onClick={() => submit(true)}
         >
           <Play className="size-3.5" />
