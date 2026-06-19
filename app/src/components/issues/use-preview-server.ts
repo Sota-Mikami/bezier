@@ -817,6 +817,14 @@ export function usePreviewServer(
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      // Detach / URL-change / unmount: clear the attach-owned state. Without this,
+      // turning attach OFF left status stuck at "ready"/"starting" pointing at a URL
+      // we no longer poll — a dead-end (the managed path never re-derives because its
+      // deps didn't change). This cleanup runs ONLY when the previous run actually set
+      // up polling (externalUrl was non-empty), so steady managed mode is untouched.
+      // (QA 4.B, DEC-130)
+      setUrl(null);
+      setStatus((s) => (s === "ready" || s === "starting" ? "idle" : s));
     };
   }, [externalUrl, previewKey]);
 

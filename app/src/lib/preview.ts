@@ -154,7 +154,12 @@ export async function readPreviewConfig(
           ? { runner: data.runner }
           : {}),
         // attach mode (DEC-129): a loopback URL the maker serves themselves.
-        ...(typeof data.externalUrl === "string" && data.externalUrl.trim()
+        // SEC-1 (DEC-130): only honor a LOOPBACK url here. config.json lives in the
+        // repo, so a malicious/compromised repo could plant a remote externalUrl that
+        // Bezier would then auto-poll (http_ping) and embed — SSRF / data exfil. The
+        // Rust side now rejects non-loopback too, but drop it at the source so the UI
+        // never shows a "ready" state pointing off-box.
+        ...(typeof data.externalUrl === "string" && isLoopbackUrl(data.externalUrl)
           ? { externalUrl: data.externalUrl.trim() }
           : {}),
       };
@@ -549,7 +554,12 @@ export function buildDevCommand(cfg: PreviewConfig, fallback: Framework): string
   // for a bare `npm/pnpm/yarn/bun run <script>` (to forward args INTO the script);
   // using it on a compound command would mis-target the flag (DEC-127 follow-up).
   const compound = /&&|\|\||;/.test(cmd);
-  const wrapped = !compound && (/^(npm|pnpm|yarn|bun)\b/.test(cmd) || /\brun\b/.test(cmd));
+  // A package-runner wrapper (`npm run dev`, `yarn dev`, `pnpm start`, `bun run x`)
+  // needs `--` so the port flag reaches the framework, not the runner. Key ONLY off
+  // the known runner binaries: an earlier `/\brun\b/` catch-all false-positived on
+  // any command that merely contains "run" (`nx run …`, a `./run-dev` path), and a
+  // spurious `--` can break a non-runner command. (PE P2-1, DEC-130)
+  const wrapped = !compound && /^(npm|pnpm|yarn|bun)\b/.test(cmd);
   return wrapped ? `${cmd} -- ${flag}` : `${cmd} ${flag}`;
 }
 
@@ -558,23 +568,38 @@ export function previewUrl(port: number): string {
   return `http://localhost:${port}/`;
 }
 
+/** Bezier's own `tauri dev` Next port. When dogfooding Bezier ON the Bezier repo,
+ *  the spawned dev server clashes with the already-running app on this port and
+ *  Next reprints a different one; we prefer the non-self port so detection follows
+ *  the freshly-bound server, not the IDE's own. (PE P2-5) */
+const BEZIER_DEV_PORT = 3210;
+
 /**
  * Extract the port a dev server announced in its OUTPUT — the stack-agnostic
  * readiness signal. Every web dev server prints its local URL ("Local:
  * http://localhost:PORT") regardless of framework, hardcoded port, monorepo depth,
  * multi-process runner, or auto-increment on a port clash. We only match loopback
- * hosts (so a "Network: 192.168.x" line is ignored), take the LAST one (servers
- * REPRINT the final port after incrementing), and skip Bezier's own dev port
- * (3210). Returns null until a URL appears. Pass ANSI-stripped text.
+ * hosts (so a "Network: 192.168.x" line is ignored) and take the LAST one (servers
+ * REPRINT the final port after incrementing). Returns null until a URL appears.
+ * Pass ANSI-stripped text.
  */
 export function parseDevServerUrl(text: string): { port: number; url: string } | null {
   const re = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):(\d{2,5})/gi;
   let m: RegExpExecArray | null;
-  let port: number | null = null;
+  let last: number | null = null; // last loopback port seen (any)
+  let lastNonSelf: number | null = null; // last that isn't Bezier's own dev port
   while ((m = re.exec(text)) !== null) {
     const p = Number(m[1]);
-    if (p && p !== 3210) port = p; // last wins (reprinted after auto-increment)
+    if (!p) continue;
+    last = p;
+    if (p !== BEZIER_DEV_PORT) lastNonSelf = p;
   }
+  // Prefer a non-self port (skips Bezier's own 3210 when the user's server also
+  // printed its real port). But if 3210 is the ONLY URL we ever saw, the user's
+  // repo genuinely runs there — use it rather than reporting "no URL". The old
+  // unconditional `p !== 3210` skip broke any repo whose dev server binds 3210.
+  // (PE P2-5, DEC-130)
+  const port = lastNonSelf ?? last;
   return port === null ? null : { port, url: previewUrl(port) };
 }
 

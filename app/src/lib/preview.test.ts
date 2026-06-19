@@ -32,12 +32,18 @@ describe("parseDevServerUrl", () => {
     expect(parseDevServerUrl(out)?.port).toBe(3001);
   });
 
-  it("ignores Bezier's own dev port (3210)", () => {
-    expect(parseDevServerUrl("http://localhost:3210/_next/...")).toBeNull();
-    // 3210 is skipped but a real server URL still wins.
+  it("prefers a non-self port over Bezier's own 3210 when both appear", () => {
+    // Dogfooding Bezier on itself: the spawned dev clashes with the running app on
+    // 3210, Next reprints another port — follow that, not the IDE's own. (PE P2-5)
     expect(parseDevServerUrl("http://localhost:3210\nLocal: http://localhost:3000")?.port).toBe(
       3000,
     );
+  });
+
+  it("uses 3210 when it's the ONLY URL (a user repo legitimately runs there)", () => {
+    // The old unconditional `p !== 3210` skip broke any repo whose dev server binds
+    // 3210; only skip it when a non-self port is also present. (PE P2-5, DEC-130)
+    expect(parseDevServerUrl("Local: http://localhost:3210/")?.port).toBe(3210);
   });
 
   it("ignores a non-loopback (LAN) address", () => {
@@ -78,6 +84,12 @@ describe("buildDevCommand (DEC-125 port de-dup)", () => {
     expect(buildDevCommand(cfg("npm run lingui:compile && npx next dev"), "next")).toBe(
       "npm run lingui:compile && npx next dev -p 4110",
     );
+  });
+
+  it("does NOT inject `--` for a non-runner command that merely contains 'run' (PE P2-1)", () => {
+    // The old `/\brun\b/` catch-all wrapped `nx run` (and `./run-dev`), inserting a
+    // `--` that mis-targets or breaks the command. Only known runners get `--`.
+    expect(buildDevCommand(cfg("nx run web:dev"), "next")).toBe("nx run web:dev -p 4110");
   });
 });
 

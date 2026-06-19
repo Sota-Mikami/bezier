@@ -2415,6 +2415,11 @@ fn http_ping(url: String) -> Result<bool, String> {
     use std::net::{TcpStream, ToSocketAddrs};
     use std::time::Duration;
 
+    // SEC-1 (DEC-130): loopback-only. A repo-supplied URL (e.g. .bezier/config.json
+    // externalUrl) is auto-polled with no click — gate it so we never probe a
+    // non-local host (SSRF). Reuse the same allowlist as the webview commands.
+    parse_local_url(&url)?;
+
     // Parse `http(s)://host[:port]/path` without a URL crate (we only ever build
     // these ourselves as http://localhost:<port>/, but parse defensively).
     let rest = url
@@ -2491,6 +2496,11 @@ struct HttpProbe {
 fn http_probe_inner(url: &str, timeout: std::time::Duration) -> Result<HttpProbe, String> {
     use std::io::{Read, Write};
     use std::net::{TcpStream, ToSocketAddrs};
+
+    // SEC-1 (DEC-130): loopback-only gate (covers http_probe + http_frame_blocked).
+    // A repo-supplied externalUrl is auto-probed by the diagnostic — never let it
+    // reach a non-local host (SSRF).
+    parse_local_url(url)?;
 
     let rest = url
         .strip_prefix("http://")

@@ -149,6 +149,12 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
 
   const [path, setPath] = React.useState("/");
   const [pathDraft, setPathDraft] = React.useState("/");
+  // Bump to force the embedded browser to navigate (path submit / reload button). A
+  // `src` change ALONE does not navigate — EmbeddedBrowser only re-points on a
+  // reloadKey bump (a src change is how the address bar tracks the page's OWN nav,
+  // so navigating on it would loop). With the old constant `reloadKey={0}`, the path
+  // box and reload button were both dead in Live. (PE P1-3, DEC-130)
+  const [reloadNonce, setReloadNonce] = React.useState(0);
 
   // OUTPUT panel height, dragged via the handle at its top edge and persisted.
   const [logHeight, setLogHeight] = React.useState<number>(() => {
@@ -219,7 +225,10 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
   const commitPath = () => {
     let p = pathDraft.trim();
     if (p && !p.startsWith("/")) p = `/${p}`;
-    setPath(p || "/");
+    p = p || "/";
+    setPath(p);
+    setPathDraft(p);
+    setReloadNonce((n) => n + 1); // navigate (force even if the path is unchanged)
   };
 
   return (
@@ -250,7 +259,7 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
             />
             <button
               type="button"
-              onClick={() => setPath((p) => (p === "/" ? "/?_=1" : "/"))}
+              onClick={() => setReloadNonce((n) => n + 1)}
               title={t("live.reload")}
               aria-label={t("live.reload")}
               className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -331,7 +340,7 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
           <EmbeddedBrowser
             src={src!}
             active
-            reloadKey={0}
+            reloadKey={reloadNonce}
             captureDir={`${root}/.bezier`}
             onNavigate={diag.onNavigate}
           />
