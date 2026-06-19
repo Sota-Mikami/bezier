@@ -14,6 +14,7 @@
 import * as React from "react";
 
 import { DEFAULT_LOCALE, isLocale, type Locale } from "@/lib/i18n/locales";
+import type { CustomAgentConfig } from "@/lib/agent-adapters";
 
 /** The Spec slot template (DEC-042/043/050). `{{title}}` / `{{id}}` are
  * substituted at issue-creation time. There's one per UI locale (DEC-108): an
@@ -132,6 +133,9 @@ export interface Settings {
   defaultConnectionId: string;
   /** Per-repo binding: repo path → connection id (prevents cross-account deploy). */
   repoConnections: Record<string, string>;
+  /** User-defined coding agents (DEC-132): any local CLI, launched via an argv
+   *  template ({prompt}/{cwd} tokens). Merged into agent detection. */
+  customAgents: CustomAgentConfig[];
 }
 
 export const DEFAULT_CONNECTIONS: PublishConnection[] = [
@@ -152,6 +156,7 @@ export const DEFAULT_SETTINGS: Settings = {
   publishConnections: DEFAULT_CONNECTIONS,
   defaultConnectionId: "default",
   repoConnections: {},
+  customAgents: [],
 };
 
 const STORAGE_KEY = "bezier:settings";
@@ -207,7 +212,44 @@ function coerce(raw: unknown): Settings {
         ? o.defaultConnectionId
         : "default",
     repoConnections: coerceRepoConnections(o.repoConnections),
+    customAgents: coerceCustomAgents(o.customAgents),
   };
+}
+
+/** Validate user-defined agents: each needs id/name/bin + a non-empty argv of
+ *  strings. Anything malformed is dropped (never trusted from storage). */
+function coerceCustomAgents(raw: unknown): CustomAgentConfig[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CustomAgentConfig[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const c = item as Record<string, unknown>;
+    if (
+      typeof c.id === "string" &&
+      c.id &&
+      typeof c.name === "string" &&
+      typeof c.bin === "string" &&
+      c.bin &&
+      Array.isArray(c.argv) &&
+      c.argv.every((t) => typeof t === "string")
+    ) {
+      const notify =
+        c.notify === "hooks" || c.notify === "idle" || c.notify === "exit-only"
+          ? c.notify
+          : undefined;
+      out.push({
+        id: c.id,
+        name: c.name,
+        bin: c.bin,
+        argv: c.argv as string[],
+        ...(notify ? { notify } : {}),
+        ...(Array.isArray(c.conventionFiles) && c.conventionFiles.every((f) => typeof f === "string")
+          ? { conventionFiles: c.conventionFiles as string[] }
+          : {}),
+      });
+    }
+  }
+  return out;
 }
 
 function coerceConnections(raw: unknown): PublishConnection[] {

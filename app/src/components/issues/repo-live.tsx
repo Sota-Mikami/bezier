@@ -42,6 +42,8 @@ import { usePreviewDiagnostic } from "./use-preview-diagnostic";
 import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
 import { detectAgents } from "@/lib/agents";
+import { adapterForId, buildLaunch } from "@/lib/agent-adapters";
+import { getSettings, resolveDark } from "@/lib/settings";
 import { ptyKillKey } from "@/lib/pty";
 import { previewDoctorPrompt } from "@/lib/prompts";
 import { isLoopbackUrl } from "@/lib/preview";
@@ -234,10 +236,13 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
       logTail: log.split("\n").slice(-60).join("\n"),
     });
     const agents = await detectAgents().catch(() => []);
-    const claude =
-      agents.find((a) => a.id === "claude" && a.available) ?? agents.find((a) => a.available);
+    // Prefer the user's default agent, else any available (DEC-132 — was claude-only).
+    const pref = getSettings().defaultAgentId;
+    const agent =
+      (pref && agents.find((a) => a.id === pref && a.available)) ||
+      agents.find((a) => a.available);
     // QA 2.B (DEC-130): no agent installed → guide instead of spawning a missing bin.
-    if (!claude) {
+    if (!agent) {
       setAgentMissing(true);
       return;
     }
@@ -245,7 +250,13 @@ export function RepoLive({ root, active = true }: { root: string; active?: boole
     // (each is keyed `agent:<cwd>:<nonce>` in PreviewBottomPanel) so they don't pile
     // up. The new key is recorded by the effect below once the nonce updates.
     if (lastAgentKeyRef.current) await ptyKillKey(lastAgentKeyRef.current).catch(() => {});
-    setAgentSpawn({ cmd: claude.bin, args: [prompt], wrap: true });
+    // DEC-132: deliver the prompt the way THIS agent expects (positional/flag/stdin).
+    const built = buildLaunch(adapterForId(agent.id, getSettings().customAgents), agent.bin, {
+      prompt,
+      theme: resolveDark() ? "dark" : "light",
+      cwd,
+    });
+    setAgentSpawn({ cmd: built.cmd, args: built.args, wrap: true });
     setSpawnNonce((n) => n + 1);
     setPanelTab("terminal");
     setPanelOpen(true);

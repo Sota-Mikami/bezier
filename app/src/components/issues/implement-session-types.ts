@@ -34,6 +34,11 @@ export interface TermSpawn {
    * resolved in TerminalPane.
    */
   wrap?: boolean;
+  /** Agent-state detection strategy for this launch (DEC-132): "hooks" (claude),
+   *  "idle" (output-quiet ⇒ waiting), or "exit-only". Passed through to the pty. */
+  waitingStrategy?: "hooks" | "idle" | "exit-only";
+  /** For waitingStrategy="idle": quiet duration (ms) before "waiting". */
+  idleWaitingMs?: number;
 }
 
 export interface ImplementSession {

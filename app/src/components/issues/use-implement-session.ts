@@ -63,6 +63,7 @@ import {
   type Checkpoint,
 } from "@/lib/git";
 import { detectAgents, type AgentTool } from "@/lib/agents";
+import { adapterForId, buildLaunch } from "@/lib/agent-adapters";
 import { getSettings, resolveDark } from "@/lib/settings";
 import {
   ptyWrite,
@@ -70,7 +71,6 @@ import {
   ptyLookup,
   ptyKillKey,
   ptyStatuses,
-  agentHookSettings,
   type AgentState,
 } from "@/lib/pty";
 import { confirmDialog, grantPath, notify } from "@/lib/ipc";
@@ -516,28 +516,22 @@ export function useImplementSession(
       // `--continue` resumes the prior conversation (the exit handler falls back
       // to a fresh seed if there is none).
       //
-      // ORDER MATTERS: claude's `--add-dir <directories...>` is VARIADIC, so it
-      // greedily swallows every following arg as a directory — including the
-      // prompt. So the positional prompt must come FIRST and `--add-dir` LAST
-      // (with `<dir>` as the only trailing arg it can consume):
-      //   `claude "<prompt>" [--continue] --add-dir <dir>`
-      // Other agents (codex) keep the bare positional prompt.
-      const isClaude = agent.id === "claude";
-      const args: string[] = [];
-      if (opts.prompt) args.push(opts.prompt);
-      if (isClaude) {
-        if (opts.resume) args.push("--continue");
-        // Wire Stop/Notification hooks → the events file (deterministic "agent is
-        // awaiting you", DEC-028) AND match Claude's TUI theme to the terminal
-        // background so its output stays legible in light mode (DEC-034). Follows
-        // the resolved app theme (Settings override, not just the OS; DEC-043).
-        const dark = resolveDark();
-        args.push(
-          "--settings",
-          agentHookSettings(eventsPath, dark ? "dark" : "light"),
-        );
-        args.push("--add-dir", issue.dir);
-      }
+      // Agent-agnostic launch (DEC-132): the adapter declares HOW to deliver the
+      // prompt + flags. buildLaunch encapsulates the variadic-safe arg order
+      // (positional prompt first, claude's --add-dir last). For agents that don't
+      // take a positional prompt (stdin/custom) it returns `initialInput`, which we
+      // type into the pty once ready (handleTermReady). `eventsPath` is returned
+      // only for hook agents (claude) — the pty wires the events file then.
+      const adapter = adapterForId(agent.id, getSettings().customAgents);
+      const built = buildLaunch(adapter, agent.bin, {
+        prompt: opts.prompt,
+        resume: opts.resume,
+        contextDir: issue.dir,
+        eventsPath,
+        theme: resolveDark() ? "dark" : "light",
+        cwd,
+      });
+      pendingInputRef.current = built.initialInput ?? null;
       // Any launch counts as "the agent has been started for this issue", so the
       // auto-resume-on-entry effect won't fire again (e.g. after the user quits).
       autoResumedRef.current = true;
@@ -546,7 +540,13 @@ export function useImplementSession(
       setTermCwd(cwd);
       // Run the agent inside the user's shell so `/exit` returns to a live
       // terminal instead of killing the pane (TQ-1).
-      setTermSpawn({ cmd: agent.bin, args, wrap: true });
+      setTermSpawn({
+        cmd: built.cmd,
+        args: built.args,
+        wrap: true,
+        waitingStrategy: built.notify,
+        idleWaitingMs: built.idleWaitingMs,
+      });
       setTermMounted(true);
       setTermNonce((n) => n + 1);
     },
@@ -839,7 +839,9 @@ export function useImplementSession(
     }
     setError(null);
     setInfo(null);
-    if (selectedAgent.id === "claude") {
+    // DEC-132: resume only if the agent supports it (claude --continue); otherwise
+    // re-seed from the spec (no cross-turn continuation semantics).
+    if (adapterForId(selectedAgent.id, getSettings().customAgents).resume) {
       launchAgent(selectedAgent, workDir(ref.path), { resume: true });
     } else {
       await seedLaunch(ref.path);

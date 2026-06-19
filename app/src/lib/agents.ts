@@ -6,6 +6,8 @@
 
 import { resolveCommand } from "@/lib/pty";
 import { readFile, writeFile } from "@/lib/ipc";
+import { allAdapters } from "@/lib/agent-adapters";
+import { getSettings } from "@/lib/settings";
 
 /** A detectable CLI coding agent. */
 export interface AgentTool {
@@ -29,25 +31,19 @@ export interface AgentTool {
   comingSoon?: boolean;
 }
 
-/** The agents we know about, in display order. */
-const KNOWN_AGENTS: ReadonlyArray<Omit<AgentTool, "available">> = [
-  { id: "claude", name: "Claude Code", bin: "claude" },
-  { id: "codex", name: "Codex", bin: "codex", comingSoon: true },
-];
-
 /**
- * Resolve each known agent to its preferred absolute binary and report
- * availability. `bin` is set to that absolute path (so the pty launches a real
- * CLI install, not an app-bundled shim that bridges sessions) and falls back to
- * the bare name. A `comingSoon` agent is never marked available (shown but not
- * launchable). The picker should only let `available === true` entries be picked.
+ * Detect every adapter (built-ins + the user's custom agents, DEC-132) by probing
+ * its bin on PATH. `bin` is set to the resolved ABSOLUTE path (so the pty launches a
+ * real CLI install, not an app-bundled shim that can't replay a transcript on
+ * resume) and falls back to the bare name. `available` = it resolved. The picker
+ * should only let `available === true` entries be picked.
  */
 export async function detectAgents(): Promise<AgentTool[]> {
+  const adapters = allAdapters(getSettings().customAgents);
   return Promise.all(
-    KNOWN_AGENTS.map(async (a) => {
-      if (a.comingSoon) return { ...a, available: false };
+    adapters.map(async (a) => {
       const resolved = await resolveCommand(a.bin).catch(() => "");
-      return { ...a, bin: resolved || a.bin, available: resolved.length > 0 };
+      return { id: a.id, name: a.name, bin: resolved || a.bin, available: resolved.length > 0 };
     }),
   );
 }
