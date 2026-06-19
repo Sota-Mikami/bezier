@@ -178,7 +178,7 @@ export const ja: Messages = {
     startFailedHint: "dev サーバーを確認できませんでした。依存をインストールするか、下のターミナルでご自身で起動してエラーを確認してください。",
     openTerminalManual: "ターミナルで起動",
     agentMissing:
-      "コーディングエージェントが見つかりません。「Agent に直してもらう」を使うには Claude Code をインストールしてください（ここであなた自身のエージェントが動きます）。",
+      "コーディングエージェントが見つかりません。「Agent に直してもらう」を使うには、いずれかのエージェント（Claude Code・Codex 等）を入れるか、設定でカスタムエージェントを追加してください（ここであなた自身のエージェントが動きます）。",
     checkingRepo: "このリポジトリを確認中…",
     resizeLog: "ドラッグで高さ調整（ダブルクリックでリセット）",
     readyTitle: "この repo を準備する",
@@ -373,6 +373,15 @@ export const ja: Messages = {
       label: "既定のエージェント",
       auto: "自動（最初に見つかったもの）",
       notInstalled: "（未インストール）",
+      customLabel: "カスタムエージェント",
+      customName: "名前",
+      customHint:
+        "任意のローカル CLI。{prompt} と {cwd} はトークン単位で置換され、{prompt} が無い場合は起動後にプロンプトを入力します。",
+      capResume: "前のターンを再開",
+      capNoResume: "再開なし — spec から再生成",
+      capWaitHooks: "待機検出: 正確（hooks）",
+      capWaitIdle: "待機検出: ベストエフォート（idle）",
+      capInherits: "継承: {files}",
     },
     commands: {
       title: "Bezier コマンド（claude スラッシュコマンド）",
@@ -666,7 +675,7 @@ export const ja: Messages = {
     sessionPaused: "セッションは休止中",
     sessionPausedDesc: "この Issue には worktree があります。前回のエージェント会話を再開できます。",
     resumeSession: "セッションを再開",
-    agentMissing: "コーディングエージェント（Claude）が見つかりません。`claude` を入れてから再検出してください。",
+    agentMissing: "コーディングエージェントが見つかりません。CLI を入れる（または設定でカスタムエージェントを追加する）と再検出できます。",
     redetectAgent: "エージェントを再検出",
     placeholderNotGitRepo: "このフォルダは git リポジトリではありません",
     placeholderNoAgent: "利用可能なエージェントがありません",

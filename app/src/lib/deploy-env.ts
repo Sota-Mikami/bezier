@@ -92,6 +92,11 @@ export async function resolveDeployEnv(
   repoDir: string,
   failureContext?: string,
 ): Promise<Record<string, string>> {
+  // DEC-132: headless env-inference is intentionally CLAUDE-ONLY in v1 — it depends
+  // on `-p` + a hard `--settings` deny rule (DENY_SETTINGS) that physically blocks
+  // reading `.env`. No other adapter declares a deny-capable headless mode, so for a
+  // non-claude user this safely returns {} (skip inference; the build uses committed
+  // config). Never run a headless agent that can't hard-deny secrets.
   const bin = await resolveCommand("claude").catch(() => "");
   if (!bin) return {};
   const key = `deployenv:${repoDir}`;

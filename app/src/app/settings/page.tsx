@@ -17,6 +17,7 @@ import {
 } from "@/lib/settings";
 import { useT, LOCALES } from "@/lib/i18n";
 import { detectAgents, type AgentTool } from "@/lib/agents";
+import { adapterForId, type CustomAgentConfig } from "@/lib/agent-adapters";
 import { confirmDialog } from "@/lib/ipc";
 import { BezierCommandsManager } from "@/components/settings/bezier-commands-manager";
 import { PublishConnectionsManager } from "@/components/settings/publish-connections-manager";
@@ -137,6 +138,16 @@ export default function SettingsPage() {
               ))}
             </select>
           </Field>
+          {settings.defaultAgentId && (
+            <AgentCapabilityHint id={settings.defaultAgentId} customs={settings.customAgents} />
+          )}
+          <Field label={t("settings.agent.customLabel")}>
+            <span />
+          </Field>
+          <CustomAgentsManager
+            customAgents={settings.customAgents}
+            onChange={(next) => update({ customAgents: next })}
+          />
         </Section>
 
         {/* Bezier slash-command pack (DEC-076 + marketplace UI) */}
@@ -255,6 +266,105 @@ export default function SettingsPage() {
           </div>
         </Section>
       </div>
+    </div>
+  );
+}
+
+// Capability hint for the chosen agent (DEC-132): tells the maker what differs
+// (resume / waiting-detection / inherited convention files) so behavior isn't a
+// surprise. Derived from the adapter registry.
+function AgentCapabilityHint({ id, customs }: { id: string; customs: CustomAgentConfig[] }) {
+  const t = useT();
+  const a = adapterForId(id, customs);
+  const bits: string[] = [];
+  bits.push(a.resume ? t("settings.agent.capResume") : t("settings.agent.capNoResume"));
+  bits.push(a.notify === "hooks" ? t("settings.agent.capWaitHooks") : t("settings.agent.capWaitIdle"));
+  if (a.conventionFiles.length) bits.push(t("settings.agent.capInherits", { files: a.conventionFiles.join(", ") }));
+  return <p className="text-[11px] text-muted-foreground">{bits.join(" · ")}</p>;
+}
+
+// Add / remove user-defined coding agents (DEC-132) — any local CLI via an argv
+// template ({prompt}/{cwd} tokens). They merge into agent detection + the picker.
+function CustomAgentsManager({
+  customAgents,
+  onChange,
+}: {
+  customAgents: CustomAgentConfig[];
+  onChange: (next: CustomAgentConfig[]) => void;
+}) {
+  const t = useT();
+  const [name, setName] = React.useState("");
+  const [bin, setBin] = React.useState("");
+  const [tpl, setTpl] = React.useState("{prompt}");
+  const inputCls =
+    "h-8 rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const add = () => {
+    const nm = name.trim();
+    const b = bin.trim();
+    const argv = tpl.trim().split(/\s+/).filter(Boolean);
+    if (!nm || !b || argv.length === 0) return;
+    const base =
+      "custom-" + (nm.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "agent");
+    const existing = new Set(customAgents.map((c) => c.id));
+    let id = base;
+    let n = 2;
+    while (existing.has(id)) id = `${base}-${n++}`;
+    onChange([...customAgents, { id, name: nm, bin: b, argv }]);
+    setName("");
+    setBin("");
+    setTpl("{prompt}");
+  };
+  return (
+    <div className="space-y-2">
+      {customAgents.length > 0 && (
+        <ul className="space-y-1">
+          {customAgents.map((c) => (
+            <li key={c.id} className="flex items-center gap-2 rounded-md border px-2 py-1 text-xs">
+              <span className="shrink-0 font-medium">{c.name}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">
+                {c.bin} {c.argv.join(" ")}
+              </span>
+              <button
+                type="button"
+                onClick={() => onChange(customAgents.filter((x) => x.id !== c.id))}
+                className="shrink-0 text-muted-foreground hover:text-destructive"
+              >
+                {t("common.remove")}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t("settings.agent.customName")}
+          className={cn(inputCls, "w-28")}
+        />
+        <input
+          value={bin}
+          onChange={(e) => setBin(e.target.value)}
+          placeholder="bin"
+          spellCheck={false}
+          className={cn(inputCls, "w-24 font-mono")}
+        />
+        <input
+          value={tpl}
+          onChange={(e) => setTpl(e.target.value)}
+          placeholder="args (e.g. --message {prompt})"
+          spellCheck={false}
+          className={cn(inputCls, "min-w-[10rem] flex-1 font-mono")}
+        />
+        <button
+          type="button"
+          onClick={add}
+          className="h-8 rounded-md border px-2.5 text-xs font-medium hover:bg-muted"
+        >
+          {t("common.add")}
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{t("settings.agent.customHint")}</p>
     </div>
   );
 }

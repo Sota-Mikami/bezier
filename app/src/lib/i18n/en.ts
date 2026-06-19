@@ -179,7 +179,7 @@ export const en = {
     startFailedHint: "Couldn't confirm the dev server. Install dependencies, or run it yourself in a terminal below to see the error.",
     openTerminalManual: "Run in a terminal",
     agentMissing:
-      "No coding agent found. Install Claude Code to use “Fix with agent” (it runs your own agent here).",
+      "No coding agent found. Install a coding agent (Claude Code, Codex, …) or add a custom one in Settings to use “Fix with agent” (it runs your own agent here).",
     checkingRepo: "Checking this repo…",
     resizeLog: "Drag to resize (double-click to reset)",
     readyTitle: "Get this repo ready",
@@ -374,6 +374,15 @@ export const en = {
       label: "Default agent",
       auto: "Auto (first one found)",
       notInstalled: " (not installed)",
+      customLabel: "Custom agents",
+      customName: "Name",
+      customHint:
+        "Any local CLI. {prompt} and {cwd} are substituted as whole tokens; without {prompt}, the prompt is typed in after launch.",
+      capResume: "Resumes prior turns",
+      capNoResume: "No resume — re-runs from the spec",
+      capWaitHooks: "Waiting detection: precise (hooks)",
+      capWaitIdle: "Waiting detection: best-effort (idle)",
+      capInherits: "Inherits: {files}",
     },
     commands: {
       title: "Bezier commands (claude slash commands)",
@@ -667,7 +676,7 @@ export const en = {
     sessionPaused: "Session paused",
     sessionPausedDesc: "This issue has a worktree. You can resume the previous agent conversation.",
     resumeSession: "Resume session",
-    agentMissing: "Your coding agent (Claude) wasn't found. Make sure `claude` is installed, then re-detect.",
+    agentMissing: "Your coding agent wasn't found. Make sure its CLI is installed (or add a custom agent in Settings), then re-detect.",
     redetectAgent: "Re-detect agent",
     placeholderNotGitRepo: "This folder is not a git repository",
     placeholderNoAgent: "No agents available",
