@@ -26,6 +26,9 @@ import {
   Ruler,
   ExternalLink,
   Terminal,
+  ChevronDown,
+  Check,
+  SquarePen,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -48,6 +51,13 @@ import { AppPicker } from "./app-picker";
 import { usePreviewDiagnostic } from "./use-preview-diagnostic";
 import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 function statusLabel(status: PreviewStatus): string {
   switch (status) {
@@ -162,6 +172,113 @@ function deviceLabel(id: DeviceId): string {
   }
 }
 
+/**
+ * Consolidated resize control (DEC-131): replaces the inline device-preset button
+ * group + rotate + size readout with ONE dropdown. Uses base-ui DropdownMenu so it
+ * renders OVER the native webview (role=menu triggers EmbeddedBrowser's overlay
+ * freeze — a plain popover would be painted under the webview). Custom W×H inputs
+ * live in the header (only in custom mode) — number inputs inside a base-ui menu are
+ * finicky, and the header sits above the webview so they're always visible.
+ */
+function ResizeControl({
+  deviceId,
+  setDeviceId,
+  portrait,
+  setPortrait,
+  customW,
+  setCustomW,
+  customH,
+  setCustomH,
+  vw,
+  vh,
+}: {
+  deviceId: DeviceId;
+  setDeviceId: React.Dispatch<React.SetStateAction<DeviceId>>;
+  portrait: boolean;
+  setPortrait: React.Dispatch<React.SetStateAction<boolean>>;
+  customW: number;
+  setCustomW: React.Dispatch<React.SetStateAction<number>>;
+  customH: number;
+  setCustomH: React.Dispatch<React.SetStateAction<number>>;
+  vw: number | null;
+  vh: number | null;
+}) {
+  const t = useT();
+  const current = DEVICES.find((d) => d.id === deviceId) ?? DEVICES[0];
+  const Icon = current.icon;
+  const label =
+    deviceId === "fluid"
+      ? t("preview.deviceFluid")
+      : deviceId === "custom"
+        ? t("preview.deviceCustom")
+        : `${vw}×${vh}`;
+  return (
+    <div className="flex items-center gap-1">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          title={t("preview.resizeTip")}
+          className="flex h-6 items-center gap-1 rounded-md border px-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <Icon className="size-3" />
+          <span className="tabular-nums">{label}</span>
+          <ChevronDown className="size-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-48">
+          {DEVICES.map((d) => {
+            const DIcon = d.icon;
+            const isActive = d.id === deviceId;
+            return (
+              <DropdownMenuItem key={d.id} onClick={() => setDeviceId(d.id)} className="gap-2">
+                <Check className={cn("size-3.5 shrink-0", isActive ? "opacity-100" : "opacity-0")} />
+                <DIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="flex-1">{deviceLabel(d.id)}</span>
+                {d.w && (
+                  <span className="text-[10px] tabular-nums text-muted-foreground">
+                    {d.w}×{d.h}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            );
+          })}
+          {deviceId !== "fluid" && deviceId !== "custom" && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setPortrait((p) => !p)} className="gap-2">
+                <RotateCwSquare className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="flex-1">{t("preview.rotateOrientation")}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {portrait ? t("preview.portrait") : t("preview.landscape")}
+                </span>
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {deviceId === "custom" && (
+        <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
+          <input
+            type="number"
+            value={customW}
+            min={160}
+            onChange={(e) => setCustomW(Number(e.target.value) || 0)}
+            title={t("preview.widthPx")}
+            className="h-6 w-14 rounded-md border bg-transparent px-1.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <span>×</span>
+          <input
+            type="number"
+            value={customH}
+            min={160}
+            onChange={(e) => setCustomH(Number(e.target.value) || 0)}
+            title={t("preview.heightPx")}
+            className="h-6 w-14 rounded-md border bg-transparent px-1.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PreviewPane({
   server,
   hasRef,
@@ -176,7 +293,17 @@ export function PreviewPane({
   const { status, config, apps, selectApp, scriptsDev, log, error, url, configLoaded, attach } =
     server;
   const externalUrl = config?.externalUrl?.trim() ?? "";
-  const { on: annotating } = useAnnotationMode();
+  const { on: annotating, setLocked: setAnnotateLocked } = useAnnotationMode();
+
+  // Edit Mode (DEC-131): a visual-edit mode living in the Preview header. While ON,
+  // annotate is locked OFF (the two are mutually exclusive — annotate freezes the
+  // webview to a screenshot, Edit needs it live). The editing ENGINE (select / Style
+  // panel / apply-to-code) lands next; this is the mode + layout scaffold.
+  const [editing, setEditing] = React.useState(false);
+  React.useEffect(() => {
+    setAnnotateLocked(editing);
+    return () => setAnnotateLocked(false);
+  }, [editing, setAnnotateLocked]);
 
   const [showSettings, setShowSettings] = React.useState(false);
   // VS-Code-style bottom panel (DEC-126): OUTPUT (dev log) + Terminal (run claude/
@@ -388,65 +515,20 @@ export function PreviewPane({
         {/* Center: responsive viewport + navigated path (only once running). */}
         {status === "ready" && (
           <div className="flex shrink-0 items-center gap-2">
-            {/* Device presets resize the embedded browser (the slot it tracks).
-                Decorative chrome (rounded/notch) can't clip a native webview. */}
-            <div className="flex items-center gap-0.5 rounded-md border p-0.5">
-              {DEVICES.map((d) => {
-                const Icon = d.icon;
-                const active = d.id === deviceId;
-                return (
-                  <button
-                    key={d.id}
-                    type="button"
-                    title={deviceLabel(d.id) + (d.w ? ` · ${d.w}×${d.h}` : "")}
-                    onClick={() => setDeviceId(d.id)}
-                    className={cn(
-                      "flex size-6 items-center justify-center rounded transition-colors",
-                      active
-                        ? "bg-secondary text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="size-3.5" />
-                  </button>
-                );
-              })}
-            </div>
-            {isCustom ? (
-              <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
-                <input
-                  type="number"
-                  value={customW}
-                  min={160}
-                  onChange={(e) => setCustomW(Number(e.target.value) || 0)}
-                  title={t("preview.widthPx")}
-                  className="h-6 w-14 rounded-md border bg-transparent px-1.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                />
-                <span>×</span>
-                <input
-                  type="number"
-                  value={customH}
-                  min={160}
-                  onChange={(e) => setCustomH(Number(e.target.value) || 0)}
-                  title={t("preview.heightPx")}
-                  className="h-6 w-14 rounded-md border bg-transparent px-1.5 text-right outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                />
-              </div>
-            ) : !isFluid ? (
-              <>
-                <button
-                  type="button"
-                  title={t("preview.rotateOrientation")}
-                  onClick={() => setPortrait((p) => !p)}
-                  className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <RotateCwSquare className="size-3.5" />
-                </button>
-                <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
-                  {vw} × {vh}
-                </span>
-              </>
-            ) : null}
+            {/* Resize: one button → dropdown (presets + rotate) + custom inputs.
+                Consolidated from the old icon-group/rotate/size cluster (DEC-131). */}
+            <ResizeControl
+              deviceId={deviceId}
+              setDeviceId={setDeviceId}
+              portrait={portrait}
+              setPortrait={setPortrait}
+              customW={customW}
+              setCustomW={setCustomW}
+              customH={customH}
+              setCustomH={setCustomH}
+              vw={vw}
+              vh={vh}
+            />
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -502,6 +584,20 @@ export function PreviewPane({
 
         <div className="flex flex-1 items-center justify-end gap-1.5">
           {/* 共有 (publish / journey) moved to the top bar near Checkpoints/Ship. */}
+          {/* Edit Mode toggle (DEC-131) — only when an app is running to edit. */}
+          {status === "ready" && (
+            <Button
+              size="sm"
+              variant={editing ? "secondary" : "ghost"}
+              className="h-7 gap-1.5"
+              aria-pressed={editing}
+              onClick={() => setEditing((v) => !v)}
+              title={t("preview.editModeTip")}
+            >
+              <SquarePen className="size-3.5" />
+              {t("preview.editMode")}
+            </Button>
+          )}
           {!running && (
             <Button
               size="sm"
