@@ -492,7 +492,7 @@ function TreeRow({
   parentSel,
   idx,
   vedit,
-  collapsed,
+  isOpen,
   toggle,
   drag,
   setDrag,
@@ -504,8 +504,8 @@ function TreeRow({
   parentSel: string;
   idx: number;
   vedit: VisualEdit;
-  collapsed: Set<string>;
-  toggle: (sel: string) => void;
+  isOpen: (sel: string, depth: number) => boolean;
+  toggle: (sel: string, open: boolean) => void;
   drag: DragState | null;
   setDrag: (d: DragState | null) => void;
   over: string | null;
@@ -513,7 +513,7 @@ function TreeRow({
 }) {
   const isSel = node.sel === vedit.selectedSelector;
   const hasKids = node.children.length > 0;
-  const open = !collapsed.has(node.sel);
+  const open = isOpen(node.sel, depth);
   const brief: ElBrief = { selector: node.sel, tag: node.tag, classes: node.classes, text: node.text };
   const rowRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
@@ -562,7 +562,7 @@ function TreeRow({
         {hasKids ? (
           <button
             type="button"
-            onClick={() => toggle(node.sel)}
+            onClick={() => toggle(node.sel, open)}
             className="shrink-0 text-muted-foreground hover:text-foreground"
           >
             {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
@@ -590,7 +590,7 @@ function TreeRow({
             parentSel={node.sel}
             idx={i}
             vedit={vedit}
-            collapsed={collapsed}
+            isOpen={isOpen}
             toggle={toggle}
             drag={drag}
             setDrag={setDrag}
@@ -602,20 +602,59 @@ function TreeRow({
   );
 }
 
+/** Path of selectors from the tree root down to (and including) `target`. */
+function findPath(node: TreeNode, target: string, acc: string[]): string[] | null {
+  const here = [...acc, node.sel];
+  if (node.sel === target) return here;
+  for (const c of node.children) {
+    const r = findPath(c, target, here);
+    if (r) return r;
+  }
+  return null;
+}
+
 export function EditLayerPanel({ vedit }: { vedit: VisualEdit }) {
   const t = useT();
+  // Manual open/close overrides (the user's explicit toggles). The DEFAULT view is a
+  // shallow overview — only top-level rows + the path to the selected element are open
+  // — so a big page isn't a wall of 800 rows (the selection's ancestors auto-expand
+  // and the selected node stays visible no matter what; that's why the path wins over
+  // a manual collapse). User toggles persist via these sets until they select away.
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   const [drag, setDrag] = React.useState<DragState | null>(null);
   const [over, setOver] = React.useState<string | null>(null);
-  const toggle = React.useCallback((sel: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(sel)) next.delete(sel);
-      else next.add(sel);
-      return next;
-    });
-  }, []);
   const root = vedit.tree;
+  const sel = vedit.selectedSelector;
+
+  const pathSet = React.useMemo(() => {
+    if (!root || !sel) return new Set<string>();
+    return new Set(findPath(root, sel, []) ?? []);
+  }, [root, sel]);
+
+  const isOpen = React.useCallback(
+    (s: string, depth: number) =>
+      pathSet.has(s) || (!collapsed.has(s) && (depth === 0 || expanded.has(s))),
+    [pathSet, collapsed, expanded],
+  );
+  const toggle = React.useCallback((s: string, open: boolean) => {
+    if (open) {
+      setCollapsed((c) => new Set(c).add(s));
+      setExpanded((e) => {
+        const n = new Set(e);
+        n.delete(s);
+        return n;
+      });
+    } else {
+      setExpanded((e) => new Set(e).add(s));
+      setCollapsed((c) => {
+        const n = new Set(c);
+        n.delete(s);
+        return n;
+      });
+    }
+  }, []);
+
   if (!root) {
     return (
       <div className="flex h-full items-center justify-center p-3 text-center text-[11px] text-muted-foreground">
@@ -634,7 +673,7 @@ export function EditLayerPanel({ vedit }: { vedit: VisualEdit }) {
           parentSel={root.sel}
           idx={i}
           vedit={vedit}
-          collapsed={collapsed}
+          isOpen={isOpen}
           toggle={toggle}
           drag={drag}
           setDrag={setDrag}
