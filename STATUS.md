@@ -63,6 +63,31 @@ cd ~/Workspaces/Personal/projects/bezier/app && npm run tauri dev   # → :3210,
 
 # 📜 §6. 時系列セッションログ（過去・append・新しい順）
 
+## ▶ 2026-06-21 セッション（DEC-136 — push 通知を公式 Tauri プラグインでフル実装）
+- **きっかけ（CEO）**: 「push 通知をちゃんと実装したい。今どんな状況？」→ 調査で **2系統アドホック併存**（Rust osascript＝開いてる Issue／web Notification＝裏 Issue・identity 崩れ・背景動作怪しい・クリック無反応・On/Off なし）。フル承認。
+- **対応**: **公式 `tauri-plugin-notification`（Rust）＋`@tauri-apps/plugin-notification`（JS）に一本化**。新規 `src/lib/notify.ts` の単一 `notify({title,body,target})` に両 call site 集約。Bezier 名義＋アイコン・背景発火・権限 API。**クリック→`onAction` で window フォーカス＋`bezier:open-issue` イベント→sidebar が repo 解決して該当 Issue へ**。権限は agent 起動時に warm-up。**設定 `notifications` トグル**（default on・i18n）。Rust osascript notify＋web Notification 撤去＝2→1系統。
+- **MSRV gotcha**: plugin の transitive `mac-notification-sys 0.6.15` が edition2024 要求 → `mac-notification-sys = "=0.6.4"` ピン（プロジェクト方針に沿う）。
+- **検証**: tsc0/eslint0/vitest90/cargo green。**本番反映（10:23・要 ⌘Q→再起動）**。詳細＝DEC-136 / [[push-notifications]]。**要 dogfood 確認**（実通知の見た目・背景発火・クリック遷移・未署名 .app の通知許可）。
+- **追補（DEC-137・同日 20:54）= 通知トリガー拡張4種**（CEO「他に通知が必要な内容を特定」）: ①共有 ready（URL 発行・use-journey exit・mount 復元では鳴らさない）②プレビュー ready/起動失敗（use-implement-session の preview.status 遷移）③リポ準備完了（use-readiness fixAll）④PR 作成（openPR）。全て `!document.hasFocus()` ゲート＋クリックで該当 Issue。i18n en/ja 追加。tsc0/eslint0/vitest90・Rust 変更なし・本番反映。
+
+## ▶ 2026-06-20 セッション（DEC-135 — 共有 URL をディスク永続化＝再起動しても Share から見つかる）
+- **きっかけ（CEO）**: 共有済み URL が再起動で消えて Share から見つからない。
+- **真因**: ①最終共有ページ URL（`use-journey.ts`）は `useState(null)` のみで**永続化ゼロ**（本命）②アプリ URL（`use-publish.ts`）は localStorage 保存だが prod の WKWebView localStorage が再起動を跨がない。`previewKey=issue.id`（ULID）は安定。
+- **対応**: 両者を **`.bezier`（gitignored・issue.id キー）にディスク永続化** — journey=`<root>/.bezier/share-urls.json`、publish=`publish-urls.json`。共有成功時保存・**mount で復元（`status="ready"`）**・Discard で削除。→ 再起動後に Issue を開くと Share が既存 URL＋[コピー/開く]＋「再共有」を表示。
+- **検証**: tsc0/eslint0/vitest90。Rust 変更なし。**本番反映（07:46・要 ⌘Q→再起動）**。詳細＝DEC-135。
+
+## ▶ 2026-06-19 セッション（DEC-134 — 被共有ページ UX 改善6点）
+- **きっかけ（CEO）**: 被共有側体験のアプデ。対象＝`app/src/lib/journey.ts`（共有ページ生成）。
+- **内容**: ①maker 向け lead「出来上がりだけでなく…」撤去 ②パスワードを `localStorage`（`bz-pw-<salt>`・~7日）にキャッシュ→再訪で自動解錠（失敗時破棄） ③doc に**目次 ToC**（h1–3・id 付与・アンカー＝CSP 維持・レベルでインデント・≥2見出し時） ④**ワイド化**＝旧 `.wrap 860px`→スティッキー `.topbar`＋`.page 1280px`、Preview/デザイン iframe `min(82vh,880px)`、doc 本文 880px、badge は topbar に1回 ⑤md 修正＝`~~打消~~`→`<del>`・`*斜体*`/`_斜体_`→`<em>`（lookbehind 不使用・`_` は語境界限定）。
+- **検証**: tsc0/eslint0/vitest90（journey.test +4）。既存テスト全維持。Rust 変更なし。**本番反映（22:57・要 ⌘Q→再起動）**。詳細＝DEC-134。**見た目は dogfood 確認推奨**。
+
+## ▶ 2026-06-19 セッション（DEC-133 — プレビューは「変更ページ」を開く＋Map をスクショ方式で認証アプリ対応）
+- **きっかけ（CEO）**: ①ターン後プレビューが必ずトップ `/` に行く→変更したページを直接開きたい ②Map が認証アプリで必ずログイン画面しか出ない→調査・対応。実コード調査で承認（#1=(a)+(b)／Map=A スクショ／1バッチ反映）。
+- **#1 (a) 実装**: `lib/changed-route.ts`（Next.js App/Pages→ルート導出・安全 degrade）＋ `preview-pane.tsx` 配線（ready 化/ターン完了で `git status`→変更ルートへ自動遷移・DEC-121 のナビ再利用・手動ナビ尊重）。単体10件。**(b) 保留**: `thread` がエージェント自由テキストを持たない（実出力 pty 側）ため宣言ルート自動取得は別チャネル要（[[prompt-tuning-multilingual-eval]]）。
+- **Map = A スクショ**: 原因＝`issue-map.tsx` が iframe（DEC-120 で Preview/Live はネイティブ化したが Map は据置）→ 認証セッション無しでログイン画面。対応＝Preview の認証済み webview＋`captureRegion`＋パス遷移を再利用し各ルートを撮影→`<issueDir>/map/<slug>.png`→静止画タイル。**単一 webview コーディネータ（DEC-120/130＝login の要）は非改変＝退行リスク回避**。`scope.ts: routeSlug/mapStillPath`、i18n `map.*` 追加。
+- **検証**: tsc0/eslint0/vitest85（+10）。Rust 変更なし。**本番ビルド→/Applications 反映（22:30・要 ⌘Q→再起動）**。**Map-A はログイン＋目視の dogfood 確認待ち**（capture の settle 500ms/1500ms は実機で要調整可能性）。ブランチ `feat/2026-06-19/preview-changed-route-and-map-screenshots`（未コミット）。詳細＝DEC-133 / [[preview-changed-route-and-map-screenshots]]。
+- **追補（best UX・CEO「1,2 それぞれベストな UX に」）**: #1=mtime で最新変更ページを自動オープン＋**変更ページのチップ列**（クリックで即移動）。#2=固定待ち→`navigateAndSettle`（実 URL 着地ポーリング）＋**ターン後に変更ページの Map 静止画を自動更新**（プレビュー可視時・#1 と統合）＋一括撮影の進捗をヘッダ表示。vitest86。本番再反映（**22:45**・要 ⌘Q→再起動）。
+
 ## ▶ 2026-06-18 セッション（DEC-120 — Live/Preview を埋め込みネイティブブラウザに一本化＝ログインがアプリ内で完結）
 - **きっかけ**: dogfood で「ログインのあるアプリ（chom-chom）が iframe プレビューでログインできない＝辛い」。OAuth プロバイダは X-Frame-Options で枠内表示を拒否＋クロスオリジン iframe はストレージ分割で session 不可。これは本物のブラウザでも同じ＝iframe の構造的限界。
 - **3段で発展**: ①「別ウィンドウで開く」(`open_live_window`＝トップレベル Tauri 窓・ポップアップは opener 保持の子窓 `on_new_window`) → ②CEO「cmux みたいに左チャット・右ブラウザを**埋め込み**たい」→ **ネイティブ埋め込み webview**（`unstable` の `Window::add_child`） → ③CEO「2モードは紛らわしい・標準化」→ **トグル廃止で単一モード**＋トレードオフ全対策。
