@@ -280,6 +280,37 @@ function savePublishedUrl(key: string, value: string | null): void {
   }
 }
 
+// Durable backstop (DEC-135): localStorage can fail to persist across an app
+// restart, so the share URL would "disappear". The source of truth lives on DISK,
+// under the repo's `.bezier` store (gitignored), keyed by the stable issue id —
+// a JSON map `{ [issueId]: url }`. Survives restarts + app rebuilds.
+const PUBLISH_URLS_FILE = (root: string) => `${root}/.bezier/publish-urls.json`;
+async function loadPublishedUrlDisk(root: string, key: string): Promise<string | null> {
+  try {
+    const map = JSON.parse(await readFile(PUBLISH_URLS_FILE(root))) as Record<string, unknown>;
+    const v = map?.[key];
+    return typeof v === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
+async function savePublishedUrlDisk(root: string, key: string, value: string | null): Promise<void> {
+  try {
+    let map: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(await readFile(PUBLISH_URLS_FILE(root))) as unknown;
+      if (parsed && typeof parsed === "object") map = parsed as Record<string, string>;
+    } catch {
+      /* no file yet */
+    }
+    if (value) map[key] = value;
+    else delete map[key];
+    await writeFile(PUBLISH_URLS_FILE(root), `${JSON.stringify(map, null, 2)}\n`);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** POSIX single-quote a value so a public env value can't break the build shell. */
 function shq(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
@@ -474,12 +505,13 @@ export function usePublish(
     logAccRef.current = "";
     await ptyKillKey(ptyKey).catch(() => {});
     savePublishedUrl(previewKey, null);
+    void savePublishedUrlDisk(root, previewKey, null); // Discard wipes the durable URL too
     setStatus("idle");
     setUrl(null);
     setInspectUrl(null);
     setDiagnosis(null);
     setLog("");
-  }, [detach, ptyKey, previewKey]);
+  }, [detach, ptyKey, previewKey, root]);
 
   // Load the resolved public env (auto + overrides) + whether it's set up.
   React.useEffect(() => {
@@ -496,6 +528,23 @@ export function usePublish(
       cancelled = true;
     };
   }, [root]);
+
+  // Restore the published URL from DISK on mount (DEC-135) — localStorage may not
+  // survive an app restart, but the on-disk record does. Only fills in when we
+  // aren't already showing/building one; re-seeds the localStorage fast-path.
+  React.useEffect(() => {
+    let cancelled = false;
+    void loadPublishedUrlDisk(root, previewKey).then((u) => {
+      if (cancelled || !u || urlRef.current || publishingRef.current) return;
+      urlRef.current = u;
+      setUrl(u);
+      setStatus("ready");
+      savePublishedUrl(previewKey, u);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [root, previewKey]);
 
   // Decide the deploy env via a headless agent (no secrets to the AI) + persist it
   // as the per-repo override. Idempotent-ish: re-running re-decides + overwrites.
@@ -770,7 +819,8 @@ export function usePublish(
             const stable = stableAppAlias(previewKey);
             setUrl(stable);
             setStatus("ready");
-            savePublishedUrl(previewKey, stable); // remember across navigation
+            savePublishedUrl(previewKey, stable); // fast path (this session)
+            void savePublishedUrlDisk(root, previewKey, stable); // durable across restarts
             finish(stable);
           } else {
             // Friendly hints for the most common non-engineer failures.
@@ -856,6 +906,7 @@ export function usePublish(
             setUrl(stable);
             setStatus("ready");
             savePublishedUrl(previewKey, stable);
+            void savePublishedUrlDisk(root, previewKey, stable); // durable across restarts
           } else {
             setStatus("error");
           }

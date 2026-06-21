@@ -18,9 +18,10 @@ import {
   renderProgress,
   type UnlistenFn,
 } from "@/lib/pty";
-import { writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
+import { readFile, writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
 import { getSettings } from "@/lib/settings";
+import { notify } from "@/lib/notify";
 import {
   buildJourneyHtml,
   buildGatePage,
@@ -98,6 +99,37 @@ const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]/g;
 const LOG_CAP = 20_000;
 const PTY_PREFIX = "journey:";
 
+// Durable record of the SHARE-PAGE URL (DEC-135). Previously the share URL lived
+// only in React state, so an app restart "lost" an already-shared link. Persist it
+// on DISK under the repo's `.bezier` store (gitignored), keyed by issue id — the
+// source of truth that survives restarts so the URL stays findable in Share.
+const SHARE_URLS_FILE = (root: string) => `${root}/.bezier/share-urls.json`;
+async function loadShareUrlDisk(root: string, id: string): Promise<string | null> {
+  try {
+    const map = JSON.parse(await readFile(SHARE_URLS_FILE(root))) as Record<string, unknown>;
+    const v = map?.[id];
+    return typeof v === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
+async function saveShareUrlDisk(root: string, id: string, value: string | null): Promise<void> {
+  try {
+    let map: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(await readFile(SHARE_URLS_FILE(root))) as unknown;
+      if (parsed && typeof parsed === "object") map = parsed as Record<string, string>;
+    } catch {
+      /* no file yet */
+    }
+    if (value) map[id] = value;
+    else delete map[id];
+    await writeFile(SHARE_URLS_FILE(root), `${JSON.stringify(map, null, 2)}\n`);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function useJourney(
   root: string,
   issueId: string,
@@ -130,10 +162,26 @@ export function useJourney(
     urlRef.current = null;
     accRef.current = "";
     await ptyKillKey(ptyKey).catch(() => {});
+    void saveShareUrlDisk(root, issueId, null); // Discard wipes the durable share URL
     setStatus("idle");
     setUrl(null);
     setLog("");
-  }, [detach, ptyKey]);
+  }, [detach, ptyKey, root, issueId]);
+
+  // Restore the share-page URL from DISK on mount (DEC-135) so an already-shared
+  // link stays findable in Share after an app restart. Only fills in when idle.
+  React.useEffect(() => {
+    let cancelled = false;
+    void loadShareUrlDisk(root, issueId).then((u) => {
+      if (cancelled || !u || urlRef.current || busyRef.current) return;
+      urlRef.current = u;
+      setUrl(u);
+      setStatus("ready");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [root, issueId]);
 
   const share = React.useCallback(
     async (opts: {
@@ -274,6 +322,16 @@ export function useJourney(
             // we parsed to confirm success.
             setUrl(stableUrl);
             setStatus("ready");
+            void saveShareUrlDisk(root, issueId, stableUrl); // durable across restarts
+            // Sharing takes a while (deploy) — ping when the URL is live, but only
+            // if the maker tabbed away (DEC-137). Click opens the issue (URL shown).
+            if (typeof document !== "undefined" && !document.hasFocus()) {
+              void notify({
+                title: title || "Bezier",
+                body: tt("journey.notifyShareReady"),
+                target: { root, id: issueId },
+              }).catch(() => {});
+            }
           } else {
             setStatus("error");
           }

@@ -67,7 +67,9 @@ export interface EncryptedBlob {
  * page's own scripts — marked, the app embed — run normally). Hobby-compatible:
  * no server, no Vercel Pro. Honest limit: this protects the SHARE PAGE; once
  * unlocked, the embedded app's (unguessable) URL is revealed — the app itself
- * isn't separately gated.
+ * isn't separately gated. Convenience: on success the password is cached in this
+ * browser's localStorage for ~7 days (per-device) so the recipient isn't re-prompted;
+ * a rotated password (decrypt fails) clears the cache and shows the form again.
  */
 export function buildGatePage(title: string, b: EncryptedBlob): string {
   const safeTitle = esc(title || "Untitled");
@@ -111,6 +113,7 @@ iframe.view{position:fixed;inset:0;width:100%;height:100%;border:0;background:va
 </div>
 <script>
 var B={salt:"${b.saltB64}",iv:"${b.ivB64}",data:"${b.dataB64}",iter:${b.iter}};
+var KEY="bz-pw-"+B.salt, TTL=604800000; // remember on THIS device for ~7 days
 function b2u(s){var x=atob(s),a=new Uint8Array(x.length);for(var i=0;i<x.length;i++)a[i]=x.charCodeAt(i);return a;}
 async function tryDecrypt(pw){
   var enc=new TextEncoder();
@@ -119,15 +122,19 @@ async function tryDecrypt(pw){
   var pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:b2u(B.iv)},key,b2u(B.data));
   return new TextDecoder().decode(pt);
 }
+function show(html){var f=document.createElement("iframe");f.className="view";f.srcdoc=html;document.body.innerHTML="";document.body.appendChild(f);}
+function remember(pw){try{localStorage.setItem(KEY,JSON.stringify({pw:pw,exp:Date.now()+TTL}));}catch(e){}}
+function cachedPw(){try{var r=JSON.parse(localStorage.getItem(KEY)||"null");if(r&&r.exp>Date.now())return r.pw;}catch(e){}return null;}
 document.getElementById("f").addEventListener("submit",function(e){
   e.preventDefault();
   var err=document.getElementById("err");err.textContent="";
   var btn=e.target.querySelector("button");btn.disabled=true;
-  tryDecrypt(document.getElementById("pw").value).then(function(html){
-    var f=document.createElement("iframe");f.className="view";f.srcdoc=html;
-    document.body.innerHTML="";document.body.appendChild(f);
-  }).catch(function(){err.textContent=${JSON.stringify(tt("journey.pwWrong"))};btn.disabled=false;});
+  var pw=document.getElementById("pw").value;
+  tryDecrypt(pw).then(function(html){remember(pw);show(html);}).catch(function(){err.textContent=${JSON.stringify(tt("journey.pwWrong"))};btn.disabled=false;});
 });
+// Re-open without re-prompting if a recent password is cached on this device; a
+// rotated password (decrypt fails) silently clears it and shows the form.
+(function(){var pw=cachedPw();if(pw)tryDecrypt(pw).then(show).catch(function(){try{localStorage.removeItem(KEY);}catch(e){}});})();
 </script>
 </body>
 </html>`;
@@ -146,14 +153,34 @@ function escAttr(s: string): string {
 }
 
 function inlineMd(s: string): string {
-  return esc(s)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  return (
+    esc(s)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+      // Single * = italic (bold's ** already consumed above); require non-space edges
+      // so "a * b" isn't matched. No lookbehind (older Safari/WKWebView recipients).
+      .replace(/\*(\S(?:[^*\n]*\S)?)\*/g, "<em>$1</em>")
+      // _word_ italic only at word boundaries, so snake_case identifiers stay plain.
+      .replace(/(^|[\s(])_(\S(?:[^_\n]*\S)?)_(?=[\s).,!?:;]|$)/g, "$1<em>$2</em>")
+  );
 }
 
-function renderSafeMarkdown(md: string): string {
+/** Heading/ToC text with the inline md markers stripped (for the ToC link label). */
+function plainInline(s: string): string {
+  return esc(s.replace(/[*_~`]/g, ""));
+}
+
+interface TocEntry {
+  level: number;
+  text: string;
+  id: string;
+}
+
+function renderSafeMarkdown(md: string): { html: string; toc: TocEntry[] } {
   const lines = (md || tt("journey.specEmpty")).replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
+  const toc: TocEntry[] = [];
   let inCode = false;
   let code: string[] = [];
   // Open-list stack: each entry remembers its tag + the indent (leading spaces) it
@@ -190,7 +217,10 @@ function renderSafeMarkdown(md: string): string {
     const h = /^(#{1,3})\s+(.+)$/.exec(line);
     if (h) {
       closeAll();
-      out.push(`<h${h[1].length}>${inlineMd(h[2])}</h${h[1].length}>`);
+      const level = h[1].length;
+      const id = `h-${toc.length}`; // sequential → ASCII anchors regardless of language
+      toc.push({ level, text: h[2], id });
+      out.push(`<h${level} id="${id}">${inlineMd(h[2])}</h${level}>`);
       continue;
     }
     const li = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
@@ -226,7 +256,7 @@ function renderSafeMarkdown(md: string): string {
   }
   if (inCode) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
   closeAll();
-  return out.join("\n");
+  return { html: out.join("\n"), toc };
 }
 
 /** Only ever embed an https URL (block javascript:/data: etc.). */
@@ -235,7 +265,22 @@ function httpsOnly(u: string | null | undefined): string | null {
 }
 
 function renderDesignTab(tab: JourneyDesignTab): string {
-  if (tab.kind === "doc") return `<div class="doc">${renderSafeMarkdown(tab.md)}</div>`;
+  if (tab.kind === "doc") {
+    const { html, toc } = renderSafeMarkdown(tab.md);
+    // A table of contents (only worth it with ≥2 headings), indented by level so
+    // nested headings read as a hierarchy. Anchor links → no script needed (CSP-safe).
+    const tocHtml =
+      toc.length >= 2
+        ? `<nav class="toc" aria-label="${escAttr(tt("journey.toc"))}"><div class="toc-h">${esc(
+            tt("journey.toc"),
+          )}</div>${toc
+            .map(
+              (h) => `<a class="toc-i lv${h.level}" href="#${h.id}">${plainInline(h.text)}</a>`,
+            )
+            .join("")}</nav>`
+        : "";
+    return `<div class="doc">${tocHtml}${html}</div>`;
+  }
   // A self-contained wireframe: no-privilege sandbox (no scripts, no same-origin).
   return `<iframe class="design" sandbox="" title="${escAttr(tab.label)}" srcdoc="${escAttr(tab.html)}"></iframe>`;
 }
@@ -358,16 +403,27 @@ function buildPage(
 :root{--bg:#faf9f7;--fg:#1c1a17;--muted:#6b6660;--line:#e7e3dd;--accent:#1c1a17}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
-.wrap{max-width:860px;margin:0 auto;padding:40px 20px 80px;overflow-wrap:anywhere}
-header{display:flex;align-items:baseline;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
-h1{font-size:24px;font-weight:650;letter-spacing:-.01em;margin:0}
+/* Prototype-style chrome: a sticky header bar + a WIDE content area (so the live
+   Preview renders at desktop width, not a cramped small-device column). */
+.topbar{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.bar{max-width:1280px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+.page{max-width:1280px;margin:0 auto;padding:24px 24px 96px;overflow-wrap:anywhere}
+h1{font-size:20px;font-weight:650;letter-spacing:-.01em;margin:0}
+.top-right{display:flex;align-items:center;gap:10px}
 .meta{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 10px;text-decoration:none;white-space:nowrap}
 .badge .dot{width:9px;height:9px;border-radius:2px;background:var(--accent)}
-.lead{color:var(--muted);margin:6px 0 0}
+/* Table of contents (DEC-133) — indented by heading level. */
+.toc{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 20px;background:#fff}
+.toc-h{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px}
+.toc-i{display:block;color:var(--muted);text-decoration:none;font-size:13px;padding:2px 0}
+.toc-i:hover{color:var(--fg)}
+.toc-i.lv2{padding-left:14px}
+.toc-i.lv3{padding-left:28px}
 /* CSS-only tabs: hide the radios; reveal panels via generated :checked rules. */
 .r{position:absolute;width:0;height:0;opacity:0;pointer-events:none}
-.tabs{margin-top:28px}
+.tabs{margin-top:6px}
+.doc{max-width:880px}
 .segbar{display:inline-flex;gap:3px;background:#efece7;border-radius:10px;padding:3px;margin-bottom:8px}
 .segbar label{font-size:13px;font-weight:600;color:var(--muted);padding:6px 16px;border-radius:7px;cursor:pointer}
 .segp{display:none}
@@ -377,7 +433,7 @@ h1{font-size:24px;font-weight:650;letter-spacing:-.01em;margin:0}
 .tabbar::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
 .tabbar label{font-size:13px;color:var(--muted);padding:8px 12px;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;white-space:nowrap;flex:0 0 auto}
 .tabp{display:none}
-.doc :is(h1,h2,h3){font-size:17px;font-weight:650;margin:20px 0 8px;color:var(--fg)}
+.doc :is(h1,h2,h3){font-size:17px;font-weight:650;margin:20px 0 8px;color:var(--fg);scroll-margin-top:72px}
 .doc p{margin:8px 0}
 .doc code{background:#efece7;padding:1px 5px;border-radius:4px;font-size:13px}
 .doc pre{background:#efece7;padding:12px;border-radius:8px;overflow:auto}
@@ -390,8 +446,8 @@ h1{font-size:24px;font-weight:650;letter-spacing:-.01em;margin:0}
 .doc .chk.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .cta{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:8px}
 .hint{color:var(--muted);font-size:12px;margin:8px 0 0}
-.frame{display:block;width:100%;height:560px;margin-top:16px;border:1px solid var(--line);border-radius:10px;background:#fff}
-.design{display:block;width:100%;height:560px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.frame{display:block;width:100%;height:min(82vh,880px);margin-top:16px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.design{display:block;width:100%;height:min(82vh,880px);border:1px solid var(--line);border-radius:10px;background:#fff}
 .qa{width:100%;border-collapse:collapse;font-size:13px}
 .qa th,.qa td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 .qa th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
@@ -407,20 +463,19 @@ ${tabCss}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
+<header class="topbar">
+  <div class="bar">
     <h1>${safeTitle}</h1>
-    ${meta}
-  </header>
-  <p class="lead">${esc(tt("journey.footerLead"))}</p>
-
+    <div class="top-right">${meta}${badge}</div>
+  </div>
+</header>
+<main class="page">
   ${body}
 
   <footer>
-    ${badge}
     <span>${esc(tt("journey.madeBy"))}</span>
   </footer>
-</div>
+</main>
 <script>${SHARE_SCRIPT}</script>
 </body>
 </html>`;

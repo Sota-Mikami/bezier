@@ -21,6 +21,9 @@ toml = "=1.0.7"
 # (DEC-120) pinned into the Preview pane, so login-gated apps work inline.
 tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-dialog = "2"
+# Desktop notifications (DEC-136): official plugin → correct "Bezier" identity +
+# icon in Notification Center, permission API, works while backgrounded.
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # See build-dependencies note: keep the normal-dep copy of toml on 1.0.7 too.
@@ -43,6 +46,10 @@ portable-pty = "0.9.0"
 # Pin: hashbrown 0.17 + indexmap 2.14 require edition2024 / Rust 1.85.
 # indexmap 2.13.1 (hashbrown ^0.16.1, MSRV 1.82) is the last pre-edition2024 line.
 indexmap = "=2.13.1"
+# Pin: tauri-plugin-notification (DEC-136) pulls mac-notification-sys, whose 0.6.15
+# bumped to edition2024 (Rust 1.85). Force a pre-edition2024 line so it builds on
+# this toolchain. (Direct-dep pin only constrains the transitive version.)
+mac-notification-sys = "=0.6.4"
 hashbrown = "=0.16.1"
 # Pin: these crates' latest patches raised MSRV above 1.83. Pinned to the last
 # release that builds on Homebrew rust 1.83.

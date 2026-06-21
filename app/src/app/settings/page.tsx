@@ -19,6 +19,7 @@ import { useT, LOCALES } from "@/lib/i18n";
 import { detectAgents, type AgentTool } from "@/lib/agents";
 import { adapterForId, type CustomAgentConfig } from "@/lib/agent-adapters";
 import { confirmDialog } from "@/lib/ipc";
+import { ensureNotificationPermission } from "@/lib/notify";
 import { BezierCommandsManager } from "@/components/settings/bezier-commands-manager";
 import { PublishConnectionsManager } from "@/components/settings/publish-connections-manager";
 import { cn } from "@/lib/utils";
@@ -190,6 +191,24 @@ export default function SettingsPage() {
             <OnOffToggle
               value={settings.protectMain}
               onChange={(v) => update({ protectMain: v })}
+              onLabel={t("common.on")}
+              offLabel={t("common.off")}
+            />
+          </Field>
+        </Section>
+
+        {/* Notifications (DEC-136) */}
+        <Section
+          title={t("settings.notifications.title")}
+          desc={t("settings.notifications.desc")}
+        >
+          <Field label={t("settings.notifications.label")}>
+            <OnOffToggle
+              value={settings.notifications}
+              onChange={(v) => {
+                update({ notifications: v });
+                if (v) void ensureNotificationPermission(); // grant while focused
+              }}
               onLabel={t("common.on")}
               offLabel={t("common.off")}
             />

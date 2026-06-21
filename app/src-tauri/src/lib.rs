@@ -3083,47 +3083,6 @@ fn rewrite_in_dir(
     Ok(count)
 }
 
-/// Quote a string as an AppleScript string literal (escape `\` and `"`, flatten
-/// newlines) so it can't break the `osascript` one-liner.
-fn applescript_quote(s: &str) -> String {
-    let mut out = String::from("\"");
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' | '\r' => out.push(' '),
-            _ => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-/// Fire a desktop notification (DEC-118 / heuristic #4) so the maker doesn't have to
-/// stare at the terminal to know an agent turn finished. macOS-native via `osascript`
-/// (no extra plugin/dep); best-effort + fire-and-forget. No-op off macOS.
-#[tauri::command]
-fn notify(title: String, body: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let script = format!(
-            "display notification {} with title {}",
-            applescript_quote(&body),
-            applescript_quote(&title),
-        );
-        std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(script)
-            .spawn()
-            .map_err(|e| format!("notify: {e}"))?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (title, body);
-    }
-    Ok(())
-}
-
 /// Parse one `.env` line into ANY valid `(KEY, VALUE)` pair (public or secret), or
 /// None. A valid key is `[A-Za-z_][A-Za-z0-9_]*`. Tolerates `export ` + quotes.
 fn parse_env_line(line: &str) -> Option<(String, String)> {
@@ -3489,6 +3448,7 @@ pub fn run() {
     fix_path_env();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(PathGrantState::default())
         .manage(PtyState::default())
         .manage(LogState::default())
@@ -3649,7 +3609,6 @@ pub fn run() {
             collect_public_env,
             scan_text_origins,
             rewrite_in_dir,
-            notify,
             vercel_sync_env,
             app_data_dir,
             home_dir,

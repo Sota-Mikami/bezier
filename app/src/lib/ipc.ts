@@ -311,14 +311,6 @@ export function rewriteInDir(dir: string, pairs: [string, string][]): Promise<nu
   return invoke<number>("rewrite_in_dir", { dir, pairs });
 }
 
-/**
- * Fire a macOS desktop notification (best-effort) so the maker is pinged when an
- * agent turn finishes even if Bezier isn't focused. -> invoke("notify", { title, body })
- */
-export function notify(title: string, body: string): Promise<void> {
-  return invoke<void>("notify", { title, body });
-}
-
 /** Result of pushing the repo's env to a Vercel project. */
 export interface VercelSyncResult {
   pushed: number;

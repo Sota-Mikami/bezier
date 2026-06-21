@@ -99,6 +99,53 @@ test("buildJourneyHtml renders task lists as checkboxes (no bullet, no literal [
   assert.match(html, /<ul>[\s\S]*<ul>/);
 });
 
+test("buildJourneyHtml renders italic, underscore-italic, and strikethrough", () => {
+  const html = buildJourneyHtml({
+    ...base,
+    design: [
+      { kind: "doc", label: "Spec", md: "This is *italic*, _also_, and ~~struck~~ text." },
+    ],
+  });
+  assert.match(html, /<em>italic<\/em>/);
+  assert.match(html, /<em>also<\/em>/);
+  assert.match(html, /<del>struck<\/del>/);
+  // snake_case identifiers must NOT become italic.
+  const sc = buildJourneyHtml({
+    ...base,
+    design: [{ kind: "doc", label: "Spec", md: "use my_var_name here" }],
+  });
+  assert.equal(sc.includes("<em>"), false);
+});
+
+test("buildJourneyHtml builds an indented ToC for docs with ≥2 headings", () => {
+  const html = buildJourneyHtml({
+    ...base,
+    design: [{ kind: "doc", label: "Spec", md: ["# Top", "## Sub A", "### Deep"].join("\n") }],
+  });
+  assert.match(html, /class="toc"/);
+  assert.match(html, /<a class="toc-i lv1" href="#h-0">Top<\/a>/);
+  assert.match(html, /<a class="toc-i lv2" href="#h-1">Sub A<\/a>/);
+  assert.match(html, /<a class="toc-i lv3" href="#h-2">Deep<\/a>/);
+  assert.match(html, /<h1 id="h-0">/);
+  assert.match(html, /<h2 id="h-1">/);
+});
+
+test("buildJourneyHtml omits the ToC when a doc has <2 headings", () => {
+  const html = buildJourneyHtml({
+    ...base,
+    design: [{ kind: "doc", label: "Spec", md: "# Only one\n\nbody text" }],
+  });
+  assert.equal(html.includes('class="toc"'), false);
+});
+
+test("buildJourneyHtml uses a wide prototype layout and drops the maker lead", () => {
+  const html = buildJourneyHtml(base);
+  assert.match(html, /class="topbar"/);
+  assert.match(html, /<main class="page">/);
+  assert.equal(html.includes('class="lead"'), false);
+  assert.equal(html.includes("a record of how it was made"), false);
+});
+
 test("buildJourneyHtml shows a segmented control only when both segments exist", () => {
   // Design-only → no segment bar.
   const designOnly = buildJourneyHtml({ ...base, prototype: [] });

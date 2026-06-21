@@ -6,12 +6,13 @@
 // in the PR). The Map only READS the running app; it writes nothing to it.
 
 import * as React from "react";
-import { Plus, X, Play, Crosshair, Loader2 } from "lucide-react";
+import { Plus, X, Play, Crosshair, Loader2, Camera } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
-import { readScope, writeScope, normalizeRoute, type Scope } from "@/lib/scope";
+import { readScope, writeScope, normalizeRoute, mapStillPath, type Scope } from "@/lib/scope";
+import { loadImageDataUrl } from "@/lib/annotations";
 import { AnnotationLayer } from "./design-annotations";
 import { useAnnotationMode } from "./annotation-mode";
 import { mapAnnotationSurface } from "./annotation-surfaces";
@@ -23,7 +24,21 @@ const CARD_W = 300;
 const SCALE = CARD_W / BASE_W;
 const CARD_H = Math.round(BASE_H * SCALE);
 
-export function IssueMap({ session }: { session: ImplementSession }) {
+export function IssueMap({
+  session,
+  onCapture,
+  capturing = false,
+  captureProgress = null,
+  stillsNonce = 0,
+}: {
+  session: ImplementSession;
+  /** DEC-133 Map-A: request screenshots of these routes via the Preview browser. */
+  onCapture?: (routes: string[]) => void;
+  capturing?: boolean;
+  captureProgress?: { done: number; total: number } | null;
+  /** Bump to reload the saved stills after a capture finished. */
+  stillsNonce?: number;
+}) {
   const t = useT();
   const issue = session.issue;
   const preview = session.preview;
@@ -31,6 +46,10 @@ export function IssueMap({ session }: { session: ImplementSession }) {
   const [scope, setScope] = React.useState<Scope | null>(null);
   const [draft, setDraft] = React.useState("");
   const lastSaved = React.useRef("");
+  // Captured stills (DEC-133 Map-A): data URLs keyed by route, loaded from the
+  // issue's .bezier store. null = no still yet (placeholder). The Preview pane
+  // writes these; we reload when the route set changes or a capture finished.
+  const [stills, setStills] = React.useState<Record<string, string | null>>({});
 
   React.useEffect(() => {
     let cancelled = false;
@@ -64,6 +83,33 @@ export function IssueMap({ session }: { session: ImplementSession }) {
     }
   }, [preview.url]);
   const ready = preview.status === "ready" && !!origin;
+
+  // Reload the saved stills when the route set changes or a capture just finished.
+  const routesKey = scope?.routes.join("|") ?? "";
+  React.useEffect(() => {
+    const routes = routesKey ? routesKey.split("|") : [];
+    let cancelled = false;
+    void (async () => {
+      if (!routes.length) {
+        if (!cancelled) setStills({});
+        return;
+      }
+      const entries = await Promise.all(
+        routes.map(async (r) => {
+          try {
+            return [r, await loadImageDataUrl(mapStillPath(issue, r))] as const;
+          } catch {
+            return [r, null] as const;
+          }
+        }),
+      );
+      if (!cancelled) setStills(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [routesKey, issue, stillsNonce]);
+  const hasAnyStill = Object.values(stills).some(Boolean);
 
   if (!scope) {
     return (
@@ -139,13 +185,37 @@ export function IssueMap({ session }: { session: ImplementSession }) {
             <Plus className="size-3" />
           </button>
         </span>
-        <span className="ml-auto text-[11px] text-muted-foreground">
-          {t("map.savedToBezier")}
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {onCapture && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 gap-1 px-2 text-[11px]"
+              disabled={!ready || capturing}
+              title={t("map.captureHint")}
+              onClick={() => onCapture(scope.routes)}
+            >
+              {capturing ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Camera className="size-3" />
+              )}
+              {capturing && captureProgress
+                ? t("map.capturing", {
+                    done: String(captureProgress.done),
+                    total: String(captureProgress.total),
+                  })
+                : t("map.updateMap")}
+            </Button>
+          )}
+          <span className="text-[11px] text-muted-foreground">{t("map.savedToBezier")}</span>
+        </div>
       </div>
 
-      {/* Body: live scaled board when Preview is up, else a start prompt. */}
-      {!ready ? (
+      {/* Body: a board of captured stills. When nothing is captured AND Preview
+          isn't up yet, show a start prompt; otherwise show the tiles (stills or
+          "not captured" placeholders) so saved screens are viewable offline. */}
+      {!ready && !hasAnyStill ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
           <div className="text-sm font-medium text-foreground">{t("map.liveScaledViewTitle")}</div>
           <p className="max-w-sm text-xs text-muted-foreground">
@@ -181,20 +251,18 @@ export function IssueMap({ session }: { session: ImplementSession }) {
                 )}
                 style={{ width: CARD_W, height: CARD_H }}
               >
-                <iframe
-                  src={`${origin}${r}`}
-                  sandbox="allow-scripts allow-same-origin allow-forms"
-                  title={r}
-                  tabIndex={-1}
-                  style={{
-                    width: BASE_W,
-                    height: BASE_H,
-                    transform: `scale(${SCALE})`,
-                    transformOrigin: "top left",
-                    border: 0,
-                    pointerEvents: "none",
-                  }}
-                />
+                {stills[r] ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- local data: URL still in a Tauri webview; next/image doesn't apply
+                  <img
+                    src={stills[r]!}
+                    alt={r}
+                    className="h-full w-full object-cover object-top"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center px-3 text-center text-[11px] text-muted-foreground">
+                    {t("map.notCaptured")}
+                  </div>
+                )}
                 {r !== scope.entry && (
                   <button
                     type="button"

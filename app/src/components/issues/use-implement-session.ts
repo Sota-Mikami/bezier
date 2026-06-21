@@ -73,7 +73,8 @@ import {
   ptyStatuses,
   type AgentState,
 } from "@/lib/pty";
-import { confirmDialog, grantPath, notify } from "@/lib/ipc";
+import { confirmDialog, grantPath } from "@/lib/ipc";
+import { notify, ensureNotificationPermission } from "@/lib/notify";
 import { writeHandoffBundle } from "@/lib/handoff";
 import { tt } from "@/lib/i18n";
 import { conflictResolvePrompt } from "@/lib/prompts";
@@ -503,6 +504,10 @@ export function useImplementSession(
       cwd: string,
       opts: { prompt?: string; resume?: boolean },
     ) => {
+      // Warm up notification permission NOW (the app is focused — the user just
+      // started a turn) so the OS prompt shows at a sensible time, not the moment
+      // an agent finishes while Bezier is backgrounded (DEC-136). Idempotent.
+      void ensureNotificationPermission();
       // Pass the handoff text as the agent's positional prompt arg
       // (`claude "<prompt>"` starts an interactive session seeded with it). This
       // is reliable + visible, unlike typing into the TUI after a fixed delay
@@ -977,8 +982,36 @@ export function useImplementSession(
         : agentState === "error"
           ? tt("session.notifyError")
           : tt("session.notifyDone");
-    void notify(issue.title || "Bezier", body).catch(() => {});
-  }, [agentState, issue.title]);
+    void notify({
+      title: issue.title || "Bezier",
+      body,
+      target: { root, id: issue.id },
+    }).catch(() => {});
+  }, [agentState, issue.title, issue.id, root]);
+
+  // Ping when the dev server finishes booting (it can take up to 150s) or fails —
+  // again only when Bezier isn't focused (DEC-137). The in-app status covers the
+  // case where you're watching; this is for "I tabbed away while it started".
+  const prevPreviewStatus = React.useRef(preview.status);
+  React.useEffect(() => {
+    const was = prevPreviewStatus.current;
+    prevPreviewStatus.current = preview.status;
+    if (was !== "starting") return;
+    if (typeof document !== "undefined" && document.hasFocus()) return;
+    if (preview.status === "ready") {
+      void notify({
+        title: issue.title || "Bezier",
+        body: tt("session.notifyPreviewReady"),
+        target: { root, id: issue.id },
+      }).catch(() => {});
+    } else if (preview.status === "error") {
+      void notify({
+        title: issue.title || "Bezier",
+        body: tt("session.notifyPreviewError"),
+        target: { root, id: issue.id },
+      }).catch(() => {});
+    }
+  }, [preview.status, issue.title, issue.id, root]);
 
   // Roll the worktree back to a checkpoint (§D / DEC-080). reset --hard discards
   // later commits + uncommitted changes (reflog-recoverable); main is untouched.
@@ -1186,6 +1219,13 @@ export function useImplementSession(
       setRef(nextRef);
       setPrUrl(url);
       setInfo(tt("session.prCreated", { url }));
+      if (typeof document !== "undefined" && !document.hasFocus()) {
+        void notify({
+          title: issue.title || "Bezier",
+          body: tt("session.prCreated", { url }),
+          target: { root, id: issue.id },
+        }).catch(() => {});
+      }
       void logEvent("pr_opened", url);
       // The branch was pushed (and possibly WIP-committed); refresh the local view.
       await refreshDiff(ref.path);

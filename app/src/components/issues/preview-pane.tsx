@@ -36,12 +36,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { openExternal, openLiveWindow, captureRegion } from "@/lib/ipc";
+import { openExternal, openLiveWindow, captureRegion, pathMtime } from "@/lib/ipc";
 import { loadImageDataUrl } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
 import { previewFeedbackPrompt, previewDoctorPrompt, visualEditPrompt } from "@/lib/prompts";
 import { isLoopbackUrl, type PreviewConfig } from "@/lib/preview";
+import { gitStatus, changedPathsFromStatus } from "@/lib/git";
+import { deriveRoutesFromChangedFiles } from "@/lib/changed-route";
+import { mapStillPath } from "@/lib/scope";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
@@ -281,15 +284,25 @@ function ResizeControl({
   );
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export function PreviewPane({
   server,
   hasRef,
   session,
+  captureReq,
+  onCaptureProgress,
+  onCaptureDone,
 }: {
   server: PreviewServer;
   hasRef: boolean;
   /** When present (web runner), enables the design-feedback overlay (DEC-045). */
   session?: ImplementSession;
+  /** DEC-133 Map-A: when `nonce` bumps, screenshot each `routes` entry via this
+   *  (logged-in) browser so the Map can tile real screens. Driven by BuildReview. */
+  captureReq?: { routes: string[]; nonce: number };
+  onCaptureProgress?: (done: number, total: number) => void;
+  onCaptureDone?: () => void;
 }) {
   const t = useT();
   const { status, config, apps, selectApp, scriptsDev, log, error, url, configLoaded, attach } =
@@ -378,6 +391,177 @@ export function PreviewPane({
     setPathDraft(p);
     setReloadNonce((n) => n + 1); // navigate (force even if unchanged)
   }, [pathDraft]);
+
+  // DEC-133: open the CHANGED page, not always "/", and surface every changed page
+  // as quick chips. On preview-ready / agent-turn-end we read the worktree git status,
+  // map changed page files → routes (Next.js file-routing; unknown stacks keep "/"),
+  // rank by mtime so the page you JUST changed opens first, and remember the rest for
+  // the chip bar. Manual nav between turns is respected — we only act on a ready /
+  // turn-end transition; the next turn re-points to the newest change. `pathRef` reads
+  // the live path without making callbacks depend on it (which would re-fire on nav).
+  const worktreePath = session?.ref?.path ?? null;
+  const issue = session?.issue;
+  const pathRef = React.useRef(path);
+  React.useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
+  // Routes changed in the latest turn, newest-first — shown as quick chips.
+  const [changedRoutes, setChangedRoutes] = React.useState<string[]>([]);
+  // Map-A capture in flight (route + progress) — shown in the HEADER (a native
+  // webview paints OVER HTML, so an overlay on the pane itself wouldn't be visible).
+  const [mapCapture, setMapCapture] = React.useState<{
+    route: string;
+    done: number;
+    total: number;
+  } | null>(null);
+  const capturingMapRef = React.useRef(false);
+
+  // Navigate the embedded browser to `route`, wait until it actually lands there
+  // (the address-bar sync updates `pathRef`), then a beat for paint. Falls through on
+  // timeout (e.g. an auth redirect that never matches) so we still capture what's up.
+  const navigateAndSettle = React.useCallback(async (route: string, maxMs = 4000) => {
+    setPath(route);
+    setPathDraft(route);
+    setReloadNonce((n) => n + 1);
+    const deadline = Date.now() + maxMs;
+    while (Date.now() < deadline) {
+      const p = pathRef.current;
+      if (p === route || p.startsWith(`${route}?`) || p.startsWith(`${route}#`)) break;
+      await sleep(200);
+    }
+    await sleep(450); // paint
+  }, []);
+  // Screenshot the CURRENT (visible, logged-in) webview into the Map's still for
+  // `route` — same capture_region path as the annotate freeze. No-op if not visible.
+  const captureRouteStill = React.useCallback(
+    async (route: string) => {
+      if (!issue) return;
+      const el = containerRef.current;
+      if (!el || el.offsetParent === null) return;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      const win = getCurrentWindow();
+      const pos = await win.innerPosition();
+      const scale = await win.scaleFactor();
+      await captureRegion(
+        pos.x / scale + r.left,
+        pos.y / scale + r.top,
+        r.width,
+        r.height,
+        mapStillPath(issue, route),
+      ).catch(() => {});
+    },
+    [issue],
+  );
+
+  const applyChangedRoute = React.useCallback(
+    async (opts?: { capture?: boolean }) => {
+      if (!worktreePath) return;
+      const files = changedPathsFromStatus(await gitStatus(worktreePath).catch(() => ""));
+      const cands = deriveRoutesFromChangedFiles(files);
+      if (!cands.length) {
+        setChangedRoutes([]);
+        return;
+      }
+      // Rank by the changed file's mtime → the page you JUST changed comes first.
+      const ranked = await Promise.all(
+        cands.map(async (c) => ({
+          route: c.route,
+          m: (await pathMtime(`${worktreePath}/${c.file}`).catch(() => null)) ?? 0,
+        })),
+      );
+      ranked.sort((a, b) => b.m - a.m);
+      const routes = ranked.map((r) => r.route);
+      setChangedRoutes(routes);
+      const target = routes[0];
+      if (!target || target === pathRef.current) return;
+      if (opts?.capture && !capturingMapRef.current && !annotating && !editing) {
+        // Turn ended: open the changed page AND, while it's the visible Preview,
+        // refresh its Map still — so the Map auto-updates the page that changed,
+        // without the user clicking "Update map" or a full-board re-capture.
+        capturingMapRef.current = true;
+        try {
+          await navigateAndSettle(target);
+          await captureRouteStill(target);
+        } finally {
+          capturingMapRef.current = false;
+        }
+      } else {
+        setPath(target);
+        setPathDraft(target);
+        setReloadNonce((n) => n + 1);
+      }
+    },
+    [worktreePath, annotating, editing, navigateAndSettle, captureRouteStill],
+  );
+
+  const prevStatusRef = React.useRef(status);
+  const prevAgentRunningRef = React.useRef(session?.running ?? false);
+  React.useEffect(() => {
+    const prevStatus = prevStatusRef.current;
+    prevStatusRef.current = status;
+    const agentRunning = session?.running ?? false;
+    const prevAgentRunning = prevAgentRunningRef.current;
+    prevAgentRunningRef.current = agentRunning;
+    const becameReady = status === "ready" && prevStatus !== "ready";
+    const turnEnded = status === "ready" && prevAgentRunning && !agentRunning;
+    if (turnEnded) void applyChangedRoute({ capture: true });
+    else if (becameReady) void applyChangedRoute({ capture: false });
+  }, [status, session?.running, applyChangedRoute]);
+
+  // DEC-133 Map-A: capture a logged-in screenshot of each scope route via THIS
+  // (authenticated) Preview browser, so the Map can tile real screens instead of
+  // login-walled iframes. Driven by the Map (BuildReview switches to Preview, bumps
+  // captureReq.nonce). Reuses navigateAndSettle + captureRouteStill (same capture_
+  // region path as the annotate freeze) — no change to the shared-webview coordinator
+  // (login-critical, DEC-120/130). Progress shows in the header (`mapCapture`).
+  const captureNonceRef = React.useRef(captureReq?.nonce ?? 0);
+  React.useEffect(() => {
+    const nonce = captureReq?.nonce ?? 0;
+    if (nonce === captureNonceRef.current) return;
+    captureNonceRef.current = nonce;
+    const routes = captureReq?.routes ?? [];
+    if (
+      !routes.length ||
+      !issue ||
+      status !== "ready" ||
+      !url ||
+      annotating ||
+      editing ||
+      capturingMapRef.current
+    ) {
+      onCaptureDone?.();
+      return;
+    }
+    capturingMapRef.current = true;
+    const orig = pathRef.current;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await sleep(400); // let the tab switch settle so the webview is shown
+        for (let i = 0; i < routes.length; i++) {
+          if (cancelled) break;
+          const route = routes[i];
+          setMapCapture({ route, done: i, total: routes.length });
+          await navigateAndSettle(route);
+          if (cancelled) break;
+          await captureRouteStill(route);
+          onCaptureProgress?.(i + 1, routes.length);
+        }
+      } finally {
+        setMapCapture(null);
+        setPath(orig); // return the user to where they were
+        setPathDraft(orig);
+        setReloadNonce((n) => n + 1);
+        capturingMapRef.current = false;
+        onCaptureDone?.();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire only on nonce bump
+  }, [captureReq?.nonce]);
 
   // Reflect the browser's OWN navigation in the address bar (DEC-120 follow-up):
   // the page redirects (auth gate, OAuth return), follows links, or pushState's —
@@ -575,6 +759,20 @@ export function PreviewPane({
             active={config?.packageDir ?? ""}
             onSelect={(pd) => void selectApp(pd)}
           />
+          {/* DEC-133 Map-A: bulk capture cycles the webview through routes — show
+              progress in the header (a native webview can't be drawn over). */}
+          {mapCapture && (
+            <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+              <Loader2 className="size-3 shrink-0 animate-spin" />
+              <span className="shrink-0">
+                {t("map.capturing", {
+                  done: String(mapCapture.done + 1),
+                  total: String(mapCapture.total),
+                })}
+              </span>
+              <span className="truncate font-mono">{mapCapture.route}</span>
+            </span>
+          )}
         </div>
 
         {/* Center: responsive viewport + navigated path (only once running). */}
@@ -721,6 +919,35 @@ export function PreviewPane({
           }}
           onFixWithAgent={session ? fixWithAgent : undefined}
         />
+      )}
+
+      {/* DEC-133: pages the agent changed this turn — quick chips to jump between
+          them (newest-first). Above the pane so the webview ResizeObserver recomputes. */}
+      {status === "ready" && changedRoutes.length > 0 && (
+        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b bg-muted/30 px-3 py-1.5">
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {t("preview.changedPages")}
+          </span>
+          {changedRoutes.map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => {
+                setPath(r);
+                setPathDraft(r);
+                setReloadNonce((n) => n + 1);
+              }}
+              className={cn(
+                "shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[11px] transition-colors",
+                r === path
+                  ? "border-primary/40 bg-background text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
       )}
 
       {/* Body — in Edit mode (DEC-131), flanked by the Layer (left) + Style (right)

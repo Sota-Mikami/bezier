@@ -80,6 +80,7 @@ import {
   type AgentState,
 } from "@/lib/pty";
 import { cn, IS_DEV } from "@/lib/utils";
+import { notify, OPEN_ISSUE_EVENT } from "@/lib/notify";
 import { useT, tt } from "@/lib/i18n";
 
 /** How many issues a repo toggle shows before "もっと見る". */
@@ -421,6 +422,30 @@ export function AppSidebar() {
       window.removeEventListener("bezier:new-issue", onNewIssue);
     };
   }, [handleNew]);
+
+  // Notification click (DEC-136): open the pinged issue. The notify helper already
+  // focused the window; here we resolve the repo (the notification only carries the
+  // issue id) and select it.
+  React.useEffect(() => {
+    const onOpenIssue = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { id?: string; root?: string } | undefined;
+      const id = detail?.id;
+      if (!id) return;
+      let repo = detail.root;
+      if (!repo) {
+        for (const [r, list] of Object.entries(issuesByRepo)) {
+          if (list.some((it) => it.id === id)) {
+            repo = r;
+            break;
+          }
+        }
+      }
+      const repoPath = repo ?? root;
+      if (repoPath) selectIssue(repoPath, id);
+    };
+    window.addEventListener(OPEN_ISSUE_EVENT, onOpenIssue);
+    return () => window.removeEventListener(OPEN_ISSUE_EVENT, onOpenIssue);
+  }, [issuesByRepo, selectIssue, root]);
 
   // "…" menu: reveal the repo in Finder / open it in the user's IDE (DEC-041 #5).
   const handleRevealRepo = React.useCallback(async (path: string) => {
@@ -1240,32 +1265,18 @@ function AgentInbox({
   );
 }
 
-// Best-effort OS/web notification when an agent enters a needs-attention state
-// for an issue you're not currently viewing. Requests permission lazily.
+// Desktop notification when an agent enters a needs-attention state for an issue
+// you're NOT currently viewing (DEC-136). The unified helper handles permission +
+// the Settings on/off gate; clicking it opens this issue (target carries the id —
+// the repo is resolved by the OPEN_ISSUE_EVENT listener below).
 function notifyAttention(s: AgentStatus): void {
-  try {
-    if (typeof Notification === "undefined") return;
-    const body =
-      s.state === "waiting"
-        ? tt("sidebar.notifyWaiting")
-        : s.state === "error"
-          ? tt("sidebar.notifyError")
-          : tt("sidebar.notifyDone");
-    const fire = () => {
-      try {
-        new Notification("Bezier", { body });
-      } catch {
-        /* notifications unavailable */
-      }
-    };
-    if (Notification.permission === "granted") fire();
-    else if (Notification.permission !== "denied")
-      void Notification.requestPermission().then((p) => {
-        if (p === "granted") fire();
-      });
-  } catch {
-    /* no Notification API */
-  }
+  const body =
+    s.state === "waiting"
+      ? tt("sidebar.notifyWaiting")
+      : s.state === "error"
+        ? tt("sidebar.notifyError")
+        : tt("sidebar.notifyDone");
+  void notify({ title: "Bezier", body, target: { id: s.key } });
 }
 
 // Cross-repo trash list (DEC-022). Each row shows the issue title + its repo, the

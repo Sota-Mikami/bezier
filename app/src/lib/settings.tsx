@@ -127,6 +127,9 @@ export interface Settings {
    * always behind a confirm). The merge CONFIRM is unconditional regardless.
    */
   protectMain: boolean;
+  /** Desktop notifications when an agent finishes / needs you while Bezier is in the
+   *  background (DEC-136). Default on; OS permission is requested on first use. */
+  notifications: boolean;
   /** Named publish accounts (DEC-098). */
   publishConnections: PublishConnection[];
   /** Connection id used when a repo has no explicit binding. */
@@ -153,6 +156,7 @@ export const DEFAULT_SETTINGS: Settings = {
   trashTtlDays: 30,
   autoCheckpoint: true,
   protectMain: false,
+  notifications: true,
   publishConnections: DEFAULT_CONNECTIONS,
   defaultConnectionId: "default",
   repoConnections: {},
@@ -206,6 +210,10 @@ function coerce(raw: unknown): Settings {
       typeof o.protectMain === "boolean"
         ? o.protectMain
         : DEFAULT_SETTINGS.protectMain,
+    notifications:
+      typeof o.notifications === "boolean"
+        ? o.notifications
+        : DEFAULT_SETTINGS.notifications,
     publishConnections: coerceConnections(o.publishConnections),
     defaultConnectionId:
       typeof o.defaultConnectionId === "string" && o.defaultConnectionId

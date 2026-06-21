@@ -9,6 +9,8 @@ import * as React from "react";
 
 import { ptySpawn, onPtyData, onPtyExit, type UnlistenFn } from "@/lib/pty";
 import { openInEditor } from "@/lib/ipc";
+import { tt } from "@/lib/i18n";
+import { notify } from "@/lib/notify";
 import {
   packageCwd,
   nvmInstallLaunch,
@@ -210,6 +212,11 @@ export function useReadiness(
         }
       }
       await reprobe();
+      // "Prepare all" (deps/Node install) can take minutes — ping when it's done
+      // if the maker tabbed away (DEC-137). Repo-level, so no issue target.
+      if (typeof document !== "undefined" && !document.hasFocus()) {
+        void notify({ title: "Bezier", body: tt("session.notifyPrepared") }).catch(() => {});
+      }
     } finally {
       setBusy(null);
     }

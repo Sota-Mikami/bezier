@@ -17,6 +17,18 @@ export function scopePath(issue: Pick<Issue, "dir">): string {
   return `${issue.dir}/scope.json`;
 }
 
+/** Filesystem-safe slug for a route (`/coach/preview` → `coach_preview`). */
+export function routeSlug(route: string): string {
+  return route.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "root";
+}
+
+/** Where the Map's captured still for a route lives — under the issue's .bezier
+ *  store (granted to capture_region, gitignored, outside the worktree). The
+ *  Preview pane writes these; the Map reads them (DEC-133 Map-A). */
+export function mapStillPath(issue: Pick<Issue, "dir">, route: string): string {
+  return `${issue.dir}/map/${routeSlug(route)}.png`;
+}
+
 /** Normalize a user-typed route to a leading-slash path. */
 export function normalizeRoute(r: string): string {
   const t = r.trim();

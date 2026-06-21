@@ -38,6 +38,32 @@ export function BuildReview({
   const t = useT();
   const [tab, setTab] = React.useState<ProtoTab>("preview");
 
+  // DEC-133 Map-A: the Map captures a logged-in screenshot of each scoped route
+  // through the (authenticated) Preview browser. The Map requests it; we switch to
+  // Preview so its webview is painted (capture_region needs it visible), bump a
+  // nonce the PreviewPane acts on, then return to the Map showing fresh stills.
+  const [captureReq, setCaptureReq] = React.useState<{ routes: string[]; nonce: number } | null>(
+    null,
+  );
+  const [capturing, setCapturing] = React.useState(false);
+  const [captureProgress, setCaptureProgress] = React.useState<{ done: number; total: number } | null>(
+    null,
+  );
+  const [stillsNonce, setStillsNonce] = React.useState(0);
+  const startCapture = React.useCallback((routes: string[]) => {
+    if (!routes.length) return;
+    setTab("preview");
+    setCapturing(true);
+    setCaptureProgress({ done: 0, total: routes.length });
+    setCaptureReq((prev) => ({ routes, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+  const handleCaptureDone = React.useCallback(() => {
+    setCapturing(false);
+    setCaptureProgress(null);
+    setStillsNonce((n) => n + 1);
+    setTab("map");
+  }, []);
+
   // Same Chrome-style nav as Design (⌘1–9 / ⌘⌥←→ / Ctrl+Tab).
   useTabShortcuts({
     active,
@@ -81,9 +107,24 @@ export function BuildReview({
       <div className="relative min-h-0 flex-1">
         {/* Preview stays mounted (hidden toggle) so the iframe + dev server survive. */}
         <div className={cn("absolute inset-0", tab !== "preview" && "hidden")}>
-          <PreviewPane server={session.preview} hasRef={!!session.ref} session={session} />
+          <PreviewPane
+            server={session.preview}
+            hasRef={!!session.ref}
+            session={session}
+            captureReq={captureReq ?? undefined}
+            onCaptureProgress={(done, total) => setCaptureProgress({ done, total })}
+            onCaptureDone={handleCaptureDone}
+          />
         </div>
-        {tab === "map" && <IssueMap session={session} />}
+        {tab === "map" && (
+          <IssueMap
+            session={session}
+            onCapture={startCapture}
+            capturing={capturing}
+            captureProgress={captureProgress}
+            stillsNonce={stillsNonce}
+          />
+        )}
         {tab === "qa" && <QaProposal session={session} />}
       </div>
     </div>
