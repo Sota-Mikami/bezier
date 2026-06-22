@@ -75,6 +75,7 @@ import {
 } from "@/lib/pty";
 import { confirmDialog, grantPath } from "@/lib/ipc";
 import { notify, ensureNotificationPermission } from "@/lib/notify";
+import { isUntitled, titleFromMessage } from "@/lib/issue-domain";
 import { writeHandoffBundle } from "@/lib/handoff";
 import { tt } from "@/lib/i18n";
 import { conflictResolvePrompt } from "@/lib/prompts";
@@ -678,6 +679,9 @@ export function useImplementSession(
   // agent with the user's first message and asks it to (1) draft the spec, (2)
   // title the issue, then (3) implement. Unlike handleImplement it does NOT
   // require a spec to exist — the agent writes it.
+  // Provisional issue name from the first message (DEC-141) — used for notifications
+  // until the prop title refines from "Untitled" to the spec H1. "" = none yet.
+  const [provisionalTitle, setProvisionalTitle] = React.useState("");
   const handleStart = React.useCallback(
     async (message: string) => {
       const msg = message.trim();
@@ -697,6 +701,16 @@ export function useImplementSession(
         await writeWorktreeRef(issue, newRef);
         await updateIssueMeta(root, issue, { status: "in-progress" });
         onStatusChange("in-progress");
+        // Give the issue a real name immediately (DEC-141) so the sidebar +
+        // notifications don't say "Untitled" until the spec H1 lands. The spec's
+        // first heading refines it later (autoTitleFromSpec).
+        if (isUntitled(issue.title)) {
+          const prov = titleFromMessage(msg);
+          if (prov) {
+            setProvisionalTitle(prov);
+            void updateIssueMeta(root, issue, { title: prov }).catch(() => {});
+          }
+        }
         const { content } = await buildImplementHandoff(root, issue, workDir(wt), {
           userMessage: msg,
           subPath,
@@ -966,6 +980,10 @@ export function useImplementSession(
     }
   }, [agentState, autoCheckpoint]);
 
+  // Notification title (DEC-141): the real title once the spec H1 / persisted name
+  // lands; otherwise the provisional from the first message; otherwise "Bezier".
+  const notifyTitle = !isUntitled(issue.title) ? issue.title : provisionalTitle || "Bezier";
+
   // Ping the maker when a turn FINISHES (running → not-running) and Bezier isn't
   // focused, so they don't have to stare at the terminal to know it's done or
   // awaiting them (heuristic #4). The in-app inbox/dot already covers the focused
@@ -983,11 +1001,11 @@ export function useImplementSession(
           ? tt("session.notifyError")
           : tt("session.notifyDone");
     void notify({
-      title: issue.title || "Bezier",
+      title: notifyTitle,
       body,
       target: { root, id: issue.id },
     }).catch(() => {});
-  }, [agentState, issue.title, issue.id, root]);
+  }, [agentState, notifyTitle, issue.id, root]);
 
   // Ping when the dev server finishes booting (it can take up to 150s) or fails —
   // again only when Bezier isn't focused (DEC-137). The in-app status covers the
@@ -1000,18 +1018,18 @@ export function useImplementSession(
     if (typeof document !== "undefined" && document.hasFocus()) return;
     if (preview.status === "ready") {
       void notify({
-        title: issue.title || "Bezier",
+        title: notifyTitle,
         body: tt("session.notifyPreviewReady"),
         target: { root, id: issue.id },
       }).catch(() => {});
     } else if (preview.status === "error") {
       void notify({
-        title: issue.title || "Bezier",
+        title: notifyTitle,
         body: tt("session.notifyPreviewError"),
         target: { root, id: issue.id },
       }).catch(() => {});
     }
-  }, [preview.status, issue.title, issue.id, root]);
+  }, [preview.status, notifyTitle, issue.id, root]);
 
   // Roll the worktree back to a checkpoint (§D / DEC-080). reset --hard discards
   // later commits + uncommitted changes (reflog-recoverable); main is untouched.
@@ -1221,7 +1239,7 @@ export function useImplementSession(
       setInfo(tt("session.prCreated", { url }));
       if (typeof document !== "undefined" && !document.hasFocus()) {
         void notify({
-          title: issue.title || "Bezier",
+          title: notifyTitle,
           body: tt("session.prCreated", { url }),
           target: { root, id: issue.id },
         }).catch(() => {});
@@ -1235,7 +1253,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, root, issue, thread, logEvent, refreshDiff, loadBehind]);
+  }, [ref, action, root, issue, thread, logEvent, refreshDiff, loadBehind, notifyTitle]);
 
   // Design feedback (DEC-045): continue the issue's conversation with a fix turn
   // built from the reviewed annotations + an annotated screenshot. Mirrors

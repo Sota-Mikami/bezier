@@ -17,6 +17,7 @@ import { MonitorPlay, Map as MapIcon, ListChecks } from "lucide-react";
 
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
+import { getViewState, setViewState } from "@/lib/view-state";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { PreviewPane } from "./preview-pane";
@@ -36,7 +37,13 @@ export function BuildReview({
   active?: boolean;
 }) {
   const t = useT();
-  const [tab, setTab] = React.useState<ProtoTab>("preview");
+  // Restore the last-viewed Prototype sub-tab across area switches (DEC-141).
+  const [tab, setTab] = React.useState<ProtoTab>(
+    () => (getViewState(session.issue.id).protoTab as ProtoTab) ?? "preview",
+  );
+  React.useEffect(() => {
+    setViewState(session.issue.id, { protoTab: tab });
+  }, [tab, session.issue.id]);
 
   // DEC-133 Map-A: the Map captures a logged-in screenshot of each scoped route
   // through the (authenticated) Preview browser. The Map requests it; we switch to

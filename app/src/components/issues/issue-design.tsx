@@ -22,6 +22,7 @@ import { removePath, confirmDialog } from "@/lib/ipc";
 import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
+import { getViewState, setViewState } from "@/lib/view-state";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
@@ -56,7 +57,10 @@ export function IssueDesign({
   const { on: annotating } = useAnnotationMode();
   const [docs, setDocs] = React.useState<IssueDoc[]>([]);
   const [variants, setVariants] = React.useState<Variant[]>([]);
-  const [selected, setSelected] = React.useState<string | null>(null);
+  // Restore the last-viewed Design tab across area switches (DEC-141).
+  const [selected, setSelected] = React.useState<string | null>(
+    () => getViewState(issue.id).designTab ?? null,
+  );
   const [htmlByPath, setHtmlByPath] = React.useState<{ path: string; html: string } | null>(null);
   const [adding, setAdding] = React.useState(false);
   const onChangeRef = React.useRef(onChange);
@@ -129,6 +133,10 @@ export function IssueDesign({
   const dragProps = useDragReorder(ordered.map(itemKey), setOrder);
 
   const selectedItem = ordered.find((i) => i.key === selected) ?? ordered[0] ?? null;
+  // Remember it so switching to Prototype and back returns to this tab (DEC-141).
+  React.useEffect(() => {
+    setViewState(issue.id, { designTab: selectedItem?.key ?? null });
+  }, [selectedItem?.key, issue.id]);
 
   // Chrome-style tab nav (⌘1–9 / ⌘⌥←→ / Ctrl+Tab) over the merged strip. Mounted
   // only while the Design area is visible, so it never fights Prototype's row.

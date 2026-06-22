@@ -77,6 +77,14 @@ export function isUntitled(title: string | null | undefined): boolean {
   return !t || t.toLowerCase() === "untitled";
 }
 
+/** A provisional issue title from the maker's first chat message (DEC-141) — used
+ *  the instant work starts, so the sidebar + notifications show a real name instead
+ *  of "Untitled" until the spec H1 refines it. First non-empty line, trimmed to 60. */
+export function titleFromMessage(message: string): string {
+  const line = (message.split("\n").find((l) => l.trim()) ?? "").trim();
+  return line.length > 60 ? `${line.slice(0, 60).trimEnd()}…` : line;
+}
+
 /**
  * Derive a title from a spec.md body: the first `# ` heading, unless it's still
  * the template placeholder ("Untitled"). Returns null when there's no real title

@@ -45,6 +45,7 @@ import { isLoopbackUrl, type PreviewConfig } from "@/lib/preview";
 import { gitStatus, changedPathsFromStatus } from "@/lib/git";
 import { deriveRoutesFromChangedFiles } from "@/lib/changed-route";
 import { mapStillPath } from "@/lib/scope";
+import { getViewState, setViewState } from "@/lib/view-state";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
@@ -340,9 +341,15 @@ export function PreviewPane({
   const [portrait, setPortrait] = React.useState(true);
   const [customW, setCustomW] = React.useState(420);
   const [customH, setCustomH] = React.useState(900);
-  const [path, setPath] = React.useState("/");
-  const [pathDraft, setPathDraft] = React.useState("/");
+  // Restore the last-viewed Preview route across area switches (DEC-141).
+  const viewStateId = session?.issue.id;
+  const initialPath = viewStateId ? getViewState(viewStateId).previewPath ?? "/" : "/";
+  const [path, setPath] = React.useState(initialPath);
+  const [pathDraft, setPathDraft] = React.useState(initialPath);
   const pathInputRef = React.useRef<HTMLInputElement | null>(null);
+  React.useEffect(() => {
+    if (viewStateId) setViewState(viewStateId, { previewPath: path });
+  }, [path, viewStateId]);
 
   const running = status === "starting" || status === "ready";
 
