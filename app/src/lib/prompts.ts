@@ -529,6 +529,7 @@ const JA_HANDOFF: HandoffPhrases = {
     "2) issue.md の frontmatter の `title` が空または「Untitled」なら、簡潔なタイトルを設定する。",
     "3) **Design ステップ（UI の変更なら）**: 実装の前に、**デザイン別案（ワイヤー）を 2〜3 案**作って方向を見比べてもらう（下記「デザイン別案」の規約に従う）。Design ボードに自動で並びます。ユーザーが方向を選んだら次へ。ロジック中心でビジュアル判断が不要なら、その旨を伝えてスキップして良い。",
     "4) 選ばれた方向で **この worktree 内のコードに実装**する。受入基準を満たすことをゴールにする。",
+    "**プレビュー（ライブ表示）が要るなら、あなたが dev サーバを起動し、その URL（例 `http://localhost:3000`）を maker に伝えてください。** Bezier はサーバを自分で起動しません — 起動済みのものを検知して右のプレビューに映します。ターミナルで `npm run dev` 等を動かし続け（バックグラウンドでも可）、URL を一言報告すれば自動で表示されます。",
     "完了したら変更点を簡潔に要約してください（commit は人間が UI から行います）。",
   ],
   introFollowUp: (worktree) => [
@@ -664,6 +665,7 @@ const EN_HANDOFF: HandoffPhrases = {
     "2) If issue.md's frontmatter `title` is empty or “Untitled”, set a concise title.",
     "3) **Design step (for UI changes)**: before implementing, make **2–3 design variants (wireframes)** so the directions can be compared (follow the “design variants” convention). They line up automatically on the Design board. Once the user picks a direction, continue. If it's logic-heavy with no visual call to make, say so and skip.",
     "4) Implement the chosen direction **in the code inside this worktree**. Make meeting the acceptance criteria the goal.",
+    "**If a live preview is needed, YOU start the dev server and tell the maker its URL (e.g. `http://localhost:3000`).** Bezier does not start servers itself — it detects a running one and shows it in the preview pane. Keep `npm run dev` (or similar) running (backgrounding is fine) and report the URL once, and it appears automatically.",
     "When you're done, summarize the changes briefly (commits are made by a human from the UI).",
   ],
   introFollowUp: (worktree) => [
