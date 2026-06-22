@@ -63,6 +63,12 @@ cd ~/Workspaces/Personal/projects/bezier/app && npm run tauri dev   # → :3210,
 
 # 📜 §6. 時系列セッションログ（過去・append・新しい順）
 
+## ▶ 2026-06-22 セッション（DEC-140 — アプリのメニューから手動アップデート確認）
+- **きっかけ（CEO）**: v0.1.1 の前に、GitHub に行かず**メニューから手動更新**できるように（自動更新=署名前提なのでやらない）。
+- **実装**: ネイティブ App メニューに **「Check for Updates…」**（`lib.rs`）→ `bezier://check-updates` emit → layout 常駐 `UpdateChecker` が GitHub `releases/latest` を fetch→`getVersion` と比較→最新なら通知／新しければ確認ダイアログ（DL＋`xattr` 手順明記）→ `openExternal(.dmg)`。CSP に `api.github.com` 追加。version 0.1.0→**0.1.1**（tauri.conf＋Cargo）。i18n `update.*`。
+- **限界**: 自動更新ではない（インストールは依然 drag＋`xattr`）。真のワンクリックは Tauri updater＋署名（option B）で後段。
+- **検証**: tsc0/eslint0/vitest90/cargo green。**本番反映（10:35・v0.1.1・要 ⌘Q→再起動）**。この後 **v0.1.1 タグ→Release**。詳細＝DEC-140 / [[bezier-release-distribution]]。
+
 ## ▶ 2026-06-22 セッション（DEC-139 — dogfooder 配布前の「作り手だけは踏まなかった穴」を塞ぐ）
 - **きっかけ（CEO）**: 「dogfooder に配ると思うと足りない機能/体験・見落としは？」→ 実コード接地でギャップ分析（`playbook/research/2026-06-22_dogfood-distribution-gaps.md`）。根本＝前提の大半がユーザー環境側で作り手は無痛、dogfooder は穴。
 - **実装（A/B/C/E+G）**: A=エージェント未検出時に「インストール＋**ログイン**して戻る」ガイダンス（`ChatStart`・認証の自動判定は壊れやすいのでガイダンスで）。B+E=`NoFolder` を welcome 化（Bezier とは＋前提チェックリスト＋「あなたの agent/repo で動く・main は PR 経由のみ」の信頼文）。C=publish 既定 scope を `bezier`→`""`（新規は自分の Vercel・**CEO は bezier team 利用なら Settings で再追加**）。G=サイドバー下部「フィードバック」→ GitHub new-issue。
