@@ -67,7 +67,8 @@ cd ~/Workspaces/Personal/projects/bezier/app && npm run tauri dev   # → :3210,
 - **きっかけ（CEO）**: dogfooding フィードバック5件。#3・#5 は相談→意見＋承認。
 - **#1 タブ保持（実装）**: 新規 `lib/view-state.ts`（per-issue キャッシュ）で Design selected/Prototype tab/Preview path を**エリア切替の remount 跨ぎで保持**（issue-design/build-review/preview-pane に配線）。
 - **#4 通知 [untitled] 解消（実装）**: `handleStart` で**最初のメッセージから暫定タイトルを即設定**（`titleFromMessage`・sidebar も改善）＋通知は `notifyTitle = 実title||provisional||"Bezier"` で Untitled を出さない。
-- **確定・次パス**: #2=複数案は**1HTMLにまとめる**（variant プロンプト＋alt3）／#3=Open PR は**プリフィル→人間が Create**（gh 依存も外す）／**#5=Preview を attach-first に**（真因＝dev サーバ自動検出/起動の脆さ・表示は DEC-120 で既に cmux 方式・DEC-129 attach を主役に昇格）。
+- **#2・#3 実装済（追補・11:13 反映）**: #2=`design` コマンド/variantBody/alt3 を「複数案は必ず1HTMLに横並び」に統一（旧 design コマンドが両許容＝不安定の元）／#3=Open PR を **branch push→GitHub compare をプリフィルで開く→人間が Create**（ghPrCreate/buildPrBody 撤去・prUrl 非設定）。
+- **残・次パス**: **#5=Preview を attach-first に**（真因＝dev サーバ自動検出/起動の脆さ・表示は DEC-120 で既に cmux 方式・DEC-129 attach を主役に昇格）。
 - **検証**: tsc0/eslint0/vitest90。Rust 変更なし。**本番反映（10:57・要 ⌘Q→再起動）**。詳細＝DEC-141。
 
 ## ▶ 2026-06-22 セッション（DEC-140 — アプリのメニューから手動アップデート確認）
