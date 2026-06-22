@@ -28,7 +28,6 @@ import {
   clearWorktreeRef,
   buildImplementHandoff,
   buildVariantHandoff,
-  buildPrBody,
   updateIssueMeta,
   readThread,
   appendThreadEvent,
@@ -55,8 +54,8 @@ import {
   gitMergeConflictCheck,
   gitMergeToMain,
   gitRemoteUrl,
+  gitHubSlug,
   gitPush,
-  ghPrCreate,
   ghPrState,
   gitRepoStatus,
   changedPathsFromStatus,
@@ -73,7 +72,7 @@ import {
   ptyStatuses,
   type AgentState,
 } from "@/lib/pty";
-import { confirmDialog, grantPath } from "@/lib/ipc";
+import { confirmDialog, grantPath, openExternal } from "@/lib/ipc";
 import { notify, ensureNotificationPermission } from "@/lib/notify";
 import { isUntitled, titleFromMessage } from "@/lib/issue-domain";
 import { writeHandoffBundle } from "@/lib/handoff";
@@ -1228,23 +1227,23 @@ export function useImplementSession(
       } catch {
         handoffPath = undefined; // not committed → don't point the PR body at it
       }
-      const { path: bodyPath } = await buildPrBody(root, issue, thread, handoffPath);
+      // Push the branch, then open GitHub's PR-creation page PREFILLED (DEC-141 #3) —
+      // the maker reviews the diff + title/body and clicks "Create". We don't create
+      // the PR programmatically: that outward action (notifying reviewers / running CI)
+      // is the human's final call. The full spec/decisions/QA already ride in the diff
+      // (docs/handoff/<id>.md), so the prefilled body stays short (URL length).
       await gitPush(ref.path, ref.branch);
-      const url = await ghPrCreate(root, ref.branch, issue.title, bodyPath);
-      // Persist the PR URL on the worktree ref so it survives a re-open.
-      const nextRef: WorktreeRef = { ...ref, prUrl: url };
-      await writeWorktreeRef(issue, nextRef);
-      setRef(nextRef);
-      setPrUrl(url);
-      setInfo(tt("session.prCreated", { url }));
-      if (typeof document !== "undefined" && !document.hasFocus()) {
-        void notify({
-          title: notifyTitle,
-          body: tt("session.prCreated", { url }),
-          target: { root, id: issue.id },
-        }).catch(() => {});
-      }
-      void logEvent("pr_opened", url);
+      const slug = gitHubSlug(await gitRemoteUrl(root).catch(() => ""));
+      if (!slug) throw new Error(tt("session.prNotGitHub"));
+      const body = handoffPath
+        ? tt("session.prPrefillBodyHandoff", { handoff: handoffPath })
+        : tt("session.prPrefillBody");
+      const compareUrl =
+        `https://github.com/${slug}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(ref.branch)}` +
+        `?expand=1&title=${encodeURIComponent(issue.title || issue.id)}&body=${encodeURIComponent(body)}`;
+      await openExternal(compareUrl).catch(() => {});
+      setInfo(tt("session.prPrefillOpened"));
+      void logEvent("pr_opened", compareUrl);
       // The branch was pushed (and possibly WIP-committed); refresh the local view.
       await refreshDiff(ref.path);
       await loadBehind(ref.path);
@@ -1253,7 +1252,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, root, issue, thread, logEvent, refreshDiff, loadBehind, notifyTitle]);
+  }, [ref, action, root, issue, baseBranch, logEvent, refreshDiff, loadBehind]);
 
   // Design feedback (DEC-045): continue the issue's conversation with a fix turn
   // built from the reviewed annotations + an annotated screenshot. Mirrors

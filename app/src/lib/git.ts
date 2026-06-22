@@ -299,6 +299,12 @@ export function gitRemoteUrl(repoPath: string): Promise<string> {
   return invoke<string>("git_remote_url", { repoPath });
 }
 
+/** Extract "owner/repo" from a GitHub remote URL (https or ssh form), or null. */
+export function gitHubSlug(remoteUrl: string): string | null {
+  const m = remoteUrl.trim().match(/github\.com[:/]([^/]+\/[^/\s]+?)(?:\.git)?\/?$/i);
+  return m ? m[1] : null;
+}
+
 /**
  * Push the worktree's `branch` to origin (`push -u origin <branch>`). Commits a
  * WIP first if the worktree is dirty (same as Sync), so the PR carries the
