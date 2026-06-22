@@ -63,6 +63,13 @@ cd ~/Workspaces/Personal/projects/bezier/app && npm run tauri dev   # → :3210,
 
 # 📜 §6. 時系列セッションログ（過去・append・新しい順）
 
+## ▶ 2026-06-22 セッション（DEC-141 — dogfooding 修正5件：#1・#4 実装／#2・#3・#5 確定・次パス）
+- **きっかけ（CEO）**: dogfooding フィードバック5件。#3・#5 は相談→意見＋承認。
+- **#1 タブ保持（実装）**: 新規 `lib/view-state.ts`（per-issue キャッシュ）で Design selected/Prototype tab/Preview path を**エリア切替の remount 跨ぎで保持**（issue-design/build-review/preview-pane に配線）。
+- **#4 通知 [untitled] 解消（実装）**: `handleStart` で**最初のメッセージから暫定タイトルを即設定**（`titleFromMessage`・sidebar も改善）＋通知は `notifyTitle = 実title||provisional||"Bezier"` で Untitled を出さない。
+- **確定・次パス**: #2=複数案は**1HTMLにまとめる**（variant プロンプト＋alt3）／#3=Open PR は**プリフィル→人間が Create**（gh 依存も外す）／**#5=Preview を attach-first に**（真因＝dev サーバ自動検出/起動の脆さ・表示は DEC-120 で既に cmux 方式・DEC-129 attach を主役に昇格）。
+- **検証**: tsc0/eslint0/vitest90。Rust 変更なし。**本番反映（10:57・要 ⌘Q→再起動）**。詳細＝DEC-141。
+
 ## ▶ 2026-06-22 セッション（DEC-140 — アプリのメニューから手動アップデート確認）
 - **きっかけ（CEO）**: v0.1.1 の前に、GitHub に行かず**メニューから手動更新**できるように（自動更新=署名前提なのでやらない）。
 - **実装**: ネイティブ App メニューに **「Check for Updates…」**（`lib.rs`）→ `bezier://check-updates` emit → layout 常駐 `UpdateChecker` が GitHub `releases/latest` を fetch→`getVersion` と比較→最新なら通知／新しければ確認ダイアログ（DL＋`xattr` 手順明記）→ `openExternal(.dmg)`。CSP に `api.github.com` 追加。version 0.1.0→**0.1.1**（tauri.conf＋Cargo）。i18n `update.*`。
