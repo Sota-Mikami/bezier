@@ -63,6 +63,11 @@ cd ~/Workspaces/Personal/projects/bezier/app && npm run tauri dev   # → :3210,
 
 # 📜 §6. 時系列セッションログ（過去・append・新しい順）
 
+## ▶ 2026-06-22 セッション（DEC-138 — 配布: GitHub Releases に .dmg を自動ビルド）
+- **きっかけ（CEO）**: 「GitHub に挙げて最新版を落とせるようにしたい」。日常使い=`/Applications/Bezier.app`（ローカルビルド→ditto・adhoc 署名）は私無しで自己更新する手段が無かった。
+- **対応（option A・未署名）**: `.github/workflows/release.yml` 新設。タグ `v*` push（or 手動）→ `tauri-action` が **macOS .dmg（arm64）** をビルド → **GitHub Release 添付**。初回 `v0.1.0` 実証成功＝`Bezier_0.1.0_aarch64.dmg`（https://github.com/Sota-Mikami/bezier/releases/tag/v0.1.0 ）。
+- **以後**: 新版はタグを切るだけ。未署名なので初回 Gatekeeper 回避（システム設定→「このまま開く」）。署名＋notarize＋自動アップデータ=option B（他人配布時）。詳細＝DEC-138 / [[bezier-release-distribution]]。
+
 ## ▶ 2026-06-21 セッション（DEC-136 — push 通知を公式 Tauri プラグインでフル実装）
 - **きっかけ（CEO）**: 「push 通知をちゃんと実装したい。今どんな状況？」→ 調査で **2系統アドホック併存**（Rust osascript＝開いてる Issue／web Notification＝裏 Issue・identity 崩れ・背景動作怪しい・クリック無反応・On/Off なし）。フル承認。
 - **対応**: **公式 `tauri-plugin-notification`（Rust）＋`@tauri-apps/plugin-notification`（JS）に一本化**。新規 `src/lib/notify.ts` の単一 `notify({title,body,target})` に両 call site 集約。Bezier 名義＋アイコン・背景発火・権限 API。**クリック→`onAction` で window フォーカス＋`bezier:open-issue` イベント→sidebar が repo 解決して該当 Issue へ**。権限は agent 起動時に warm-up。**設定 `notifications` トグル**（default on・i18n）。Rust osascript notify＋web Notification 撤去＝2→1系統。
