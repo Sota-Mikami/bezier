@@ -63,6 +63,11 @@ cd ~/Workspaces/Personal/projects/bezier/app && npm run tauri dev   # → :3210,
 
 # 📜 §6. 時系列セッションログ（過去・append・新しい順）
 
+## ▶ 2026-06-22 セッション（DEC-139 — dogfooder 配布前の「作り手だけは踏まなかった穴」を塞ぐ）
+- **きっかけ（CEO）**: 「dogfooder に配ると思うと足りない機能/体験・見落としは？」→ 実コード接地でギャップ分析（`playbook/research/2026-06-22_dogfood-distribution-gaps.md`）。根本＝前提の大半がユーザー環境側で作り手は無痛、dogfooder は穴。
+- **実装（A/B/C/E+G）**: A=エージェント未検出時に「インストール＋**ログイン**して戻る」ガイダンス（`ChatStart`・認証の自動判定は壊れやすいのでガイダンスで）。B+E=`NoFolder` を welcome 化（Bezier とは＋前提チェックリスト＋「あなたの agent/repo で動く・main は PR 経由のみ」の信頼文）。C=publish 既定 scope を `bezier`→`""`（新規は自分の Vercel・**CEO は bezier team 利用なら Settings で再追加**）。G=サイドバー下部「フィードバック」→ GitHub new-issue。
+- **検証**: tsc0/eslint0/vitest90。Rust 変更なし。**本番反映（10:13・要 ⌘Q→再起動）**。P2=署名/自動更新/サンプルrepo/universal は別途。詳細＝DEC-139 / [[dogfood-onboarding-gaps]]。
+
 ## ▶ 2026-06-22 セッション（DEC-138 — 配布: GitHub Releases に .dmg を自動ビルド）
 - **きっかけ（CEO）**: 「GitHub に挙げて最新版を落とせるようにしたい」。日常使い=`/Applications/Bezier.app`（ローカルビルド→ditto・adhoc 署名）は私無しで自己更新する手段が無かった。
 - **対応（option A・未署名）**: `.github/workflows/release.yml` 新設。タグ `v*` push（or 手動）→ `tauri-action` が **macOS .dmg（arm64）** をビルド → **GitHub Release 添付**。初回 `v0.1.0` 実証成功＝`Bezier_0.1.0_aarch64.dmg`（https://github.com/Sota-Mikami/bezier/releases/tag/v0.1.0 ）。
