@@ -422,6 +422,13 @@ export const en = {
     },
   },
 
+  update: {
+    failed: "Couldn't check for updates — check your connection and try again.",
+    upToDate: "You're on the latest version (v{version}).",
+    available:
+      "Bezier v{version} is available. Download it now?\n\nAfter downloading: open the .dmg, drag Bezier to Applications, then run in Terminal:\nxattr -dr com.apple.quarantine /Applications/Bezier.app",
+    download: "Download",
+  },
   welcome: {
     title: "Welcome to Bezier",
     lead: "Write what you want in chat — your coding agent drafts the Spec and implements it in an isolated worktree. Open the repo folder you want to work in to begin.",

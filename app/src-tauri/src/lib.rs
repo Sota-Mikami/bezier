@@ -3477,8 +3477,15 @@ pub fn run() {
                 let quit_item = MenuItemBuilder::with_id("quit-confirm", "Bezier を終了")
                     .accelerator("CmdOrCtrl+Q")
                     .build(app)?;
+                // Manual update check (DEC-140): emits an event the frontend handles
+                // (fetch latest GitHub release, compare, offer download). No auto-update
+                // (that needs signing) — this is the "update from the menu" path.
+                let check_updates_item =
+                    MenuItemBuilder::with_id("check-updates", "Check for Updates…").build(app)?;
                 let app_menu = SubmenuBuilder::new(app, "Bezier")
                     .about(None)
+                    .separator()
+                    .item(&check_updates_item)
                     .separator()
                     .services()
                     .separator()
@@ -3528,6 +3535,9 @@ pub fn run() {
                     // ⌘Q → ask the frontend to confirm before quitting.
                     "quit-confirm" => {
                         let _ = app.emit("bezier://quit-requested", ());
+                    }
+                    "check-updates" => {
+                        let _ = app.emit("bezier://check-updates", ());
                     }
                     "shortcut.palette" => emit_menu_shortcut(app, "palette"),
                     "shortcut.annotate" => emit_menu_shortcut(app, "annotate"),

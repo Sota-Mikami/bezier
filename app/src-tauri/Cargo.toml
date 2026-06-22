@@ -1,6 +1,6 @@
 [package]
 name = "bezier"
-version = "0.1.0"
+version = "0.1.1"
 description = "Bezier — agent workbench for designers and PMs"
 edition = "2021"
 rust-version = "1.77"

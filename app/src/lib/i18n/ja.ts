@@ -421,6 +421,13 @@ export const ja: Messages = {
     },
   },
 
+  update: {
+    failed: "アップデートの確認に失敗しました。ネットワークを確認して、もう一度お試しください。",
+    upToDate: "最新です（v{version}）。",
+    available:
+      "Bezier v{version} が利用可能です。今ダウンロードしますか？\n\nダウンロード後: .dmg を開いて Bezier を Applications にドラッグ → ターミナルで:\nxattr -dr com.apple.quarantine /Applications/Bezier.app",
+    download: "ダウンロード",
+  },
   welcome: {
     title: "Bezier へようこそ",
     lead: "やりたいことをチャットで書くと、あなたのコーディングエージェントが Spec を起こし、隔離された worktree で実装まで進めます。まず作業する repo フォルダを開いてください。",

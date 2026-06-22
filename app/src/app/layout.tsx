@@ -12,6 +12,7 @@ import { ErrorLogger } from "@/components/error-logger";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { CommandPalette } from "@/components/command-palette";
 import { MenuShortcutBridge } from "@/components/menu-shortcut-bridge";
+import { UpdateChecker } from "@/components/update-checker";
 import { ThemeKeeper } from "@/lib/settings";
 
 // next/font/google fetches font files at build time, which fails on offline /
@@ -60,6 +61,7 @@ export default function RootLayout({
           <ReloadShortcut />
           <AppCloseGuard />
           <MenuShortcutBridge />
+          <UpdateChecker />
           <ShortcutsDialog />
           <WorkspaceRootProvider>
             {/* Inside the provider — CommandPalette uses useWorkspaceRoot(). */}
