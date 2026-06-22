@@ -52,11 +52,18 @@ jobs:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: "Bezier ${{ github.event.inputs.tag || github.ref_name }}"
           releaseBody: |
-            Download the `.dmg` below, open it, and drag Bezier to Applications.
+            **Install (macOS · Apple Silicon)**
 
-            This build is **unsigned**. On first launch macOS will warn it can't
-            verify the developer — allow it once in
-            **System Settings → Privacy & Security → "Open Anyway"**.
+            1. Download the `.dmg` below, open it, and drag **Bezier** to Applications.
+            2. This build is **unsigned**, so macOS blocks it on first launch — and on
+               recent macOS the "Open Anyway" button in Privacy & Security may not appear
+               or work. Clear the quarantine flag in Terminal, then open it normally:
+
+               ```
+               xattr -dr com.apple.quarantine /Applications/Bezier.app
+               ```
+
+            Developer ID signing + notarization (which removes this step) is planned.
           releaseDraft: false
           prerelease: false
           args: --bundles dmg
