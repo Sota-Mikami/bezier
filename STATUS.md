@@ -68,7 +68,11 @@ cd ~/Workspaces/Personal/projects/bezier/app && npm run tauri dev   # → :3210,
 - **#1 タブ保持（実装）**: 新規 `lib/view-state.ts`（per-issue キャッシュ）で Design selected/Prototype tab/Preview path を**エリア切替の remount 跨ぎで保持**（issue-design/build-review/preview-pane に配線）。
 - **#4 通知 [untitled] 解消（実装）**: `handleStart` で**最初のメッセージから暫定タイトルを即設定**（`titleFromMessage`・sidebar も改善）＋通知は `notifyTitle = 実title||provisional||"Bezier"` で Untitled を出さない。
 - **#2・#3 実装済（追補・11:13 反映）**: #2=`design` コマンド/variantBody/alt3 を「複数案は必ず1HTMLに横並び」に統一（旧 design コマンドが両許容＝不安定の元）／#3=Open PR を **branch push→GitHub compare をプリフィルで開く→人間が Create**（ghPrCreate/buildPrBody 撤去・prUrl 非設定）。
-- **残・次パス**: **#5=Preview を attach-first に**（真因＝dev サーバ自動検出/起動の脆さ・表示は DEC-120 で既に cmux 方式・DEC-129 attach を主役に昇格）。
+- **#5=Preview を attach-first に（①出荷・②③設計確定・専用パス）**:
+  - 真因＝「任意スタックの dev サーバ自動検出/起動」の脆さ（表示は DEC-120 で既に webview）。CEO 体験＝「**エージェントが起動→Bezier が検知したら自動でブラウザを開く**／手動 URL はフォールバック」。
+  - **① 出荷済**: implement ハンドオフに「Bezier はサーバを起動しない・起動済みを映す・URL を報告」を明記（JA/EN・本番反映）。
+  - **②③ 確定設計（issue-correct）**: ポート探索は**撤回**（複数イシューで誤検知）。**worktree で紐付ける** → (a) per-issue URL 宣言（`<issue.dir>/preview-url` を Bezier が読む）＋(b) lsof worktree-scoped 検出＋手動 URL ＋ 自動起動はフォールバック格下げ。
+  - **🔜 次セッションの着手点**: 設計＝`playbook/research/2026-06-22_preview-attach-first-spec.md`。実装順＝②(a) reader（既存 attach 再利用・自己完結）→②(b) lsof Rust コマンド→③ UI reframe。スコープは「待機状態のみ」に限定し既存 管理/attach を壊さない。代表スタックで dogfood 検証。
 - **検証**: tsc0/eslint0/vitest90。Rust 変更なし。**本番反映（10:57・要 ⌘Q→再起動）**。詳細＝DEC-141。
 
 ## ▶ 2026-06-22 セッション（DEC-140 — アプリのメニューから手動アップデート確認）
