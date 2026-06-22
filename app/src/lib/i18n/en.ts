@@ -31,6 +31,8 @@ export const en = {
     trash: "Trash",
     openFolderFooter: "Open folder…",
     settings: "Settings",
+    feedback: "Feedback",
+    feedbackBody: "## What happened\n\n## What you expected\n\n---\n(Bezier desktop · macOS)",
     repoActions: "Repository actions",
     expandRepo: "Expand",
     collapseRepo: "Collapse",
@@ -420,6 +422,15 @@ export const en = {
     },
   },
 
+  welcome: {
+    title: "Welcome to Bezier",
+    lead: "Write what you want in chat — your coding agent drafts the Spec and implements it in an isolated worktree. Open the repo folder you want to work in to begin.",
+    prereqTitle: "Before you start",
+    prereqAgent: "• A coding agent (claude or codex) — installed AND signed in (run it once in a terminal)",
+    prereqGit: "• A git repository (issues are saved under .bezier/ and reach main via a PR)",
+    prereqNode: "• Node, for live Preview (matching your app's stack)",
+    trust: "Bezier runs YOUR agent in YOUR repo (using your own Claude/agent subscription). Changes happen in isolated worktrees; main only changes through a PR you open.",
+  },
   issuesPage: {
     headerIssues: "Issues",
     headerIssue: "Issue",
@@ -691,6 +702,7 @@ export const en = {
     startWithChat: "Start with chat",
     needGitRepo: "Implement needs a git repository. Open a repository folder.",
     startHint: "Describe what you want and Bezier creates a worktree, launches the AI, asks 2–3 clarifying questions (Clarify), then drafts the Spec with you.",
+    noAgentGuide: "No coding agent found. Install claude or codex and sign in (run it once in a terminal to log in), then return to Bezier — it re-detects automatically.",
     start: "Start",
   },
 

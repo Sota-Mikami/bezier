@@ -142,8 +142,10 @@ export interface Settings {
 }
 
 export const DEFAULT_CONNECTIONS: PublishConnection[] = [
-  // A stored default; the user renames it freely. Kept in English (default locale).
-  { id: "default", label: "Personal (bezier)", scope: "bezier" },
+  // A NEUTRAL default → deploys to the signed-in user's OWN Vercel (empty scope =
+  // personal account), so a fresh install never targets someone else's team (DEC-139).
+  // Set a team scope in Settings → Publish connections when you want one.
+  { id: "default", label: "Personal (your Vercel)", scope: "" },
 ];
 
 export const DEFAULT_SETTINGS: Settings = {

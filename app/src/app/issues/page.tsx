@@ -380,22 +380,31 @@ function NoFolder({ onOpen }: { onOpen: () => Promise<string | null> }) {
   return (
     <div className="flex h-full flex-col">
       <Header title={t("issuesPage.headerIssues")} />
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+      <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
         <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
           <FolderOpen className="size-5 text-muted-foreground" />
         </div>
-        <div className="space-y-1">
-          <div className="text-base font-medium">{t("issuesPage.openFolder")}</div>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            {t("issuesPage.openFolderDescPrefix")}{" "}
-            <span className="font-mono">.bezier/</span>
-            {t("issuesPage.openFolderDescSuffix")}
-          </p>
+        <div className="max-w-md space-y-1.5">
+          <div className="text-base font-medium">{t("welcome.title")}</div>
+          <p className="text-sm text-muted-foreground">{t("welcome.lead")}</p>
+        </div>
+        {/* Prerequisites a NEW user (not the builder) needs but may not have (DEC-139). */}
+        <div className="w-full max-w-md rounded-lg border bg-muted/30 p-3 text-left text-xs">
+          <div className="mb-1.5 font-medium text-foreground">{t("welcome.prereqTitle")}</div>
+          <ul className="space-y-1 text-muted-foreground">
+            <li>{t("welcome.prereqAgent")}</li>
+            <li>{t("welcome.prereqGit")}</li>
+            <li>{t("welcome.prereqNode")}</li>
+          </ul>
         </div>
         <Button className="gap-2" onClick={() => void onOpen()}>
           <FolderOpen className="size-4" />
           {t("issuesPage.openFolder")}
         </Button>
+        {/* What Bezier does to your machine/account — trust + cost (DEC-139). */}
+        <p className="max-w-md text-[11px] leading-relaxed text-muted-foreground">
+          {t("welcome.trust")}
+        </p>
       </div>
     </div>
   );

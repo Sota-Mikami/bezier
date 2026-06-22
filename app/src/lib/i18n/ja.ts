@@ -30,6 +30,8 @@ export const ja: Messages = {
     trash: "ゴミ箱",
     openFolderFooter: "フォルダを開く…",
     settings: "設定",
+    feedback: "フィードバック",
+    feedbackBody: "## 何が起きた\n\n## 期待した動き\n\n---\n(Bezier デスクトップ · macOS)",
     repoActions: "リポジトリの操作",
     expandRepo: "展開",
     collapseRepo: "折りたたむ",
@@ -419,6 +421,15 @@ export const ja: Messages = {
     },
   },
 
+  welcome: {
+    title: "Bezier へようこそ",
+    lead: "やりたいことをチャットで書くと、あなたのコーディングエージェントが Spec を起こし、隔離された worktree で実装まで進めます。まず作業する repo フォルダを開いてください。",
+    prereqTitle: "始める前に",
+    prereqAgent: "• コーディングエージェント（claude か codex）— インストール＋一度ログイン（ターミナルで一度起動）",
+    prereqGit: "• git リポジトリ（Issue は .bezier/ に保存され、PR 経由で main へ）",
+    prereqNode: "• ライブ Preview には Node（アプリのスタックに合わせて）",
+    trust: "Bezier は「あなたのエージェント」を「あなたの repo」で動かします（あなた自身の Claude 等のサブスクを使用）。変更は隔離 worktree で行われ、main はあなたが出す PR 経由でのみ変わります。",
+  },
   issuesPage: {
     headerIssues: "Issues",
     headerIssue: "Issue",
@@ -690,6 +701,7 @@ export const ja: Messages = {
     startWithChat: "チャットで始める",
     needGitRepo: "Implement には git リポジトリが必要です。リポジトリのフォルダを開いてください。",
     startHint: "やりたいことを書くと worktree を作成して AI が起動し、まず 2〜3 問の確認（Clarify）をしてから Spec を一緒に書き起こします。",
+    noAgentGuide: "コーディングエージェントが見つかりません。claude か codex をインストールし、ターミナルで一度起動してログインしてから Bezier に戻ってください（自動で再検出します）。",
     start: "開始",
   },
 

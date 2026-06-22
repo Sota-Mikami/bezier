@@ -248,6 +248,8 @@ function ChatStart({
         <p className="max-w-xs text-xs text-muted-foreground">
           {gitRepo === false ? (
             <>{t("agentPanel.needGitRepo")}</>
+          ) : !agentAvailable ? (
+            <>{t("agentPanel.noAgentGuide")}</>
           ) : (
             <>{t("agentPanel.startHint")}</>
           )}

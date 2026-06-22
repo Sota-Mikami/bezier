@@ -31,6 +31,7 @@ import {
   Settings as SettingsIcon,
   TriangleAlert,
   ArrowDownToLine,
+  MessageSquare,
 } from "lucide-react";
 
 import {
@@ -65,6 +66,7 @@ import {
   messageDialog,
   revealInFinder,
   openInEditor,
+  openExternal,
 } from "@/lib/ipc";
 import { gitDefaultBehind, gitUpdateDefault } from "@/lib/git";
 import {
@@ -839,6 +841,19 @@ export function AppSidebar() {
         >
           <SettingsIcon className="size-4" />
           {t("sidebar.settings")}
+        </button>
+        {/* Feedback (DEC-139): a way for dogfooders to report what breaks → GitHub issue. */}
+        <button
+          type="button"
+          onClick={() =>
+            void openExternal(
+              `https://github.com/Sota-Mikami/bezier/issues/new?body=${encodeURIComponent(t("sidebar.feedbackBody"))}`,
+            ).catch(() => {})
+          }
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <MessageSquare className="size-4" />
+          {t("sidebar.feedback")}
         </button>
       </SidebarFooter>
     </Sidebar>
