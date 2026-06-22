@@ -1,0 +1,62 @@
+name: Release
+
+# Cut a downloadable build (DEC-138). Push a version tag (e.g. `v0.1.0`) — or run
+# this manually with a tag — and it builds the macOS app and attaches the .dmg to a
+# GitHub Release so you (and later, others) can download the latest without building
+# locally. UNSIGNED for now (adhoc): on first open, allow it in
+# System Settings → Privacy & Security → "Open Anyway". Developer ID signing +
+# notarization + auto-update is the follow-up (option B) when distributing to others.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write # create the Release + upload the .dmg
+
+jobs:
+  release:
+    name: Build macOS app + publish Release
+    # Apple Silicon runner → an arm64 build matching the maker's Mac.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install frontend deps
+        working-directory: app
+        run: npm ci
+
+      - name: Build app + publish to GitHub Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: "Bezier ${{ github.event.inputs.tag || github.ref_name }}"
+          releaseBody: |
+            Download the `.dmg` below, open it, and drag Bezier to Applications.
+
+            This build is **unsigned**. On first launch macOS will warn it can't
+            verify the developer — allow it once in
+            **System Settings → Privacy & Security → "Open Anyway"**.
+          releaseDraft: false
+          prerelease: false
+          args: --bundles dmg
