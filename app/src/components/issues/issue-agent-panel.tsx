@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { useT, tt } from "@/lib/i18n";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
 import type { ImplementSession } from "./implement-session-types";
+import { NextStepCard } from "./next-step-card";
 
 // xterm-backed terminal — client-only (DOM + CSS), like /workspace.
 const TerminalPane = dynamic(() => import("@/components/workspace/terminal"), {
@@ -82,6 +83,10 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
           </span>
         )}
       </div>
+
+      {/* The AI's suggested next move, surfaced out of the terminal scroll. Keyed by
+          issue dir so dismiss state resets when switching issues. */}
+      <NextStepCard key={session.issue.dir} session={session} />
 
       {/* Body: the conversation. Terminal when live, else resume, else start.
           The terminal IS the chat surface — the embedded agent (claude / codex)

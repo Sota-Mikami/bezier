@@ -433,6 +433,13 @@ export const ja: Messages = {
     tooltip:
       "この issue の現在地 — いま何があるか（完了ゲートではありません）。Bezier はループ：いつでも前にも後ろにも進めます。",
   },
+  nextStep: {
+    label: "次の一手",
+    proceed: "進める",
+    proceedPrompt: "これで進めてください: {suggestion}",
+    note: "次の一手",
+    dismiss: "閉じる",
+  },
   welcome: {
     title: "Bezier へようこそ",
     lead: "やりたいことをチャットで書くと、あなたのコーディングエージェントが Spec を起こし、隔離された worktree で実装まで進めます。まず作業する repo フォルダを開いてください。",

@@ -435,8 +435,9 @@ interface HandoffPhrases {
   guideTitle: string;
   guideIntro: string;
   // orchestration doctrine: Bezier is a non-linear LOOP (no "done" gate); the agent
-  // proactively offers the next move in ANY direction. Its own block (header+lines+blank).
-  loopBlock: () => string[];
+  // proactively offers the next move in ANY direction, AND writes it to <issueDir>/next-step
+  // so Bezier can surface it as a chip. Its own block (header+lines+blank).
+  loopBlock: (issueDir: string) => string[];
   livingSpecHeader: string;
   livingSpec: (specPath: string) => string[];
   docsHeader: string;
@@ -478,11 +479,12 @@ const JA_HANDOFF: HandoffPhrases = {
   guideTitle: "# Bezier — この issue での作法（自動生成。毎ターン従う）",
   guideIntro:
     "Bezier 経由でこの issue を進めています。タスク指示が薄くても、以下の共通ルールに従ってください。",
-  loopBlock: () => [
+  loopBlock: (issueDir) => [
     "## 進め方 — Bezier は「ループ」。完了ゲートはない",
     "",
     "Bezier は **要件 ⇄ デザイン ⇄ プロト ⇄ 共有/引き継ぎ** を地続きに往復する制作ループです。**ウォーターフォールではありません**。「Spec 完了」「デザイン確定」のような一方向の完了ゲートは設けません。作りながら反復し、必要なら**前の段にも戻ります**。",
     "- あなたは maker の**ガイド**です。**返信の最後に、その作業が一区切りついていれば**、**次にやると良いこと（next move）を1つだけ提案**してください（タスクの途中・各ファイル保存ごとには出さない＝うるさくしない）。方向は問いません — **前へ**（要件→デザイン→プロト→共有/エンジニアへ引き継ぎ）でも、**後ろへ**（プロトで気づいた穴・例外 → spec を直す）でも、最も価値の高いものを。",
+    `- **その提案を \`${issueDir}/next-step\` に1行だけ書き出す**（\`--add-dir\` で書ける）。Bezier がそれをチップとして maker に見せ、ワンクリックで続けられるようにします。チャット本文でも同じ一言を伝える。**提案が無いターンはこのファイルを空にする**。`,
     "- いま何があるか（現在地）は**自分で見て**把握する: spec.md の中身 / `design/` の html 別案 / 動いているプロト / 共有リンクや PR の有無。その事実に基づいて提案する。",
     "- **強制しない・先回りで突き進まない**。提案は maker が無視できる「お誘い」の形で（必要なら代替案も1つ）。承認や方向づけが要る分岐では、勝手に1つに決めず **選べる形**で出す。",
     "- 段を移っても **Spec ⇄ 実装の同期**を保つ（プロトやレビューで決まったことは spec に戻す）。",
@@ -634,11 +636,12 @@ const EN_HANDOFF: HandoffPhrases = {
   guideTitle: "# Bezier — working conventions for this issue (auto-generated; follow every turn)",
   guideIntro:
     "You're working on this issue via Bezier. Even if the task instructions are thin, follow the shared rules below.",
-  loopBlock: () => [
+  loopBlock: (issueDir) => [
     "## How to proceed — Bezier is a LOOP, with no 'done' gate",
     "",
     "Bezier is a making loop that moves freely between **requirements ⇄ design ⇄ prototype ⇄ share/handoff**. It is **not a waterfall**. There is no one-way 'Spec is done' / 'design is final' gate — you make and refine together, and **step backward when needed**.",
     "- You are the maker's **guide**. **At the END of your reply, once the current step is complete** (never mid-task or after every file save — don't nag), **offer ONE next move** — in ANY direction: **forward** (requirements → design → prototype → share / hand to an engineer) or **backward** (a prototype revealed a gap or edge case → update the spec). Offer whichever is most valuable.",
+    `- **Also write that one suggestion to \`${issueDir}/next-step\`** (one line; writable via --add-dir). Bezier surfaces it as a chip the maker can act on with one click. Say the same line in chat too. **Leave the file empty on turns with no suggestion.**`,
     "- Figure out where things stand yourself by looking: the content of spec.md / the html explorations in `design/` / whether a prototype is running / whether there's a share link or PR. Base your suggestion on those facts.",
     "- **Don't force it, and don't race ahead.** Phrase the suggestion as an offer the maker can ignore (add one alternative when useful). At forks that need approval or direction, don't silently pick one — present the choices.",
     "- Keep **spec ⇄ implementation in sync** as you loop (carry prototype/review decisions back into the spec).",
@@ -1118,7 +1121,7 @@ export function bezierGuideDoc(specPath: string, issueDir: string): string {
     "",
     h.guideIntro,
     "",
-    ...h.loopBlock(),
+    ...h.loopBlock(issueDir),
     h.livingSpecHeader,
     ...h.livingSpec(specPath),
     "",

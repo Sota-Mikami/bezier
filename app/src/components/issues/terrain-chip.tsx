@@ -39,11 +39,11 @@ export function TerrainChip({ root, issue }: { root: string; issue: Issue }) {
 
   return (
     <span
-      className="hidden min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground lg:inline-flex"
+      className="hidden min-w-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-foreground/80 sm:inline-flex"
       title={t("terrain.tooltip")}
     >
-      <MapPin className="size-3 shrink-0 opacity-70" aria-hidden />
-      <span className="sr-only">{t("terrain.label")}: </span>
+      <MapPin className="size-3 shrink-0 text-primary/70" aria-hidden />
+      <span className="text-muted-foreground">{t("terrain.label")}:</span>
       <span className="truncate">{describeTerrain(terrain)}</span>
     </span>
   );
