@@ -316,23 +316,28 @@ export function gitPush(worktreePath: string, branch: string): Promise<string> {
 }
 
 /**
- * Open a GitHub PR for `branch` via `gh pr create` (cwd = repoPath), with the
- * body read from `bodyFilePath` (`--body-file`, safe for large markdown).
- * Resolves to the PR URL; if a PR already exists for the branch, resolves to the
- * existing PR's URL. Never touches `main`.
- * -> invoke("gh_pr_create", { repoPath, branch, title, bodyFilePath })
+ * Open a GitHub PR for `branch` via `gh pr create` (cwd = repoPath) against `base`,
+ * with the body read from `bodyFilePath` (`--body-file`, safe for a large markdown
+ * handoff — no URL length limit). `draft` creates a draft PR (the maker reviews in the
+ * browser, then "Ready for review"). Resolves to the real PR URL; if a PR already
+ * exists for the branch, resolves to its URL. Never touches `main`.
+ * -> invoke("gh_pr_create", { repoPath, branch, title, bodyFilePath, base, draft })
  */
 export function ghPrCreate(
   repoPath: string,
   branch: string,
   title: string,
   bodyFilePath: string,
+  base: string,
+  draft: boolean,
 ): Promise<string> {
   return invoke<string>("gh_pr_create", {
     repoPath,
     branch,
     title,
     bodyFilePath,
+    base,
+    draft,
   });
 }
 

@@ -54,9 +54,9 @@ import {
   gitMergeConflictCheck,
   gitMergeToMain,
   gitRemoteUrl,
-  gitHubSlug,
   gitPush,
   ghPrState,
+  ghPrCreate,
   gitRepoStatus,
   changedPathsFromStatus,
   type Checkpoint,
@@ -75,7 +75,7 @@ import {
 import { confirmDialog, openExternal } from "@/lib/ipc";
 import { notify, ensureNotificationPermission } from "@/lib/notify";
 import { isUntitled, titleFromMessage } from "@/lib/issue-domain";
-import { buildHandoffMarkdown } from "@/lib/handoff";
+import { writeHandoffPrBody } from "@/lib/handoff";
 import { tt } from "@/lib/i18n";
 import { conflictResolvePrompt } from "@/lib/prompts";
 import type {
@@ -1214,42 +1214,32 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     try {
-      // The handoff (spec + acceptance + decisions + QA + preview env + review link)
-      // goes in the PR BODY — NOT a committed file. A real reviewer flagged
-      // docs/handoff/<id>.md as repo noise (an unwanted file in the diff), so we no
-      // longer write/commit it. We push the branch, then open GitHub's PR-creation page
-      // PREFILLED with the handoff as the body; the maker reviews/edits it and clicks
-      // "Create" (we never create the PR ourselves — that outward action is theirs).
-      // Best-effort + capped so the compare URL stays within browser/GitHub limits.
+      // Push the branch, then create a DRAFT PR via `gh` with the handoff as the body
+      // passed via a FILE (`--body-file`). This puts the full handoff (spec + acceptance
+      // + decisions + QA + preview env + review link) in the PR BODY with NO URL-length
+      // limit (the compare-URL prefill hit GitHub's "URL too long") and NO committed
+      // file (a reviewer flagged docs/handoff/<id>.md as repo noise). The maker reviews
+      // the draft in the browser and clicks "Ready for review" — the human's final call.
+      // gh is required (canOpenPR gates on it). The REAL PR URL is persisted (so the
+      // auto-merge-detection + the "Open PR" link work, and point at the real PR).
       await gitPush(ref.path, ref.branch);
-      const slug = gitHubSlug(await gitRemoteUrl(root).catch(() => ""));
-      if (!slug) throw new Error(tt("session.prNotGitHub"));
-      const handoffMd = await buildHandoffMarkdown(root, issue).catch(() => "");
-      const MAX_PR_BODY = 5000; // keep the compare URL within browser/GitHub length limits
-      const body = handoffMd.trim()
-        ? handoffMd.length > MAX_PR_BODY
-          ? `${handoffMd.slice(0, MAX_PR_BODY)}\n\n…（以下省略 / truncated）`
-          : handoffMd
-        : tt("session.prPrefillBody");
-      const compareUrl =
-        `https://github.com/${slug}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(ref.branch)}` +
-        `?expand=1&title=${encodeURIComponent(issue.title || issue.id)}&body=${encodeURIComponent(body)}`;
-      await openExternal(compareUrl).catch(() => {});
-      // Persist a PR-opened marker (DEC-141 #3 regression fix): the auto-"done"
-      // merge-detection effect and the "Open PR" link both key off ref.prUrl, which
-      // the compare-URL flow stopped setting (we no longer create the PR via gh) — so
-      // Bezier silently FORGOT the PR after handoff (merge never auto-detected, link
-      // gone on re-open). We store the compare URL: it's a valid reopenable link AND a
-      // sufficient "opened" gate (merge-detection itself resolves state via ghPrState
-      // on the branch). Resolving the canonical PR URL via `gh pr view` after the
-      // human clicks Create is a follow-up (needs a Rust gh_pr_view).
-      const opened: WorktreeRef = { ...ref, prUrl: compareUrl };
+      const bodyPath = await writeHandoffPrBody(root, issue);
+      const prUrl = await ghPrCreate(
+        root,
+        ref.branch,
+        issue.title || issue.id,
+        bodyPath,
+        baseBranch,
+        true, // draft
+      );
+      await openExternal(prUrl).catch(() => {});
+      const opened: WorktreeRef = { ...ref, prUrl };
       await writeWorktreeRef(issue, opened).catch(() => {});
       setRef(opened);
-      setPrUrl(compareUrl);
-      setInfo(tt("session.prPrefillOpened"));
-      void logEvent("pr_opened", compareUrl);
-      // The branch was pushed (and possibly WIP-committed); refresh the local view.
+      setPrUrl(prUrl);
+      setInfo(tt("session.prCreatedDraft"));
+      void logEvent("pr_opened", prUrl);
+      // The branch was pushed; refresh the local view.
       await refreshDiff(ref.path);
       await loadBehind(ref.path);
     } catch (e) {

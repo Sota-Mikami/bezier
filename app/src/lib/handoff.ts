@@ -9,7 +9,7 @@
 // This is the "process is a System of Record" thesis made concrete: the why/what/
 // acceptance/QA ride INSIDE the diff, not in an ephemeral side-channel.
 
-import { readFile } from "@/lib/ipc";
+import { readFile, writeFile } from "@/lib/ipc";
 import { slotPath, listDocuments, type Issue } from "@/lib/issues";
 import { readQa, seedQaFromSpec, parseSpecCriteria, qaToMarkdown } from "@/lib/qa";
 import { readShareUrl } from "@/lib/share-urls";
@@ -118,4 +118,14 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
       : "_（記録なし — プレビューの接続先が不明。実データ/権限の検証は本番実装側で要確認）_",
     "",
   ].join("\n");
+}
+
+/** Write the handoff markdown to the gitignored `.bezier` PR-body file (NOT committed
+ *  to the repo — a reviewer flagged a committed docs/handoff file as noise) and return
+ *  its path, for `gh pr create --body-file`. The handoff rides in the PR BODY. */
+export async function writeHandoffPrBody(root: string, issue: Issue): Promise<string> {
+  const content = await buildHandoffMarkdown(root, issue);
+  const path = `${trimSlash(root)}/.bezier/issues/${issue.id}/pr-body.md`;
+  await writeFile(path, content);
+  return path;
 }

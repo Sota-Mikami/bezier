@@ -1008,8 +1008,7 @@ export const ja: Messages = {
     },
     mergedToMain: "main に merge しました: {first}",
     prCreated: "PR を作成しました: {url}",
-    prPrefillOpened: "GitHub の PR 作成ページを開きました — diff を確認して「Create」を押してください。",
-    prNotGitHub: "このリポジトリの origin が GitHub ではないため、PR ページを開けません。",
+    prCreatedDraft: "下書き PR を作成して開きました — GitHub で確認して「Ready for review」を押してください。",
     prPrefillBody:
       "Bezier が生成。タイトル/本文と diff を確認して PR を作成してください。",
   },

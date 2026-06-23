@@ -2406,21 +2406,31 @@ fn gh_pr_create(
     branch: String,
     title: String,
     body_file_path: String,
+    base: String,
+    draft: bool,
 ) -> Result<String, String> {
     reject_traversal(Path::new(&repo_path))?;
     reject_traversal(Path::new(&body_file_path))?;
 
+    // --body-file (not --body) so a long multi-line handoff has no URL/arg length
+    // limit; --draft so the maker reviews in the browser and clicks "Ready for review".
+    let mut args: Vec<&str> = vec![
+        "pr",
+        "create",
+        "--head",
+        &branch,
+        "--base",
+        &base,
+        "--title",
+        &title,
+        "--body-file",
+        &body_file_path,
+    ];
+    if draft {
+        args.push("--draft");
+    }
     let out = std::process::Command::new("gh")
-        .args([
-            "pr",
-            "create",
-            "--head",
-            &branch,
-            "--title",
-            &title,
-            "--body-file",
-            &body_file_path,
-        ])
+        .args(&args)
         .current_dir(&repo_path)
         .output()
         .map_err(|e| format!("failed to run gh pr create: {e}"))?;
