@@ -9,7 +9,7 @@
 // This is the "process is a System of Record" thesis made concrete: the why/what/
 // acceptance/QA ride INSIDE the diff, not in an ephemeral side-channel.
 
-import { readFile, writeFile } from "@/lib/ipc";
+import { readFile } from "@/lib/ipc";
 import { slotPath, listDocuments, type Issue } from "@/lib/issues";
 import { readQa, seedQaFromSpec, parseSpecCriteria, qaToMarkdown } from "@/lib/qa";
 import { readShareUrl } from "@/lib/share-urls";
@@ -68,10 +68,9 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
   const reviewUrl = await readShareUrl(root, issue.id);
 
   return [
-    `# Handoff — ${title}`,
+    `# ${title}`,
     "",
-    "> Bezier がこの変更の「意図・受入基準・QA」をコードと一緒に届けるために生成したファイルです。",
-    "> レビュー用の共有ページとは別に、実装を引き継ぐエンジニアが **git だけで** 全てを受け取れるようにするためのもの。",
+    "> この PR の「意図・受入基準・QA」です（Bezier 生成）。実装を引き継ぐエンジニア向けのコンテキストで、PR 本文として渡されます（リポジトリにファイルは追加されません）。",
     `> Issue: \`${issue.id}\``,
     ...(reviewUrl
       ? [
@@ -119,24 +118,4 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
       : "_（記録なし — プレビューの接続先が不明。実データ/権限の検証は本番実装側で要確認）_",
     "",
   ].join("\n");
-}
-
-/** The committed, in-tree path for an issue's handoff bundle (ULID = unique + safe
- *  as a filename; the title lives inside). */
-export function handoffRelPath(issue: Pick<Issue, "id">): string {
-  return `docs/handoff/${issue.id}.md`;
-}
-
-/** Write the handoff bundle into the WORKTREE tree (a committed path), so the caller
- *  can `git add`/commit it into the branch that gets pushed + PR'd. Returns the
- *  repo-relative path written. */
-export async function writeHandoffBundle(
-  root: string,
-  issue: Issue,
-  worktreePath: string,
-): Promise<string> {
-  const content = await buildHandoffMarkdown(root, issue);
-  const rel = handoffRelPath(issue);
-  await writeFile(`${trimSlash(worktreePath)}/${rel}`, content);
-  return rel;
 }

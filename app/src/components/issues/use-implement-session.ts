@@ -72,10 +72,10 @@ import {
   ptyStatuses,
   type AgentState,
 } from "@/lib/pty";
-import { confirmDialog, grantPath, openExternal } from "@/lib/ipc";
+import { confirmDialog, openExternal } from "@/lib/ipc";
 import { notify, ensureNotificationPermission } from "@/lib/notify";
 import { isUntitled, titleFromMessage } from "@/lib/issue-domain";
-import { writeHandoffBundle } from "@/lib/handoff";
+import { buildHandoffMarkdown } from "@/lib/handoff";
 import { tt } from "@/lib/i18n";
 import { conflictResolvePrompt } from "@/lib/prompts";
 import type {
@@ -1214,37 +1214,22 @@ export function useImplementSession(
     setError(null);
     setInfo(null);
     try {
-      // Handoff travels (DEC-117 / team-loop seam ②): commit the maker's INTENT
-      // (spec + acceptance + decisions + QA + the preview env) into the tree as
-      // docs/handoff/<id>.md, so the implementing engineer gets it in the PR DIFF —
-      // not just the gitignored .bezier or the PR body. Done BEFORE buildPrBody so we
-      // only point the PR body at the file when it ACTUALLY landed in the branch
-      // (heuristic #2 — no phantom pointer to a non-existent file). Best-effort: a
-      // failure must not block the PR (the body still carries the spec inline).
-      let handoffPath: string | undefined;
-      try {
-        await grantPath(ref.path).catch(() => {});
-        const rel = await writeHandoffBundle(root, issue, ref.path);
-        // Commit it if dirty; if clean it was already committed in a prior open. Either
-        // way the file is in the branch → the pointer is valid. If the commit throws,
-        // the catch leaves handoffPath undefined (the file isn't in the branch).
-        if (changedPathsFromStatus(await gitStatus(ref.path)).length > 0) {
-          await gitCommitAll(ref.path, `docs(handoff): ${issue.title || issue.id}`);
-        }
-        handoffPath = rel;
-      } catch {
-        handoffPath = undefined; // not committed → don't point the PR body at it
-      }
-      // Push the branch, then open GitHub's PR-creation page PREFILLED (DEC-141 #3) —
-      // the maker reviews the diff + title/body and clicks "Create". We don't create
-      // the PR programmatically: that outward action (notifying reviewers / running CI)
-      // is the human's final call. The full spec/decisions/QA already ride in the diff
-      // (docs/handoff/<id>.md), so the prefilled body stays short (URL length).
+      // The handoff (spec + acceptance + decisions + QA + preview env + review link)
+      // goes in the PR BODY — NOT a committed file. A real reviewer flagged
+      // docs/handoff/<id>.md as repo noise (an unwanted file in the diff), so we no
+      // longer write/commit it. We push the branch, then open GitHub's PR-creation page
+      // PREFILLED with the handoff as the body; the maker reviews/edits it and clicks
+      // "Create" (we never create the PR ourselves — that outward action is theirs).
+      // Best-effort + capped so the compare URL stays within browser/GitHub limits.
       await gitPush(ref.path, ref.branch);
       const slug = gitHubSlug(await gitRemoteUrl(root).catch(() => ""));
       if (!slug) throw new Error(tt("session.prNotGitHub"));
-      const body = handoffPath
-        ? tt("session.prPrefillBodyHandoff", { handoff: handoffPath })
+      const handoffMd = await buildHandoffMarkdown(root, issue).catch(() => "");
+      const MAX_PR_BODY = 5000; // keep the compare URL within browser/GitHub length limits
+      const body = handoffMd.trim()
+        ? handoffMd.length > MAX_PR_BODY
+          ? `${handoffMd.slice(0, MAX_PR_BODY)}\n\n…（以下省略 / truncated）`
+          : handoffMd
         : tt("session.prPrefillBody");
       const compareUrl =
         `https://github.com/${slug}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(ref.branch)}` +
