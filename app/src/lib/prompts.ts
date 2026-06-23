@@ -531,9 +531,9 @@ const JA_HANDOFF: HandoffPhrases = {
     `- **保存先**: \`${designDir}/NN-<短いkebab-slug>.html\`（NN=2桁ゼロ埋め連番。既存の最大+1から・**使い回さない＝蓄積**）。例 \`${designDir}/01-toolbar-filter.html\`。`,
     "- **html の役割は自由**: 1案のワイヤーでも、**複数パターンを1つの html に並べて比較**でも、簡単なインタラクションのスケッチでもよい。「1ファイル=1方向」「色は使わない」の縛りはない（その html が一番都合よく示せる形にする）。",
     "- **自己完結**: プレーンな html + インライン CSS のみ。Tailwind class・外部 CSS/JS/CDN・外部画像に依存しない（sandboxed iframe で静的描画されるため）。",
-    "- **ブランドに沿わせる（軽いルール）**: repo に `design-system.md` やデザイントークンがあれば参照し、色・タイポ・余白をそれに寄せる（ブランドが破綻しない範囲で。固定1パターンには縛らない）。無ければニュートラルでよい。実装コードまで読み込む必要はない。",
+    "- **「このプロダクトの一部」に見えるようにする（汎用モックにしない）**: 描く前に repo のデザイン言語を掴む — `design-system.md`・デザイントークン・`globals.css`/Tailwind 設定・主要コンポーネント（ボタン/入力/カード）の見た目。色・タイポスケール・余白・角丸をそれに寄せ、モックが**プロダクトの一部に見える**ようにする。コードベース全体を読む必要はない（視覚的な語彙を掴むのに必要な分だけ）。デザイン言語が本当に無ければニュートラルでよい。",
     "- 各ファイル先頭に `<title>短い名前</title>` と `<!-- bezier:prompt: 〈一言〉 -->`。書いたらチャットで「NN: 〈何を示したか〉」を1行報告（コード・commit は不要）。",
-    "- **実装着手はチャットから**: 「html を作る → 確定」という線形フローではない。ユーザーが「この方向で実装して」（例: 「02 の nav と 01 のレイアウトで」）と言ったら、その方向を **実コード（実物の DS）** に実装する。",
+    "- **実装着手はチャットから**: 「html を作る → 確定」という線形フローではない。ユーザーが「この方向で実装して」（例: 「02 の nav と 01 のレイアウトで」）と言ったら、その方向を **repo の実コンポーネント・実トークンを使って**実装する — モックの inline 値は既存のトークン/コンポーネントに**突き合わせて**から使い、生の色・余白を magic number として持ち込まない。対応するトークン/コンポーネントが無い値は、黙ってハードコードせず**その旨を伝える**。",
     "",
   ],
 
@@ -688,9 +688,9 @@ const EN_HANDOFF: HandoffPhrases = {
     `- **Save to**: \`${designDir}/NN-<short-kebab-slug>.html\` (NN = 2-digit zero-padded serial; start from the existing max + 1, **never reuse — they accumulate**). e.g. \`${designDir}/01-toolbar-filter.html\`.`,
     "- **The html's role is open**: a single wireframe, **several patterns side-by-side in one html** to compare, or a small interaction sketch — whatever shows it best. No “one file = one direction” / “no color” rule.",
     "- **Self-contained**: plain html + inline CSS only. Don't depend on Tailwind classes, external CSS/JS/CDN, or external images (it renders statically in a sandboxed iframe).",
-    "- **Stay on-brand (light rule)**: if the repo has a `design-system.md` or design tokens, read them and follow the colors / type / spacing (enough not to break the brand — not locked to one pattern). If there are none, neutral is fine. You don't need to read the implementation code.",
+    "- **Make it look like it belongs to THIS product (not a generic mock)**: before drawing, capture the repo's design language — `design-system.md`, design tokens, `globals.css` / Tailwind config, and the LOOK of a few key components (button, input, card). Mirror its colors, type scale, spacing, and radius so the mock reads as part of the product. You don't need to read the whole codebase — just enough to capture the visual vocabulary. If the repo genuinely has no design language, neutral is fine.",
     "- At the top of each file, put `<title>short name</title>` and `<!-- bezier:prompt: 〈one line〉 -->`. After writing, report one line in chat: “NN: 〈what it shows〉” (no code, no commit).",
-    "- **Implementation starts from chat**: it's NOT a linear “make html → adopt”. When the user says “implement this direction” (e.g. “02's nav with 01's layout”), implement it in the **real code (the real design system)**.",
+    "- **Implementation starts from chat**: it's NOT a linear “make html → adopt”. When the user says “implement this direction” (e.g. “02's nav with 01's layout”), implement it in the **real code using the repo's REAL components and tokens** — reconcile the mock's inline values to existing tokens/components; never carry a mock's raw color/spacing in as a magic number. If a value has no matching token/component, say so rather than silently hardcoding it.",
     "",
   ],
 
