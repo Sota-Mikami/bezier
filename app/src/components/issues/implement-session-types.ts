@@ -103,6 +103,10 @@ export interface ImplementSession {
   openPR: () => Promise<void>;
 
   sendDesignFeedback: (promptText: string, note?: string) => Promise<boolean>;
+  /** Paste text into the RUNNING agent's chat (pty) + submit — without restarting it.
+   *  Returns false if no agent is live for this issue (caller can fall back). Used by
+   *  batched annotations/comments so they land in the ongoing conversation. */
+  injectToAgent: (text: string) => Promise<boolean>;
 
   canImplement: boolean;
   handleImplement: () => Promise<void>;

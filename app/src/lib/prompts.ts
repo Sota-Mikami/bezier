@@ -329,40 +329,36 @@ export function docFeedbackPrompt(label: string, docPath: string, lines: string[
   return feedbackBody(p, [p.docHeader(label), p.docIntro(docPath)], lines, shot);
 }
 
-/** Text-selection comment on a doc (a SEMANTIC span, not an XY pin): the maker
- *  selected a passage and gave an instruction; route it to the agent to update the
- *  doc, anchored to the selected text's meaning. */
-export function docTextCommentPrompt(docPath: string, selectedText: string, comment: string): string {
+/** BATCHED text-selection comments on a doc (SEMANTIC spans, not XY pins): the maker
+ *  highlighted passages + wrote instructions and sends them together. Route to the
+ *  agent to update the doc, each anchored to its selected text's meaning. */
+export function docCommentsPrompt(
+  docPath: string,
+  comments: { text: string; comment: string }[],
+): string {
   const ja = getSettings().locale === "ja";
-  const sel = selectedText.length > 600 ? `${selectedText.slice(0, 600)}…` : selectedText;
-  const quoted = `> ${sel.split("\n").join("\n> ")}`;
+  const items = comments.map((c, i) => {
+    const sel = c.text.length > 400 ? `${c.text.slice(0, 400)}…` : c.text;
+    const quoted = `> ${sel.split("\n").join("\n> ")}`;
+    return ja
+      ? [`### ${i + 1}`, "", "対象（選択テキスト）:", quoted, "", `指示: ${c.comment}`].join("\n")
+      : [`### ${i + 1}`, "", "Passage (selected text):", quoted, "", `Instruction: ${c.comment}`].join("\n");
+  });
   return ja
     ? [
-        `\`${docPath}\` の次の箇所について、maker から修正指示があります。`,
+        `\`${docPath}\` に ${comments.length} 件のコメントがあります。各「対象の箇所（選択テキスト）」に対する「指示」を、**その箇所を中心に** 反映してください（選択範囲の意味に基づく・座標ではない）。`,
         "",
-        "## 対象の箇所（選択テキスト）",
+        ...items,
         "",
-        quoted,
-        "",
-        "## 指示",
-        "",
-        comment,
-        "",
-        "この指示に沿って **その箇所を中心に** ドキュメントを更新してください（選択範囲の意味に基づく・座標ではない）。必要なら前後も整える。完了したら何を変えたか一言。",
-      ].join("\n")
+        "全て反映したら、何を変えたか簡潔に。",
+      ].join("\n\n")
     : [
-        `The maker left a revision instruction on a passage of \`${docPath}\`.`,
+        `${comments.length} comment(s) on \`${docPath}\`. Apply each "Instruction" to its "Passage (selected text)", **centered on that passage** (anchored to the text's meaning, not coordinates).`,
         "",
-        "## Target passage (selected text)",
+        ...items,
         "",
-        quoted,
-        "",
-        "## Instruction",
-        "",
-        comment,
-        "",
-        "Update the document per this instruction, **centered on that passage** (anchored to the selected text's meaning, not coordinates). Adjust surrounding text only if needed. State briefly what you changed when done.",
-      ].join("\n");
+        "When all are applied, briefly state what you changed.",
+      ].join("\n\n");
 }
 
 export function mapFeedbackPrompt(routes: string[], lines: string[], shot: string | null): string {

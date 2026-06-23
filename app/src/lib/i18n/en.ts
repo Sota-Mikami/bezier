@@ -440,7 +440,11 @@ export const en = {
     button: "Comment",
     placeholder: "Tell the AI how to change this passage…",
     cancel: "Cancel",
+    add: "Add",
     send: "Send to AI",
+    sidebarTitle: "Comments",
+    sendAll: "Send all to AI",
+    empty: "Highlight text in the doc to comment.",
     note: "comment on {label}",
   },
   welcome: {

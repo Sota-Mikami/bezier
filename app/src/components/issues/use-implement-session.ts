@@ -1308,6 +1308,22 @@ export function useImplementSession(
     [ref, selectedAgent, issue.id, launchAgent, workDir, logEvent, agentState],
   );
 
+  // Paste into the RUNNING agent's chat without restarting it (the CEO's ask: batched
+  // comments should land in the ongoing conversation, not kill + relaunch the thread).
+  const injectToAgent = React.useCallback(
+    async (text: string): Promise<boolean> => {
+      const pid = await ptyLookup(issue.id).catch(() => null);
+      if (!pid) return false; // no live agent to inject into — caller can fall back
+      // Bracketed paste = content (incl. newlines) is inserted literally, not submitted
+      // per-line; the trailing CR submits. Mirrors the terminal's own paste path.
+      await ptyWrite(pid, `[200~${text}[201~`).catch(() => {});
+      await ptyWrite(pid, "\r").catch(() => {});
+      void logEvent("design_feedback", "inject");
+      return true;
+    },
+    [issue.id, logEvent],
+  );
+
   const canImplement =
     gitRepo === true && issue.slots.spec && !!selectedAgent?.available && !action;
 
@@ -1368,6 +1384,7 @@ export function useImplementSession(
     prUrl,
     openPR,
     sendDesignFeedback,
+    injectToAgent,
     canImplement,
     handleImplement,
     handleStart,

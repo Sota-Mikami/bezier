@@ -20,7 +20,7 @@ import {
 } from "@/lib/variants";
 import { removePath, confirmDialog, writeFile } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { docTextCommentPrompt, visualEditPrompt } from "@/lib/prompts";
+import { docCommentsPrompt, visualEditPrompt } from "@/lib/prompts";
 import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
@@ -32,7 +32,6 @@ import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
 import { designSurface } from "./design-variants";
 import { useAnnotationMode, AnnotationToggle } from "./annotation-mode";
-import { docAnnotationSurface } from "./annotation-surfaces";
 import { useVisualEdit } from "./use-visual-edit";
 import { EditLayerPanel, EditStylePanel, PendingEditsBar } from "./visual-edit-panels";
 import type { ImplementSession } from "./implement-session-types";
@@ -179,6 +178,9 @@ export function IssueDesign({
   const [editing, setEditing] = React.useState(false);
   const [editHtml, setEditHtml] = React.useState<string | null>(null);
   const [savingMock, setSavingMock] = React.useState(false);
+  // md text-selection comments accumulate (Notion-style) and send in one batch.
+  const [docComments, setDocComments] = React.useState<{ text: string; comment: string }[]>([]);
+  const [sendingComments, setSendingComments] = React.useState(false);
   const mockFrameRef = React.useRef<HTMLIFrameElement>(null);
   // Stable transport (created once via useState lazy-init). Its getWin reads the
   // iframe's contentWindow LAZILY — only when the transport issues a command/poll,
@@ -198,8 +200,29 @@ export function IssueDesign({
       setEditing(false);
       setEditHtml(null);
       clearVedit();
+      setDocComments([]);
     };
   }, [selected, clearVedit]);
+
+  // Send all accumulated md comments in ONE batch — pasted into the RUNNING agent's
+  // chat (no restart); falls back to a fresh feedback turn if no agent is live.
+  const sendDocComments = async () => {
+    const item = selectedItem;
+    if (item?.kind !== "doc" || docComments.length === 0 || sendingComments) return;
+    setSendingComments(true);
+    try {
+      const prompt = docCommentsPrompt(item.key, docComments);
+      const injected = await session.injectToAgent(prompt);
+      if (!injected) {
+        await session.sendDesignFeedback(prompt, tt("editorComment.note", { label: item.label }));
+      }
+      setDocComments([]);
+    } catch {
+      /* surfaced via session.error */
+    } finally {
+      setSendingComments(false);
+    }
+  };
 
   // Edit ⊻ Comment: while editing a mock, lock annotation off (and release the lock on
   // exit / unmount so switching to another area doesn't leave Comment stuck disabled).
@@ -367,11 +390,12 @@ export function IssueDesign({
             )}
           </div>
         </div>
-        {/* Surface-aware mode bar (IA): co-located with the canvas, only the modes this
-            surface supports. Mock = Edit + Comment; doc = Comment. (Lives in the strip,
-            not floating over the canvas — the Preview's native webview would occlude it.) */}
-        <div className="flex shrink-0 items-center gap-1 border-l pl-2 pr-1.5">
-          {selectedItem?.kind === "variant" && (
+        {/* Surface-aware mode bar (IA): only the MOCK has modes (Edit + Comment/Pin/Pen).
+            On a doc (md) there's no mode bar — you comment by highlighting text in the
+            editor. (Lives in the strip, not floating over the canvas — the Preview's
+            native webview would occlude it.) */}
+        {selectedItem?.kind === "variant" && (
+          <div className="flex shrink-0 items-center gap-1 border-l pl-2 pr-1.5">
             <button
               type="button"
               onClick={editing ? exitEdit : enterEdit}
@@ -387,37 +411,59 @@ export function IssueDesign({
               <Pencil className="size-3" />
               {editing ? t("design.editDone") : t("design.edit")}
             </button>
-          )}
-          <AnnotationToggle />
-        </div>
+            <AnnotationToggle />
+          </div>
+        )}
       </div>
 
       {/* Body: doc → editor; design → wireframe + annotation + adopt. */}
       <div className="relative min-h-0 flex-1">
         {selectedItem?.kind === "doc" && (
-          <div className="relative h-full">
-            <SlotEditor
-              path={selectedItem.key}
-              label={selectedItem.label}
-              onExternalChange={onChange}
-              onComment={(text, comment) =>
-                void session.sendDesignFeedback(
-                  docTextCommentPrompt(selectedItem.key, text, comment),
-                  tt("editorComment.note", { label: selectedItem.label }),
-                )
-              }
-            />
-            {annotating && (
-              <AnnotationLayer
-                key={`anno-doc-${selectedItem.key}`}
-                session={session}
-                surface={docAnnotationSurface(
-                  session,
-                  selectedItem.key,
-                  selectedItem.doc.type,
-                  selectedItem.label,
-                )}
+          <div className="flex h-full min-h-0">
+            <div className="relative min-w-0 flex-1">
+              <SlotEditor
+                path={selectedItem.key}
+                label={selectedItem.label}
+                onExternalChange={onChange}
+                onComment={(text, comment) =>
+                  setDocComments((c) => [...c, { text, comment }])
+                }
               />
+            </div>
+            {docComments.length > 0 && (
+              <aside className="flex w-64 shrink-0 flex-col border-l bg-card/40">
+                <div className="flex h-9 shrink-0 items-center border-b px-3 text-xs font-medium">
+                  {t("editorComment.sidebarTitle")} ({docComments.length})
+                </div>
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+                  {docComments.map((c, i) => (
+                    <div key={i} className="rounded border bg-background p-2 text-[11px]">
+                      <div className="mb-1 line-clamp-2 italic text-muted-foreground">
+                        “{c.text.slice(0, 80)}
+                        {c.text.length > 80 ? "…" : ""}”
+                      </div>
+                      <div className="text-foreground">{c.comment}</div>
+                      <button
+                        type="button"
+                        onClick={() => setDocComments((arr) => arr.filter((_, j) => j !== i))}
+                        className="mt-1 text-[10px] text-muted-foreground hover:text-foreground"
+                      >
+                        {t("common.delete")}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="shrink-0 border-t p-2">
+                  <button
+                    type="button"
+                    onClick={() => void sendDocComments()}
+                    disabled={sendingComments}
+                    className="w-full rounded bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  >
+                    {sendingComments ? t("common.loading") : t("editorComment.sendAll")}
+                  </button>
+                </div>
+              </aside>
             )}
           </div>
         )}

@@ -439,7 +439,11 @@ export const ja: Messages = {
     button: "コメント",
     placeholder: "この箇所をどう直すか AI に伝える…",
     cancel: "キャンセル",
+    add: "追加",
     send: "AIに送る",
+    sidebarTitle: "コメント",
+    sendAll: "まとめてAIに送る",
+    empty: "本文を選択してコメント。",
     note: "「{label}」にコメント",
   },
   welcome: {

@@ -1058,7 +1058,7 @@ function MarkdownEditorInner(
                   disabled={!commentDraft.trim()}
                   className="rounded bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 >
-                  {tt("editorComment.send")}
+                  {tt("editorComment.add")}
                 </button>
               </div>
             </div>
