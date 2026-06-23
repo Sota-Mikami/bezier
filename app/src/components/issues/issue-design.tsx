@@ -20,7 +20,7 @@ import {
 } from "@/lib/variants";
 import { removePath, confirmDialog, writeFile } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { docCommentsPrompt, visualEditPrompt } from "@/lib/prompts";
+import { docCommentsPrompt, mockCommentsPrompt, visualEditPrompt } from "@/lib/prompts";
 import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
@@ -181,6 +181,11 @@ export function IssueDesign({
   // md text-selection comments accumulate (Notion-style) and send in one batch.
   const [docComments, setDocComments] = React.useState<{ text: string; comment: string }[]>([]);
   const [sendingComments, setSendingComments] = React.useState(false);
+  // Mock element comments (unified edit: pick element → comment, alongside text/style).
+  const [mockComments, setMockComments] = React.useState<
+    { selector: string; text: string; comment: string }[]
+  >([]);
+  const [mockCommentDraft, setMockCommentDraft] = React.useState("");
   const mockFrameRef = React.useRef<HTMLIFrameElement>(null);
   // Stable transport (created once via useState lazy-init). Its getWin reads the
   // iframe's contentWindow LAZILY — only when the transport issues a command/poll,
@@ -201,6 +206,8 @@ export function IssueDesign({
       setEditHtml(null);
       clearVedit();
       setDocComments([]);
+      setMockComments([]);
+      setMockCommentDraft("");
     };
   }, [selected, clearVedit]);
 
@@ -240,6 +247,36 @@ export function IssueDesign({
     setEditing(false);
     setEditHtml(null);
     vedit.clearEdits();
+    setMockComments([]);
+    setMockCommentDraft("");
+  };
+
+  const addMockComment = () => {
+    const sel = vedit.selected;
+    const c = mockCommentDraft.trim();
+    if (!sel || !c) return;
+    setMockComments((arr) => [...arr, { selector: sel.selector, text: sel.text, comment: c }]);
+    setMockCommentDraft("");
+  };
+
+  // Send the accumulated element comments in ONE batch — injected into the running
+  // agent's chat (no restart), falling back to a fresh turn if none is live.
+  const sendMockComments = async () => {
+    const item = selectedItem;
+    if (item?.kind !== "variant" || mockComments.length === 0 || sendingComments) return;
+    setSendingComments(true);
+    try {
+      const prompt = mockCommentsPrompt(item.variant.path, mockComments);
+      const injected = await session.injectToAgent(prompt);
+      if (!injected) {
+        await session.sendDesignFeedback(prompt, tt("design.applyMockNote", { label: item.label }));
+      }
+      setMockComments([]);
+    } catch {
+      /* surfaced via session.error */
+    } finally {
+      setSendingComments(false);
+    }
   };
   const saveMock = async () => {
     const item = selectedItem;
@@ -504,8 +541,78 @@ export function IssueDesign({
                       className="size-full bg-white"
                     />
                   </div>
-                  <aside className="w-[230px] shrink-0 overflow-hidden border-l bg-card/40">
-                    <EditStylePanel vedit={vedit} />
+                  <aside className="flex w-[240px] shrink-0 flex-col overflow-hidden border-l bg-card/40">
+                    {/* Unified edit: comment on the PICKED element (alongside text/style).
+                        Accumulate → one batch send, injected into the running agent. */}
+                    <div className="shrink-0 border-b p-2">
+                      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {t("mockComment.title")}
+                      </div>
+                      {vedit.selected ? (
+                        <div className="space-y-1">
+                          <div className="truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                            {vedit.selected.tag}
+                            {vedit.selected.text ? `: ${vedit.selected.text.slice(0, 24)}` : ""}
+                          </div>
+                          <textarea
+                            value={mockCommentDraft}
+                            onChange={(e) => setMockCommentDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && (e.metaKey || !e.shiftKey)) {
+                                e.preventDefault();
+                                addMockComment();
+                              }
+                            }}
+                            rows={2}
+                            placeholder={t("mockComment.placeholder")}
+                            className="w-full resize-none rounded border bg-background p-1.5 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                          <button
+                            type="button"
+                            onClick={addMockComment}
+                            disabled={!mockCommentDraft.trim()}
+                            className="w-full rounded bg-muted px-2 py-1 text-[11px] font-medium hover:bg-muted-foreground/20 disabled:opacity-50"
+                          >
+                            {t("editorComment.add")}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-muted-foreground">{t("mockComment.pickHint")}</div>
+                      )}
+                      {mockComments.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {mockComments.map((c, i) => (
+                            <div
+                              key={i}
+                              className="flex items-start gap-1 rounded border bg-background p-1 text-[10px]"
+                            >
+                              <span className="min-w-0 flex-1 text-foreground">{c.comment}</span>
+                              <button
+                                type="button"
+                                onClick={() => setMockComments((arr) => arr.filter((_, j) => j !== i))}
+                                aria-label={t("common.delete")}
+                                className="shrink-0 text-muted-foreground hover:text-foreground"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => void sendMockComments()}
+                            disabled={sendingComments}
+                            className="w-full rounded bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                          >
+                            {sendingComments
+                              ? t("common.loading")
+                              : `${t("editorComment.send")} (${mockComments.length})`}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      <EditStylePanel vedit={vedit} />
+                    </div>
                   </aside>
                 </div>
                 <PendingEditsBar

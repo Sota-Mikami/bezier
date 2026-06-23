@@ -436,6 +436,11 @@ export const en = {
     note: "next step",
     dismiss: "Dismiss",
   },
+  mockComment: {
+    title: "Comment",
+    placeholder: "Comment on this element for the AI…",
+    pickHint: "Pick an element to comment on it.",
+  },
   editorComment: {
     button: "Comment",
     placeholder: "Tell the AI how to change this passage…",

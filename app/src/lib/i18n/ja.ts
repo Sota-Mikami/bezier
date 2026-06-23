@@ -435,6 +435,11 @@ export const ja: Messages = {
     note: "次の一手",
     dismiss: "閉じる",
   },
+  mockComment: {
+    title: "コメント",
+    placeholder: "この要素へのコメントをAIに…",
+    pickHint: "要素を選ぶとコメントできます。",
+  },
   editorComment: {
     button: "コメント",
     placeholder: "この箇所をどう直すか AI に伝える…",

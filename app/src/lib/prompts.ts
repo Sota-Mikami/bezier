@@ -329,6 +329,33 @@ export function docFeedbackPrompt(label: string, docPath: string, lines: string[
   return feedbackBody(p, [p.docHeader(label), p.docIntro(docPath)], lines, shot);
 }
 
+/** BATCHED element comments on a design MOCK (unified edit: pick an element → comment
+ *  on it, alongside text/style edits). Each is anchored to the element's selector +
+ *  visible text. The agent updates the mock html (or takes it as design direction). */
+export function mockCommentsPrompt(
+  filePath: string,
+  comments: { selector: string; text: string; comment: string }[],
+): string {
+  const ja = getSettings().locale === "ja";
+  const items = comments.map((c, i) => {
+    const el = c.text ? `（${c.text.slice(0, 60)}${c.text.length > 60 ? "…" : ""}）` : "";
+    return ja
+      ? [`### ${i + 1}`, "", `要素: \`${c.selector}\` ${el}`, "", `指示: ${c.comment}`].join("\n")
+      : [`### ${i + 1}`, "", `Element: \`${c.selector}\` ${el}`, "", `Instruction: ${c.comment}`].join("\n");
+  });
+  return ja
+    ? [
+        `デザインモック \`${filePath}\` の要素へのコメント ${comments.length} 件です。各「要素」への「指示」を反映してください（そのモック html を更新する／方向の参考にする）。`,
+        "",
+        ...items,
+      ].join("\n\n")
+    : [
+        `${comments.length} comment(s) on elements of the design mock \`${filePath}\`. Apply each "Instruction" to its "Element" (update that mock html, or take it as design direction).`,
+        "",
+        ...items,
+      ].join("\n\n");
+}
+
 /** BATCHED text-selection comments on a doc (SEMANTIC spans, not XY pins): the maker
  *  highlighted passages + wrote instructions and sends them together. Route to the
  *  agent to update the doc, each anchored to its selected text's meaning. */
