@@ -9,7 +9,7 @@
 // from the old Design tab's strip). Reorder by drag; delete with ×.
 
 import * as React from "react";
-import { Code2, Plus, X, Loader2 } from "lucide-react";
+import { Code2, Plus, X, Loader2, Pencil } from "lucide-react";
 
 import { listDocuments, createDocument, type IssueDoc } from "@/lib/issues";
 import {
@@ -18,17 +18,22 @@ import {
   nextVariantIds,
   type Variant,
 } from "@/lib/variants";
-import { removePath, confirmDialog } from "@/lib/ipc";
+import { removePath, confirmDialog, writeFile } from "@/lib/ipc";
+import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
 import { getViewState, setViewState } from "@/lib/view-state";
+import { iframeTransport, type VisualEditTransport } from "@/lib/visual-edit-transport";
+import { buildEditableSrcdoc, cleanSerializedMock } from "@/lib/mock-edit";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
 import { designSurface } from "./design-variants";
 import { useAnnotationMode } from "./annotation-mode";
 import { docAnnotationSurface } from "./annotation-surfaces";
+import { useVisualEdit } from "./use-visual-edit";
+import { EditLayerPanel, EditStylePanel, PendingEditsBar } from "./visual-edit-panels";
 import type { ImplementSession } from "./implement-session-types";
 
 type Item =
@@ -164,6 +169,68 @@ export function IssueDesign({
     selectedItem?.kind === "variant" && htmlByPath && htmlByPath.path === selectedItem.key
       ? htmlByPath.html
       : "";
+
+  // Mock Edit Mode (E-1b): Figma-style Layer/Style/Text editing ON the html mock, with
+  // a DETERMINISTIC write-back to the mock file (no agent). The mock is a self-contained
+  // html we own, so we inject the overlay into its iframe (via mock-edit) and serialize
+  // the edited DOM back. `editHtml` is captured ONCE on enter so the 2.5s variant poll
+  // can't clobber the iframe mid-edit; Edit ⊻ Annotate (annotation is suppressed here).
+  const [editing, setEditing] = React.useState(false);
+  const [editHtml, setEditHtml] = React.useState<string | null>(null);
+  const [savingMock, setSavingMock] = React.useState(false);
+  const mockFrameRef = React.useRef<HTMLIFrameElement>(null);
+  // Stable transport (created once via useState lazy-init). Its getWin reads the
+  // iframe's contentWindow LAZILY — only when the transport issues a command/poll,
+  // never during render — so it always sees the live window after (re)load.
+  // eslint-disable-next-line react-hooks/refs -- getWin is stored + invoked lazily by the transport (command/poll), never during render
+  const [veTransport] = React.useState<VisualEditTransport>(() =>
+    iframeTransport(() => mockFrameRef.current?.contentWindow ?? null),
+  );
+  const vedit = useVisualEdit({ active: editing, navKey: selected ?? "", transport: veTransport });
+  const clearVedit = vedit.clearEdits;
+
+  // Switching tabs exits Edit Mode cleanly (done in cleanup — fires on tab change /
+  // unmount — to avoid cascading-render setState in the effect body). Entering edit
+  // doesn't change `selected`, so it never resets mid-edit.
+  React.useEffect(() => {
+    return () => {
+      setEditing(false);
+      setEditHtml(null);
+      clearVedit();
+    };
+  }, [selected, clearVedit]);
+
+  const enterEdit = () => {
+    if (selectedItem?.kind !== "variant" || !html) return;
+    setEditHtml(buildEditableSrcdoc(html));
+    setEditing(true);
+  };
+  const exitEdit = () => {
+    setEditing(false);
+    setEditHtml(null);
+    vedit.clearEdits();
+  };
+  const saveMock = async () => {
+    const item = selectedItem;
+    const doc = mockFrameRef.current?.contentDocument;
+    if (item?.kind !== "variant" || !doc) {
+      exitEdit();
+      return;
+    }
+    setSavingMock(true);
+    try {
+      veTransport.deactivate(); // drop the overlay's selection-box host before serializing
+      const raw = `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
+      const clean = cleanSerializedMock(raw);
+      await writeFile(item.variant.path, clean);
+      setHtmlByPath({ path: item.key, html: clean });
+    } catch {
+      /* write failed — keep the edits in the live DOM so nothing is lost */
+    } finally {
+      setSavingMock(false);
+      exitEdit();
+    }
+  };
 
   const addDoc = async (type: string) => {
     setAdding(false);
@@ -302,10 +369,9 @@ export function IssueDesign({
         )}
         {selectedItem?.kind === "variant" && (
           <div className="flex h-full min-h-0 flex-col">
-            {/* Filename header (DF-2) — matches the md docs' header, instead of the
-                old "Adopt this" button. HTML is now a free visual artifact, not a
-                single design to "adopt"; you implement a direction by asking in
-                chat ("go with NN's nav + 01's layout"). */}
+            {/* Filename header (DF-2) + the Edit toggle (E-1b). HTML is a free visual
+                artifact; you implement a direction by asking in chat, but you can also
+                directly edit the mock (Layer/Style/Text) — written back to the file. */}
             <header className="flex h-9 shrink-0 items-center gap-2 border-b px-4">
               <Code2 className="size-3.5 shrink-0 text-sky-500/80" />
               <span className="truncate text-sm font-medium">{selectedItem.label}</span>
@@ -315,28 +381,74 @@ export function IssueDesign({
               >
                 {selectedItem.variant.file}
               </span>
+              <button
+                type="button"
+                onClick={editing ? exitEdit : enterEdit}
+                disabled={(annotating && !editing) || (!editing && !html)}
+                title={t("design.editTip")}
+                className={cn(
+                  "ml-auto flex h-6 shrink-0 items-center gap-1 rounded px-2 text-[11px] disabled:opacity-40",
+                  editing
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Pencil className="size-3" />
+                {editing ? t("design.editDone") : t("design.edit")}
+              </button>
             </header>
-            <div className="relative min-h-0 flex-1 bg-background">
-              <iframe
-                key={`frame-${selectedItem.key}`}
-                sandbox=""
-                srcDoc={html}
-                title={selectedItem.label}
-                className="size-full bg-white"
-              />
-              {annotating && (
-                <AnnotationLayer
-                  key={`anno-${selectedItem.key}`}
-                  session={session}
-                  surface={designSurface(
-                    session,
-                    selectedItem.variant,
-                    session.canGenerateVariant,
-                    session.reviseDesignPattern,
-                  )}
+            {editing ? (
+              <>
+                <div className="flex min-h-0 flex-1">
+                  <aside className="w-[230px] shrink-0 overflow-hidden border-r bg-card/40">
+                    <EditLayerPanel vedit={vedit} />
+                  </aside>
+                  <div className="relative min-h-0 flex-1 bg-white">
+                    <iframe
+                      ref={mockFrameRef}
+                      key={`edit-${selectedItem.key}`}
+                      sandbox="allow-scripts allow-same-origin"
+                      srcDoc={editHtml ?? ""}
+                      title={selectedItem.label}
+                      onLoad={() => veTransport.activate()}
+                      className="size-full bg-white"
+                    />
+                  </div>
+                  <aside className="w-[230px] shrink-0 overflow-hidden border-l bg-card/40">
+                    <EditStylePanel vedit={vedit} />
+                  </aside>
+                </div>
+                <PendingEditsBar
+                  vedit={vedit}
+                  busy={savingMock}
+                  onApply={() => void saveMock()}
+                  onDiscard={exitEdit}
+                  applyLabel={t("edit.saveToMock")}
                 />
-              )}
-            </div>
+              </>
+            ) : (
+              <div className="relative min-h-0 flex-1 bg-background">
+                <iframe
+                  key={`frame-${selectedItem.key}`}
+                  sandbox=""
+                  srcDoc={html}
+                  title={selectedItem.label}
+                  className="size-full bg-white"
+                />
+                {annotating && (
+                  <AnnotationLayer
+                    key={`anno-${selectedItem.key}`}
+                    session={session}
+                    surface={designSurface(
+                      session,
+                      selectedItem.variant,
+                      session.canGenerateVariant,
+                      session.reviseDesignPattern,
+                    )}
+                  />
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

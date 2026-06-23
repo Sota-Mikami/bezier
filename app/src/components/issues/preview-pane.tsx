@@ -56,6 +56,7 @@ import { usePreviewDiagnostic } from "./use-preview-diagnostic";
 import { PreviewDiagnosticBanner } from "./preview-diagnostic-banner";
 import { PreviewBottomPanel, type PanelTab } from "./preview-bottom-panel";
 import { useVisualEdit } from "./use-visual-edit";
+import { webviewTransport } from "@/lib/visual-edit-transport";
 import { EditLayerPanel, EditStylePanel, PendingEditsBar } from "./visual-edit-panels";
 import {
   DropdownMenu,
@@ -650,9 +651,11 @@ export function PreviewPane({
   // Visual edit engine (DEC-131): live only while Edit mode is on AND the webview is
   // live. navKey=path so a full navigation re-injects the overlay. Edits apply live;
   // "apply to code" hands the accumulated diffs to the issue's agent (repo idiom).
+  const veTransport = React.useMemo(() => webviewTransport(), []);
   const vedit = useVisualEdit({
     active: editing && status === "ready" && !!url,
     navKey: path,
+    transport: veTransport,
   });
   const [applyingEdits, setApplyingEdits] = React.useState(false);
   const veCount = vedit.editCount;

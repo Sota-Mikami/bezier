@@ -8,12 +8,8 @@
 // hands them to the user's agent via sendDesignFeedback (preview-pane owns that call).
 
 import * as React from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import { embedBrowserEval, embedBrowserDrain } from "@/lib/ipc";
-import { OVERLAY_JS, DRAIN_JS } from "@/lib/bezier-overlay";
-
-const DRAIN_MS = 120;
+import type { VisualEditTransport } from "@/lib/visual-edit-transport";
 
 export interface ElBrief {
   selector: string;
@@ -76,10 +72,6 @@ interface HistoryEntry {
   origBefore: string;
 }
 
-function q(s: string) {
-  return JSON.stringify(s);
-}
-
 export interface VisualEdit {
   selected: SelectedInfo | null;
   /** The full page layer tree (left panel), refreshed on activate / reorder. */
@@ -111,9 +103,12 @@ export interface VisualEdit {
 export function useVisualEdit({
   active,
   navKey,
+  transport,
 }: {
   active: boolean;
   navKey: string;
+  /** webviewTransport (Preview) or iframeTransport (the design mock). Memoize per target. */
+  transport: VisualEditTransport;
 }): VisualEdit {
   const [selected, setSelected] = React.useState<SelectedInfo | null>(null);
   const [tree, setTree] = React.useState<TreeNode | null>(null);
@@ -130,15 +125,19 @@ export function useVisualEdit({
   React.useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
+  // Hold the transport in a ref so command callbacks stay stable (no dep churn); the
+  // effect below uses `transport` directly so it re-subscribes when the target changes.
+  const transportRef = React.useRef(transport);
+  React.useEffect(() => {
+    transportRef.current = transport;
+  }, [transport]);
 
   const syncDiffs = React.useCallback(() => {
     setDiffs(Array.from(diffsRef.current.values()));
   }, []);
 
   const evalApplyTo = (selector: string, prop: string, value: string) =>
-    void embedBrowserEval(
-      `window.__bzEdit && window.__bzEdit.applyTo(${q(selector)}, ${q(prop)}, ${q(value)})`,
-    ).catch(() => {});
+    transportRef.current.call("applyTo", [selector, prop, value]);
 
   // Forward edit (apply / reset / paste): records history + diff, updates the live DOM.
   const recordEdit = React.useCallback(
@@ -179,9 +178,7 @@ export function useVisualEdit({
       setOverrides((o) =>
         value === (sel.computed[prop] ?? "") ? omit(o, prop) : { ...o, [prop]: value },
       );
-      void embedBrowserEval(`window.__bzEdit && window.__bzEdit.apply(${q(prop)}, ${q(value)})`).catch(
-        () => {},
-      );
+      transportRef.current.call("apply", [prop, value]);
     },
     [recordEdit],
   );
@@ -226,19 +223,15 @@ export function useVisualEdit({
   }, [syncDiffs]);
 
   const selectParent = React.useCallback(() => {
-    void embedBrowserEval("window.__bzEdit && window.__bzEdit.selectParent()").catch(() => {});
+    transportRef.current.call("selectParent");
   }, []);
   const selectPath = React.useCallback((path: string) => {
-    void embedBrowserEval(`window.__bzEdit && window.__bzEdit.selectPath(${q(path)})`).catch(
-      () => {},
-    );
+    transportRef.current.call("selectPath", [path]);
   }, []);
 
   const moveChild = React.useCallback((src: ElBrief, dest: ElBrief, before: boolean) => {
     if (src.selector === dest.selector) return;
-    void embedBrowserEval(
-      `window.__bzEdit && window.__bzEdit.moveNode(${q(src.selector)}, ${q(dest.selector)}, ${before})`,
-    ).catch(() => {});
+    transportRef.current.call("moveNode", [src.selector, dest.selector, before]);
     setReorders((r) => [...r, { src, dest, before }]);
   }, []);
 
@@ -259,15 +252,13 @@ export function useVisualEdit({
         after: value,
       });
     setTextEdits(Array.from(textEditsRef.current.values()));
-    void embedBrowserEval(`window.__bzEdit && window.__bzEdit.setText(${q(value)})`).catch(() => {});
+    transportRef.current.call("setText", [value]);
   }, []);
 
   // Keyboard reorder (↑/↓). The overlay performs the move in-page and emits a
   // `reorder` event we record (so it works even when the webview has focus).
   const moveSelectedBy = React.useCallback((delta: number) => {
-    void embedBrowserEval(`window.__bzEdit && window.__bzEdit.moveSelectedBy(${delta})`).catch(
-      () => {},
-    );
+    transportRef.current.call("moveSelectedBy", [delta]);
   }, []);
 
   const clearEdits = React.useCallback(() => {
@@ -281,63 +272,45 @@ export function useVisualEdit({
     setOverrides({});
   }, [syncDiffs]);
 
-  // Activate / inject on (re)entry + on navigation; deactivate on exit.
+  // Subscribe + activate the overlay on (re)entry / navigation / target change;
+  // deactivate on exit. The transport owns HOW (webview eval+event vs iframe direct
+  // calls+poll); the event handling is identical either way.
   React.useEffect(() => {
     if (!active) return;
-    let cancelled = false;
-    let timer: number | null = null;
-    let unlisten: UnlistenFn | null = null;
 
-    (async () => {
-      setSelected(null);
-      setOverrides({});
-      try {
-        unlisten = await listen<string>("bz-edit", (e) => {
-          if (cancelled) return;
-          let evs: DrainEvent[];
-          try {
-            evs = JSON.parse(e.payload) as DrainEvent[];
-          } catch {
-            return;
-          }
-          for (const ev of evs) {
-            if (ev.type === "selected" && ev.el) {
-              const el = ev.el;
-              setSelected(el);
-              setSelectedSelector(el.selector);
-              // Re-selecting an already-edited element → show its pending overrides.
-              const ov: Record<string, string> = {};
-              diffsRef.current.forEach((d) => {
-                if (d.selector === el.selector) ov[d.prop] = d.after;
-              });
-              setOverrides(ov);
-            } else if (ev.type === "tree" && ev.root) {
-              setTree(ev.root);
-              if (ev.sel !== undefined) setSelectedSelector(ev.sel);
-            } else if (ev.type === "reorder" && ev.src && ev.dest) {
-              const op = { src: ev.src, dest: ev.dest, before: !!ev.before };
-              setReorders((r) => [...r, op]);
-            }
-          }
-        });
-        if (cancelled) return;
-        await embedBrowserEval(OVERLAY_JS);
-        await embedBrowserEval("window.__bzEdit && window.__bzEdit.activate()");
-        timer = window.setInterval(() => {
-          void embedBrowserDrain(DRAIN_JS).catch(() => {});
-        }, DRAIN_MS);
-      } catch {
-        /* webview not ready / eval failed — Edit mode just shows the empty state */
+    const stop = transport.subscribe((events) => {
+      for (const raw of events) {
+        const ev = raw as DrainEvent;
+        if (ev.type === "selected" && ev.el) {
+          const el = ev.el;
+          setSelected(el);
+          setSelectedSelector(el.selector);
+          // Re-selecting an already-edited element → show its pending overrides.
+          const ov: Record<string, string> = {};
+          diffsRef.current.forEach((d) => {
+            if (d.selector === el.selector) ov[d.prop] = d.after;
+          });
+          setOverrides(ov);
+        } else if (ev.type === "tree" && ev.root) {
+          setTree(ev.root);
+          if (ev.sel !== undefined) setSelectedSelector(ev.sel);
+        } else if (ev.type === "reorder" && ev.src && ev.dest) {
+          setReorders((r) => [...r, { src: ev.src!, dest: ev.dest!, before: !!ev.before }]);
+        }
       }
-    })();
+    });
+    // The overlay buffers events in its queue, so activating after subscribe loses none.
+    transport.activate();
 
     return () => {
-      cancelled = true;
-      if (timer !== null) window.clearInterval(timer);
-      if (unlisten) unlisten();
-      void embedBrowserEval("window.__bzEdit && window.__bzEdit.deactivate()").catch(() => {});
+      stop();
+      transport.deactivate();
+      // Clear selection/overrides on leave (target change / exit) so the next entry
+      // starts fresh — done in cleanup (not the effect body) to avoid cascading renders.
+      setSelected(null);
+      setOverrides({});
     };
-  }, [active, navKey]);
+  }, [active, navKey, transport]);
 
   return {
     selected,
