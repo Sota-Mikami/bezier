@@ -23,7 +23,6 @@ interface PromptPhrases {
   /** Shown when no screenshot could be captured (use the % positions). */
   shotNone: string;
   /** Prefix for a batch-wide instruction line. */
-  overall: (note: string) => string;
   /** Fallback when a mark has no text (refer to the drawing / target). */
   markFallback: string;
 
@@ -85,7 +84,6 @@ const JA: PromptPhrases = {
   shotRef: (shot) =>
     `注釈つきスクリーンショット: \`${shot}\`（同じ番号の付いた箇所を確認してください）`,
   shotNone: "(スクリーンショットは取得できませんでした。位置％を参考にしてください)",
-  overall: (note) => `（全体の指示）${note}`,
   markFallback: "(描画/指定を参照)",
 
   describePen: (pos) => `ペン注釈 位置 ${pos}`,
@@ -175,7 +173,6 @@ const EN: PromptPhrases = {
     `Annotated screenshot: \`${shot}\` (open it and check the spots with matching numbers).`,
   shotNone:
     "(No screenshot could be captured — use the % positions as a reference.)",
-  overall: (note) => `(Overall instruction) ${note}`,
   markFallback: "(refer to the drawing / target)",
 
   describePen: (pos) => `Pen annotation at ${pos}`,
@@ -353,6 +350,23 @@ export function elementVariantsPrompt(
       ].join("\n\n");
 }
 
+/** Shared scaffold for batched-comment prompts: a locale-picked intro + numbered
+ *  `### N` items (each rendering its own anchor + instruction) + optional trailer. */
+function batchCommentsPrompt<T>(
+  comments: T[],
+  cfg: {
+    intro: (n: number, ja: boolean) => string;
+    item: (c: T, ja: boolean) => string;
+    trailer?: (ja: boolean) => string;
+  },
+): string {
+  const ja = getSettings().locale === "ja";
+  const items = comments.map((c, i) => `### ${i + 1}\n\n${cfg.item(c, ja)}`);
+  const parts = [cfg.intro(comments.length, ja), "", ...items];
+  if (cfg.trailer) parts.push("", cfg.trailer(ja));
+  return parts.join("\n\n");
+}
+
 /** BATCHED element comments on a design MOCK (unified edit: pick an element → comment
  *  on it, alongside text/style edits). Each is anchored to the element's selector +
  *  visible text. The agent updates the mock html (or takes it as design direction). */
@@ -360,24 +374,18 @@ export function mockCommentsPrompt(
   filePath: string,
   comments: { selector: string; text: string; comment: string }[],
 ): string {
-  const ja = getSettings().locale === "ja";
-  const items = comments.map((c, i) => {
-    const el = c.text ? `（${c.text.slice(0, 60)}${c.text.length > 60 ? "…" : ""}）` : "";
-    return ja
-      ? [`### ${i + 1}`, "", `要素: \`${c.selector}\` ${el}`, "", `指示: ${c.comment}`].join("\n")
-      : [`### ${i + 1}`, "", `Element: \`${c.selector}\` ${el}`, "", `Instruction: ${c.comment}`].join("\n");
+  return batchCommentsPrompt(comments, {
+    intro: (n, ja) =>
+      ja
+        ? `デザインモック \`${filePath}\` の要素へのコメント ${n} 件です。各「要素」への「指示」を反映してください（そのモック html を更新する／方向の参考にする）。`
+        : `${n} comment(s) on elements of the design mock \`${filePath}\`. Apply each "Instruction" to its "Element" (update that mock html, or take it as design direction).`,
+    item: (c, ja) => {
+      const el = c.text ? `（${c.text.slice(0, 60)}${c.text.length > 60 ? "…" : ""}）` : "";
+      return ja
+        ? `要素: \`${c.selector}\` ${el}\n\n指示: ${c.comment}`
+        : `Element: \`${c.selector}\` ${el}\n\nInstruction: ${c.comment}`;
+    },
   });
-  return ja
-    ? [
-        `デザインモック \`${filePath}\` の要素へのコメント ${comments.length} 件です。各「要素」への「指示」を反映してください（そのモック html を更新する／方向の参考にする）。`,
-        "",
-        ...items,
-      ].join("\n\n")
-    : [
-        `${comments.length} comment(s) on elements of the design mock \`${filePath}\`. Apply each "Instruction" to its "Element" (update that mock html, or take it as design direction).`,
-        "",
-        ...items,
-      ].join("\n\n");
 }
 
 /** BATCHED text-selection comments on a doc (SEMANTIC spans, not XY pins): the maker
@@ -387,29 +395,21 @@ export function docCommentsPrompt(
   docPath: string,
   comments: { text: string; comment: string }[],
 ): string {
-  const ja = getSettings().locale === "ja";
-  const items = comments.map((c, i) => {
-    const sel = c.text.length > 400 ? `${c.text.slice(0, 400)}…` : c.text;
-    const quoted = `> ${sel.split("\n").join("\n> ")}`;
-    return ja
-      ? [`### ${i + 1}`, "", "対象（選択テキスト）:", quoted, "", `指示: ${c.comment}`].join("\n")
-      : [`### ${i + 1}`, "", "Passage (selected text):", quoted, "", `Instruction: ${c.comment}`].join("\n");
+  return batchCommentsPrompt(comments, {
+    intro: (n, ja) =>
+      ja
+        ? `\`${docPath}\` に ${n} 件のコメントがあります。各「対象の箇所（選択テキスト）」に対する「指示」を、**その箇所を中心に** 反映してください（選択範囲の意味に基づく・座標ではない）。`
+        : `${n} comment(s) on \`${docPath}\`. Apply each "Instruction" to its "Passage (selected text)", **centered on that passage** (anchored to the text's meaning, not coordinates).`,
+    item: (c, ja) => {
+      const sel = c.text.length > 400 ? `${c.text.slice(0, 400)}…` : c.text;
+      const quoted = `> ${sel.split("\n").join("\n> ")}`;
+      return ja
+        ? `対象（選択テキスト）:\n${quoted}\n\n指示: ${c.comment}`
+        : `Passage (selected text):\n${quoted}\n\nInstruction: ${c.comment}`;
+    },
+    trailer: (ja) =>
+      ja ? "全て反映したら、何を変えたか簡潔に。" : "When all are applied, briefly state what you changed.",
   });
-  return ja
-    ? [
-        `\`${docPath}\` に ${comments.length} 件のコメントがあります。各「対象の箇所（選択テキスト）」に対する「指示」を、**その箇所を中心に** 反映してください（選択範囲の意味に基づく・座標ではない）。`,
-        "",
-        ...items,
-        "",
-        "全て反映したら、何を変えたか簡潔に。",
-      ].join("\n\n")
-    : [
-        `${comments.length} comment(s) on \`${docPath}\`. Apply each "Instruction" to its "Passage (selected text)", **centered on that passage** (anchored to the text's meaning, not coordinates).`,
-        "",
-        ...items,
-        "",
-        "When all are applied, briefly state what you changed.",
-      ].join("\n\n");
 }
 
 export function mapFeedbackPrompt(routes: string[], lines: string[], shot: string | null): string {

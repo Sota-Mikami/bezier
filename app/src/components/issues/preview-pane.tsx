@@ -92,7 +92,7 @@ function buildAnnotationSurface(session: ImplementSession, route: string): Annot
     // Name the screen being annotated so the agent knows WHICH page (it locates
     // the code itself — we don't prescribe how). DEC-108 / precise-mode v1.
     buildPrompt: (lines, shot) => previewFeedbackPrompt(route, lines, shot),
-    send: async (p, n) => (await session.injectToAgent(p)) || session.sendDesignFeedback(p, n),
+    send: (p, n) => session.injectOrFeedback(p, n),
   };
 }
 

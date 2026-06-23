@@ -1309,6 +1309,16 @@ export function useImplementSession(
     [issue.id, logEvent],
   );
 
+  // Inject into the running agent's chat; if none is live, fall back to a fresh
+  // feedback turn. The single seam for all annotation/comment sends (the no-restart
+  // path the CEO asked for) — annotation surfaces + the batch-comment handlers route
+  // through this instead of each hand-rolling the inject-first || feedback pattern.
+  const injectOrFeedback = React.useCallback(
+    async (text: string, note?: string): Promise<boolean> =>
+      (await injectToAgent(text)) || sendDesignFeedback(text, note),
+    [injectToAgent, sendDesignFeedback],
+  );
+
   const canImplement =
     gitRepo === true && issue.slots.spec && !!selectedAgent?.available && !action;
 
@@ -1370,6 +1380,7 @@ export function useImplementSession(
     openPR,
     sendDesignFeedback,
     injectToAgent,
+    injectOrFeedback,
     canImplement,
     handleImplement,
     handleStart,

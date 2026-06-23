@@ -456,7 +456,6 @@ export const ja: Messages = {
     send: "AIに送る",
     sidebarTitle: "コメント",
     sendAll: "まとめてAIに送る",
-    empty: "本文を選択してコメント。",
     note: "「{label}」にコメント",
   },
   welcome: {
@@ -629,7 +628,6 @@ export const ja: Messages = {
     annotationCount: "{count} 件の注釈",
     sendFailedTitle: "送信エラー",
     unsentCount: "未送信 {count}",
-    batchNotePlaceholder: "まとめて指示（任意・Enter で送信）",
     undo: "元に戻す",
     redo: "やり直し",
     clearAll: "すべてクリア",
@@ -1013,8 +1011,6 @@ export const ja: Messages = {
     prPrefillOpened: "GitHub の PR 作成ページを開きました — diff を確認して「Create」を押してください。",
     prNotGitHub: "このリポジトリの origin が GitHub ではないため、PR ページを開けません。",
     prPrefillBody:
-      "Bezier が生成。spec・決定・QA はこの PR の diff に含まれています。diff を確認して PR を作成してください。",
-    prPrefillBodyHandoff:
-      "Bezier が生成。spec / 受入基準 / 決定 / QA は `{handoff}`（この diff 内）にあります。diff を確認して PR を作成してください。",
+      "Bezier が生成。タイトル/本文と diff を確認して PR を作成してください。",
   },
 };

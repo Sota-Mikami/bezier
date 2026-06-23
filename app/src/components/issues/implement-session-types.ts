@@ -107,6 +107,9 @@ export interface ImplementSession {
    *  Returns false if no agent is live for this issue (caller can fall back). Used by
    *  batched annotations/comments so they land in the ongoing conversation. */
   injectToAgent: (text: string) => Promise<boolean>;
+  /** injectToAgent, falling back to a fresh sendDesignFeedback turn when no agent is
+   *  live. The shared "send annotation/comment batch" path (no restart when possible). */
+  injectOrFeedback: (text: string, note?: string) => Promise<boolean>;
 
   canImplement: boolean;
   handleImplement: () => Promise<void>;

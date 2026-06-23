@@ -231,11 +231,10 @@ export function IssueDesign({
     if (item?.kind !== "doc" || docComments.length === 0 || sendingComments) return;
     setSendingComments(true);
     try {
-      const prompt = docCommentsPrompt(item.key, docComments);
-      const injected = await session.injectToAgent(prompt);
-      if (!injected) {
-        await session.sendDesignFeedback(prompt, tt("editorComment.note", { label: item.label }));
-      }
+      await session.injectOrFeedback(
+        docCommentsPrompt(item.key, docComments),
+        tt("editorComment.note", { label: item.label }),
+      );
       setDocComments([]);
     } catch {
       /* surfaced via session.error */
@@ -281,11 +280,10 @@ export function IssueDesign({
     if (item?.kind !== "variant" || !sel || sendingComments) return;
     setSendingComments(true);
     try {
-      const prompt = elementVariantsPrompt(item.variant.path, sel.selector, sel.text, mockCommentDraft);
-      const injected = await session.injectToAgent(prompt);
-      if (!injected) {
-        await session.sendDesignFeedback(prompt, tt("design.applyMockNote", { label: item.label }));
-      }
+      await session.injectOrFeedback(
+        elementVariantsPrompt(item.variant.path, sel.selector, sel.text, mockCommentDraft),
+        tt("design.applyMockNote", { label: item.label }),
+      );
       setMockCommentDraft("");
     } catch {
       /* surfaced via session.error */
@@ -301,11 +299,10 @@ export function IssueDesign({
     if (item?.kind !== "variant" || mockComments.length === 0 || sendingComments) return;
     setSendingComments(true);
     try {
-      const prompt = mockCommentsPrompt(item.variant.path, mockComments);
-      const injected = await session.injectToAgent(prompt);
-      if (!injected) {
-        await session.sendDesignFeedback(prompt, tt("design.applyMockNote", { label: item.label }));
-      }
+      await session.injectOrFeedback(
+        mockCommentsPrompt(item.variant.path, mockComments),
+        tt("design.applyMockNote", { label: item.label }),
+      );
       setMockComments([]);
     } catch {
       /* surfaced via session.error */
