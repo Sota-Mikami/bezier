@@ -440,6 +440,14 @@ export const ja: Messages = {
     placeholder: "この要素へのコメントをAIに…",
     pickHint: "要素を選ぶとコメントできます。",
   },
+  mockTool: {
+    select: "選択",
+    annotate: "注釈",
+  },
+  mockVariants: {
+    button: "3案",
+    tip: "この要素の3案をAIに依頼（上のコメント＝方向性）。",
+  },
   editorComment: {
     button: "コメント",
     placeholder: "この箇所をどう直すか AI に伝える…",

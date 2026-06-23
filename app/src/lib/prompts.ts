@@ -329,6 +329,30 @@ export function docFeedbackPrompt(label: string, docPath: string, lines: string[
   return feedbackBody(p, [p.docHeader(label), p.docIntro(docPath)], lines, shot);
 }
 
+/** Foundation for per-element 3-variants (Impeccable-style "pick → 3 variants"): ask
+ *  the agent to produce a few alternative versions of ONE picked element in the mock. */
+export function elementVariantsPrompt(
+  filePath: string,
+  selector: string,
+  text: string,
+  directive: string,
+): string {
+  const ja = getSettings().locale === "ja";
+  const el = text ? `（${text.slice(0, 60)}${text.length > 60 ? "…" : ""}）` : "";
+  const dir = directive.trim();
+  return ja
+    ? [
+        `デザインモック \`${filePath}\` の要素 \`${selector}\` ${el} について、**3つの別案**を作ってください。`,
+        dir ? `方向性: ${dir}` : "方向性の指定はなし。構造・トーンを変えて3案。",
+        "各案を 01/02/03 として、その要素の周辺を **同じ html 内に横並び**（または近接）で示す。既存の見た目・デザイントークンに沿わせる。",
+      ].join("\n\n")
+    : [
+        `Produce **3 alternative versions** of element \`${selector}\` ${el} in the design mock \`${filePath}\`.`,
+        dir ? `Direction: ${dir}` : "No direction specified — vary structure/tone across the 3.",
+        "Show them as 01/02/03 side by side **in the same html** (or adjacent) around that element. Stay on the existing look / design tokens.",
+      ].join("\n\n");
+}
+
 /** BATCHED element comments on a design MOCK (unified edit: pick an element → comment
  *  on it, alongside text/style edits). Each is anchored to the element's selector +
  *  visible text. The agent updates the mock html (or takes it as design direction). */

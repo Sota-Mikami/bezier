@@ -441,6 +441,14 @@ export const en = {
     placeholder: "Comment on this element for the AI…",
     pickHint: "Pick an element to comment on it.",
   },
+  mockTool: {
+    select: "Select",
+    annotate: "Annotate",
+  },
+  mockVariants: {
+    button: "3 variants",
+    tip: "Ask the AI for 3 variants of this element (the comment above = the direction).",
+  },
   editorComment: {
     button: "Comment",
     placeholder: "Tell the AI how to change this passage…",

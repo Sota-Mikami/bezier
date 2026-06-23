@@ -9,7 +9,7 @@
 // from the old Design tab's strip). Reorder by drag; delete with ×.
 
 import * as React from "react";
-import { Code2, Plus, X, Loader2, Pencil } from "lucide-react";
+import { Code2, Plus, X, Loader2, Pencil, MousePointer2, Sparkles } from "lucide-react";
 
 import { listDocuments, createDocument, type IssueDoc } from "@/lib/issues";
 import {
@@ -20,7 +20,12 @@ import {
 } from "@/lib/variants";
 import { removePath, confirmDialog, writeFile } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { docCommentsPrompt, mockCommentsPrompt, visualEditPrompt } from "@/lib/prompts";
+import {
+  docCommentsPrompt,
+  mockCommentsPrompt,
+  elementVariantsPrompt,
+  visualEditPrompt,
+} from "@/lib/prompts";
 import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
@@ -178,6 +183,9 @@ export function IssueDesign({
   const [editing, setEditing] = React.useState(false);
   const [editHtml, setEditHtml] = React.useState<string | null>(null);
   const [savingMock, setSavingMock] = React.useState(false);
+  // Within Edit, switch between picking elements (style/text/comment) and annotating
+  // (Pin/Pen) — both overlay the SAME live mock iframe (no mode-exit, no freeze).
+  const [mockTool, setMockTool] = React.useState<"select" | "annotate">("select");
   // md text-selection comments accumulate (Notion-style) and send in one batch.
   const [docComments, setDocComments] = React.useState<{ text: string; comment: string }[]>([]);
   const [sendingComments, setSendingComments] = React.useState(false);
@@ -194,7 +202,11 @@ export function IssueDesign({
   const [veTransport] = React.useState<VisualEditTransport>(() =>
     iframeTransport(() => mockFrameRef.current?.contentWindow ?? null),
   );
-  const vedit = useVisualEdit({ active: editing, navKey: selected ?? "", transport: veTransport });
+  const vedit = useVisualEdit({
+    active: editing && mockTool === "select",
+    navKey: selected ?? "",
+    transport: veTransport,
+  });
   const clearVedit = vedit.clearEdits;
 
   // Switching tabs exits Edit Mode cleanly (done in cleanup — fires on tab change /
@@ -208,6 +220,7 @@ export function IssueDesign({
       setDocComments([]);
       setMockComments([]);
       setMockCommentDraft("");
+      setMockTool("select");
     };
   }, [selected, clearVedit]);
 
@@ -241,6 +254,7 @@ export function IssueDesign({
   const enterEdit = () => {
     if (selectedItem?.kind !== "variant" || !html) return;
     setEditHtml(buildEditableSrcdoc(html));
+    setMockTool("select");
     setEditing(true);
   };
   const exitEdit = () => {
@@ -257,6 +271,27 @@ export function IssueDesign({
     if (!sel || !c) return;
     setMockComments((arr) => [...arr, { selector: sel.selector, text: sel.text, comment: c }]);
     setMockCommentDraft("");
+  };
+
+  // Foundation for per-element 3-variants (Impeccable-style): ask the agent for 3
+  // alternatives of the picked element (the comment draft, if any, is the direction).
+  const requestElementVariants = async () => {
+    const item = selectedItem;
+    const sel = vedit.selected;
+    if (item?.kind !== "variant" || !sel || sendingComments) return;
+    setSendingComments(true);
+    try {
+      const prompt = elementVariantsPrompt(item.variant.path, sel.selector, sel.text, mockCommentDraft);
+      const injected = await session.injectToAgent(prompt);
+      if (!injected) {
+        await session.sendDesignFeedback(prompt, tt("design.applyMockNote", { label: item.label }));
+      }
+      setMockCommentDraft("");
+    } catch {
+      /* surfaced via session.error */
+    } finally {
+      setSendingComments(false);
+    }
   };
 
   // Send the accumulated element comments in ONE batch — injected into the running
@@ -526,10 +561,38 @@ export function IssueDesign({
             </header>
             {editing ? (
               <>
+                {/* Tool switcher (Pen/Pin merge): Select = pick element → style/text/
+                    comment; Annotate = Pin/Pen over the SAME live mock iframe (no freeze,
+                    since the mock is an iframe — overlay sits over it). */}
+                <div className="flex h-8 shrink-0 items-center gap-1 border-b px-3">
+                  {(
+                    [
+                      ["select", MousePointer2, t("mockTool.select")],
+                      ["annotate", Pencil, t("mockTool.annotate")],
+                    ] as const
+                  ).map(([id, Icon, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setMockTool(id)}
+                      className={cn(
+                        "flex h-6 items-center gap-1 rounded px-2 text-[11px]",
+                        mockTool === id
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="size-3" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex min-h-0 flex-1">
-                  <aside className="w-[230px] shrink-0 overflow-hidden border-r bg-card/40">
-                    <EditLayerPanel vedit={vedit} />
-                  </aside>
+                  {mockTool === "select" && (
+                    <aside className="w-[230px] shrink-0 overflow-hidden border-r bg-card/40">
+                      <EditLayerPanel vedit={vedit} />
+                    </aside>
+                  )}
                   <div className="relative min-h-0 flex-1 bg-white">
                     <iframe
                       ref={mockFrameRef}
@@ -537,10 +600,25 @@ export function IssueDesign({
                       sandbox="allow-scripts allow-same-origin"
                       srcDoc={editHtml ?? ""}
                       title={selectedItem.label}
-                      onLoad={() => veTransport.activate()}
+                      onLoad={() => {
+                        if (mockTool === "select") veTransport.activate();
+                      }}
                       className="size-full bg-white"
                     />
+                    {mockTool === "annotate" && (
+                      <AnnotationLayer
+                        key={`edit-anno-${selectedItem.key}`}
+                        session={session}
+                        surface={designSurface(
+                          session,
+                          selectedItem.variant,
+                          session.canGenerateVariant,
+                          session.reviseDesignPattern,
+                        )}
+                      />
+                    )}
                   </div>
+                  {mockTool === "select" && (
                   <aside className="flex w-[240px] shrink-0 flex-col overflow-hidden border-l bg-card/40">
                     {/* Unified edit: comment on the PICKED element (alongside text/style).
                         Accumulate → one batch send, injected into the running agent. */}
@@ -567,14 +645,27 @@ export function IssueDesign({
                             placeholder={t("mockComment.placeholder")}
                             className="w-full resize-none rounded border bg-background p-1.5 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
                           />
-                          <button
-                            type="button"
-                            onClick={addMockComment}
-                            disabled={!mockCommentDraft.trim()}
-                            className="w-full rounded bg-muted px-2 py-1 text-[11px] font-medium hover:bg-muted-foreground/20 disabled:opacity-50"
-                          >
-                            {t("editorComment.add")}
-                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={addMockComment}
+                              disabled={!mockCommentDraft.trim()}
+                              className="flex-1 rounded bg-muted px-2 py-1 text-[11px] font-medium hover:bg-muted-foreground/20 disabled:opacity-50"
+                            >
+                              {t("editorComment.add")}
+                            </button>
+                            {/* Per-element 3-variants foundation (comment draft = direction). */}
+                            <button
+                              type="button"
+                              onClick={() => void requestElementVariants()}
+                              disabled={sendingComments}
+                              title={t("mockVariants.tip")}
+                              className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                            >
+                              <Sparkles className="size-3" />
+                              {t("mockVariants.button")}
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="text-[10px] text-muted-foreground">{t("mockComment.pickHint")}</div>
@@ -614,6 +705,7 @@ export function IssueDesign({
                       <EditStylePanel vedit={vedit} />
                     </div>
                   </aside>
+                  )}
                 </div>
                 <PendingEditsBar
                   vedit={vedit}
