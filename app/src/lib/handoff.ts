@@ -12,6 +12,7 @@
 import { readFile, writeFile } from "@/lib/ipc";
 import { slotPath, listDocuments, type Issue } from "@/lib/issues";
 import { readQa, seedQaFromSpec, parseSpecCriteria, qaToMarkdown } from "@/lib/qa";
+import { readShareUrl } from "@/lib/share-urls";
 
 const trimSlash = (p: string) => p.replace(/\/+$/, "");
 
@@ -34,22 +35,6 @@ async function readPreviewEnv(root: string): Promise<Record<string, string>> {
     return out;
   } catch {
     return {};
-  }
-}
-
-/** The published review/share URL for this issue (deployed app + spec + QA), if the
- *  maker has shared it — read from `.bezier/share-urls.json` (keyed by issue id, the
- *  same SoT use-journey persists). Lets the receiving engineer open the WORKING thing
- *  (not just read the diff, and not the maker-only localhost preview). Null if never shared. */
-async function readReviewUrl(root: string, issueId: string): Promise<string | null> {
-  const txt = await readFile(`${trimSlash(root)}/.bezier/share-urls.json`).catch(() => "");
-  if (!txt.trim()) return null;
-  try {
-    const map = JSON.parse(txt) as Record<string, unknown>;
-    const v = map?.[issueId];
-    return typeof v === "string" && v.trim() ? v : null;
-  } catch {
-    return null;
   }
 }
 
@@ -77,7 +62,7 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
   if (!qa) qa = await seedQaFromSpec(issue).catch(() => []);
 
   const env = await readPreviewEnv(root);
-  const reviewUrl = await readReviewUrl(root, issue.id);
+  const reviewUrl = await readShareUrl(root, issue.id);
 
   return [
     `# Handoff — ${title}`,

@@ -429,6 +429,11 @@ export const en = {
       "Bezier v{version} is available. Download it now?\n\nAfter downloading: open the .dmg, drag Bezier to Applications, then run in Terminal:\nxattr -dr com.apple.quarantine /Applications/Bezier.app",
     download: "Download",
   },
+  terrain: {
+    label: "Now",
+    tooltip:
+      "Where this issue stands — what exists right now (not a completion gate). Bezier is a loop: move forward or back anytime.",
+  },
   welcome: {
     title: "Welcome to Bezier",
     lead: "Write what you want in chat — your coding agent drafts the Spec and implements it in an isolated worktree. Open the repo folder you want to work in to begin.",

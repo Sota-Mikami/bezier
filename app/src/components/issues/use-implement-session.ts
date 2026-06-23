@@ -76,6 +76,7 @@ import { confirmDialog, grantPath, openExternal } from "@/lib/ipc";
 import { notify, ensureNotificationPermission } from "@/lib/notify";
 import { isUntitled, titleFromMessage } from "@/lib/issue-domain";
 import { writeHandoffBundle } from "@/lib/handoff";
+import { gatherTerrain, terrainForAgent } from "@/lib/loop-state";
 import { tt } from "@/lib/i18n";
 import { conflictResolvePrompt } from "@/lib/prompts";
 import type {
@@ -569,16 +570,28 @@ export function useImplementSession(
   // Build a fresh seed handoff and launch it on an existing worktree. Used by the
   // resume fallback (when `claude --continue` finds no prior session). Kept in a
   // ref so the terminal's once-captured exit handler can call the latest closure.
+  // Grounded loop terrain for the agent's per-turn seed (E-4): so its ONE next-move
+  // suggestion references what EXISTS (spec/designs/impl/share/PR), not a guess.
+  // Best-effort — a read failure just omits the terrain block.
+  const seedTerrain = React.useCallback(async (): Promise<string[] | undefined> => {
+    try {
+      return terrainForAgent(await gatherTerrain(root, issue));
+    } catch {
+      return undefined;
+    }
+  }, [root, issue]);
+
   const seedLaunch = React.useCallback(
     async (worktreePath: string) => {
       if (!selectedAgent?.available) return;
       const wd = workDir(worktreePath);
       const { content } = await buildImplementHandoff(root, issue, wd, {
         subPath,
+        terrain: await seedTerrain(),
       });
       launchAgent(selectedAgent, wd, { prompt: content });
     },
-    [selectedAgent, root, issue, launchAgent, workDir, subPath],
+    [selectedAgent, root, issue, launchAgent, workDir, subPath, seedTerrain],
   );
   const seedLaunchRef = React.useRef(seedLaunch);
   React.useEffect(() => {
@@ -656,6 +669,7 @@ export function useImplementSession(
       onStatusChange("in-progress");
       const { content } = await buildImplementHandoff(root, issue, workDir(wt), {
         subPath,
+        terrain: await seedTerrain(),
       });
       setRef(newRef);
       launchAgent(selectedAgent, workDir(wt), { prompt: content });
@@ -679,6 +693,7 @@ export function useImplementSession(
     logEvent,
     workDir,
     subPath,
+    seedTerrain,
   ]);
 
   // Chat-first start (DEC-023): begin from a free-text message instead of a
@@ -721,6 +736,7 @@ export function useImplementSession(
         const { content } = await buildImplementHandoff(root, issue, workDir(wt), {
           userMessage: msg,
           subPath,
+          terrain: await seedTerrain(),
         });
         setRef(newRef);
         launchAgent(selectedAgent, workDir(wt), { prompt: content });
@@ -744,6 +760,7 @@ export function useImplementSession(
       logEvent,
       workDir,
       subPath,
+      seedTerrain,
     ],
   );
 
@@ -777,6 +794,7 @@ export function useImplementSession(
       const { content } = await buildImplementHandoff(root, issue, workDir(ref.path), {
         followUp: true,
         subPath,
+        terrain: await seedTerrain(),
       });
       // Soft (default): `--continue` resumes the prior conversation AND keeps the
       // worktree changes, so the maker's iterative edits build on context. Hard:
@@ -791,7 +809,7 @@ export function useImplementSession(
     } finally {
       setAction(null);
     }
-  }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir, subPath]);
+  }, [ref, action, selectedAgent, root, issue, launchAgent, logEvent, workDir, subPath, seedTerrain]);
 
   // Design 別案を作る (DEC-053/054): one agent turn that writes N throwaway
   // grayscale WIREFRAMES (design/NN-slug.html), each a different direction — the

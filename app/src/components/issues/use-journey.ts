@@ -18,7 +18,7 @@ import {
   renderProgress,
   type UnlistenFn,
 } from "@/lib/pty";
-import { readFile, writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
+import { writeFile, appDataDir, removeVercelDir } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
 import { getSettings } from "@/lib/settings";
 import { notify } from "@/lib/notify";
@@ -29,6 +29,7 @@ import {
   type JourneyDesignTab,
   type JourneyProtoTab,
 } from "@/lib/journey";
+import { readShareUrl, writeShareUrl } from "@/lib/share-urls";
 import { vercelProjectName, runToExit } from "./use-publish";
 
 export type JourneyStatus = "idle" | "building" | "ready" | "error";
@@ -99,36 +100,11 @@ const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]/g;
 const LOG_CAP = 20_000;
 const PTY_PREFIX = "journey:";
 
-// Durable record of the SHARE-PAGE URL (DEC-135). Previously the share URL lived
-// only in React state, so an app restart "lost" an already-shared link. Persist it
-// on DISK under the repo's `.bezier` store (gitignored), keyed by issue id — the
-// source of truth that survives restarts so the URL stays findable in Share.
-const SHARE_URLS_FILE = (root: string) => `${root}/.bezier/share-urls.json`;
-async function loadShareUrlDisk(root: string, id: string): Promise<string | null> {
-  try {
-    const map = JSON.parse(await readFile(SHARE_URLS_FILE(root))) as Record<string, unknown>;
-    const v = map?.[id];
-    return typeof v === "string" ? v : null;
-  } catch {
-    return null;
-  }
-}
-async function saveShareUrlDisk(root: string, id: string, value: string | null): Promise<void> {
-  try {
-    let map: Record<string, string> = {};
-    try {
-      const parsed = JSON.parse(await readFile(SHARE_URLS_FILE(root))) as unknown;
-      if (parsed && typeof parsed === "object") map = parsed as Record<string, string>;
-    } catch {
-      /* no file yet */
-    }
-    if (value) map[id] = value;
-    else delete map[id];
-    await writeFile(SHARE_URLS_FILE(root), `${JSON.stringify(map, null, 2)}\n`);
-  } catch {
-    /* ignore */
-  }
-}
+// Durable record of the SHARE-PAGE URL (DEC-135) lives in `@/lib/share-urls` (the
+// single SoT shared with handoff.ts + loop-state). Thin aliases keep the call sites
+// below readable.
+const loadShareUrlDisk = readShareUrl;
+const saveShareUrlDisk = writeShareUrl;
 
 export function useJourney(
   root: string,

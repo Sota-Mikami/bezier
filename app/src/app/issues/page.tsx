@@ -50,6 +50,7 @@ import {
 import { purgeTrashed } from "@/lib/issue-actions";
 import { IssueAgentPanel } from "@/components/issues/issue-agent-panel";
 import { IssueDesign } from "@/components/issues/issue-design";
+import { TerrainChip } from "@/components/issues/terrain-chip";
 import { BuildReview } from "@/components/issues/build-review";
 import { RepoLive } from "@/components/issues/repo-live";
 import { AnnotationModeProvider, AnnotationToggle } from "@/components/issues/annotation-mode";
@@ -883,6 +884,7 @@ function IssueWorkbench({
             setIssue={setIssue}
             locked={repoLocked}
           />
+          <TerrainChip root={root} issue={issue} />
         </div>
 
         {/* Center: the view switcher, raised to the header (one level up). */}
