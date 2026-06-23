@@ -706,6 +706,8 @@ export function PendingEditsBar({
   onApply,
   onDiscard,
   applyLabel,
+  onSecondary,
+  secondaryLabel,
 }: {
   vedit: VisualEdit;
   busy: boolean;
@@ -713,6 +715,9 @@ export function PendingEditsBar({
   onDiscard: () => void;
   /** Override the primary action label (Preview = "apply to code"; mock = "save"). */
   applyLabel?: string;
+  /** Optional secondary action (the mock uses it for "apply to code" alongside Save). */
+  onSecondary?: () => void;
+  secondaryLabel?: string;
 }) {
   const t = useT();
   if (vedit.editCount === 0) return null;
@@ -736,6 +741,11 @@ export function PendingEditsBar({
       <Button size="sm" variant="ghost" className="h-7" disabled={busy} onClick={onDiscard}>
         {t("edit.discard")}
       </Button>
+      {onSecondary && secondaryLabel && (
+        <Button size="sm" variant="outline" className="h-7" disabled={busy} onClick={onSecondary}>
+          {secondaryLabel}
+        </Button>
+      )}
       <Button size="sm" className="h-7 gap-1.5" disabled={busy} onClick={onApply}>
         {busy && <Loader2 className="size-3.5 animate-spin" />}
         {applyLabel ?? t("edit.applyToCode")}

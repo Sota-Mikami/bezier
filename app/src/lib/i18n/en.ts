@@ -699,6 +699,7 @@ export const en = {
     editDone: "Done",
     editing: "Editing",
     editTip: "Edit this mock directly — Layer / Style / Text. Saved back to the html file.",
+    applyMockNote: "apply mock edits to code ({label})",
     variantFallback: "Design {id}",
     deleteConfirm: "Delete “{label}”?",
     deleteConfirmTitle: "Confirm delete",

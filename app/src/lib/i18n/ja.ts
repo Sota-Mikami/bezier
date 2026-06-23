@@ -698,6 +698,7 @@ export const ja: Messages = {
     editDone: "完了",
     editing: "編集中",
     editTip: "このモックを直接編集 — Layer / Style / テキスト。html ファイルに書き戻します。",
+    applyMockNote: "モックの編集をコードに反映（{label}）",
     variantFallback: "案 {id}",
     deleteConfirm: "「{label}」を削除しますか？",
     deleteConfirmTitle: "削除の確認",

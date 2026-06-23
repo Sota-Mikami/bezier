@@ -20,7 +20,7 @@ import {
 } from "@/lib/variants";
 import { removePath, confirmDialog, writeFile } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { docTextCommentPrompt } from "@/lib/prompts";
+import { docTextCommentPrompt, visualEditPrompt } from "@/lib/prompts";
 import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
@@ -240,6 +240,23 @@ export function IssueDesign({
     }
   };
 
+  // Apply the mock's visual edits to the REAL repo code via the agent (the seam:
+  // skip re-describing the changes in chat — hand the structured diffs over directly).
+  const applyMockToCode = async () => {
+    const item = selectedItem;
+    if (item?.kind !== "variant" || vedit.editCount === 0) return;
+    setSavingMock(true);
+    try {
+      const prompt = visualEditPrompt(item.label, vedit.diffs, vedit.reorders, vedit.textEdits);
+      await session.sendDesignFeedback(prompt, tt("design.applyMockNote", { label: item.label }));
+    } catch {
+      /* surfaced via session.error */
+    } finally {
+      setSavingMock(false);
+      exitEdit();
+    }
+  };
+
   const addDoc = async (type: string) => {
     setAdding(false);
     try {
@@ -451,6 +468,8 @@ export function IssueDesign({
                   onApply={() => void saveMock()}
                   onDiscard={exitEdit}
                   applyLabel={t("edit.saveToMock")}
+                  onSecondary={() => void applyMockToCode()}
+                  secondaryLabel={t("edit.applyToCode")}
                 />
               </>
             ) : (
