@@ -339,14 +339,14 @@ export function elementVariantsPrompt(
   const dir = directive.trim();
   return ja
     ? [
-        `デザインモック \`${filePath}\` の要素 \`${selector}\` ${el} について、**3つの別案**を作ってください。`,
+        `デザインモック \`${filePath}\` の要素 \`${selector}\` ${el} の **3つの別案** を作ってください。`,
         dir ? `方向性: ${dir}` : "方向性の指定はなし。構造・トーンを変えて3案。",
-        "各案を 01/02/03 として、その要素の周辺を **同じ html 内に横並び**（または近接）で示す。既存の見た目・デザイントークンに沿わせる。",
+        "**3案は必ず1つの html ファイルにまとめる**（**案ごとに別ファイルに分割しない**）— 同じ `design/` フォルダに新しい比較用 html を **1つだけ** 作る（番号は既存の最大+1・デザイン規約に従う）。各案に「案 01 / 02 / 03」のラベルを付け、**横並び・縦並びは内容に合わせて見比べやすい方を選ぶ**。1枚の中で見比べて判断できるよう、その要素の周辺の文脈も少し含める。既存の見た目・デザイントークンに沿わせる。",
       ].join("\n\n")
     : [
-        `Produce **3 alternative versions** of element \`${selector}\` ${el} in the design mock \`${filePath}\`.`,
+        `Produce **3 alternative versions** of element \`${selector}\` ${el} from the design mock \`${filePath}\`.`,
         dir ? `Direction: ${dir}` : "No direction specified — vary structure/tone across the 3.",
-        "Show them as 01/02/03 side by side **in the same html** (or adjacent) around that element. Stay on the existing look / design tokens.",
+        "**Put all 3 in ONE html file** (**never split into separate files**) — create **a single** new comparison html in the same `design/` folder (next number, per the design convention). Label each (Variant 01 / 02 / 03) and lay them out **side by side OR stacked — whichever is easiest to compare for this content**. Include a bit of surrounding context so they're judgeable in one view. Stay on the existing look / design tokens.",
       ].join("\n\n");
 }
 
