@@ -441,6 +441,13 @@ export const en = {
     note: "next step",
     dismiss: "Dismiss",
   },
+  editorComment: {
+    button: "Comment",
+    placeholder: "Tell the AI how to change this passage…",
+    cancel: "Cancel",
+    send: "Send to AI",
+    note: "comment on {label}",
+  },
   welcome: {
     title: "Welcome to Bezier",
     lead: "Write what you want in chat — your coding agent drafts the Spec and implements it in an isolated worktree. Open the repo folder you want to work in to begin.",

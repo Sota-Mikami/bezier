@@ -210,6 +210,7 @@ export function SlotEditor({
   path,
   label,
   onExternalChange,
+  onComment,
 }: {
   path: string;
   label?: string;
@@ -219,6 +220,8 @@ export function SlotEditor({
    * it (DEC-012 §7). NOT fired on the dirty-conflict path (the user is mid-edit).
    */
   onExternalChange?: () => void;
+  /** Maker selected text + commented → route to the AI (semantic span, not a pin). */
+  onComment?: (selectedText: string, comment: string) => void;
 }) {
   // Remount only on path change so each load re-baselines from disk. Saves do
   // NOT remount (that would jump the caret) — autosave just writes in place.
@@ -228,6 +231,7 @@ export function SlotEditor({
       path={path}
       label={label}
       onExternalChange={onExternalChange}
+      onComment={onComment}
     />
   );
 }
@@ -236,10 +240,12 @@ function SlotEditorInner({
   path,
   label,
   onExternalChange,
+  onComment,
 }: {
   path: string;
   label?: string;
   onExternalChange?: () => void;
+  onComment?: (selectedText: string, comment: string) => void;
 }) {
   const t = useT();
   const [doc, setDoc] = React.useState<OpenDoc | null>(null);
@@ -566,6 +572,7 @@ function SlotEditorInner({
               onDirtyChange={setDirty}
               onEdit={handleEdit}
               onScrollLine={setScrollTopLine}
+              onComment={onComment}
               flashLines={flashLines}
               flushOnUnmount
             />

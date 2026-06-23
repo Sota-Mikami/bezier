@@ -61,6 +61,7 @@ import {
   dirOf,
   dragHasFiles,
 } from "@/components/workspace/markdown-images";
+import { MessageSquarePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { tt } from "@/lib/i18n";
 
@@ -119,6 +120,10 @@ export interface MarkdownEditorProps {
   /** Fired (rAF-throttled) with the 1-based line at the top of the viewport, so a
    * ToC can highlight the section in view (DEC-057). */
   onScrollLine?: (line: number) => void;
+  /** Fired when the maker selects text in the doc and adds a comment — routes to the
+   *  AI as a revision instruction anchored to the SELECTED TEXT (a semantic span, not
+   *  a coordinate pin). When set, a floating "Comment" button appears on selection. */
+  onComment?: (selectedText: string, comment: string) => void;
   className?: string;
 }
 
@@ -678,6 +683,7 @@ function MarkdownEditorInner(
     flushOnUnmount,
     flashLines,
     onScrollLine,
+    onComment,
     className,
   } = props;
 
@@ -699,6 +705,7 @@ function MarkdownEditorInner(
   const onDirtyRef = React.useRef(onDirtyChange);
   const onEditRef = React.useRef(onEdit);
   const onScrollLineRef = React.useRef(onScrollLine);
+  const onCommentRef = React.useRef(onComment);
   const flushOnUnmountRef = React.useRef(flushOnUnmount);
   const saveRef = React.useRef<() => Promise<void>>(async () => {});
   React.useEffect(() => {
@@ -709,8 +716,20 @@ function MarkdownEditorInner(
     onDirtyRef.current = onDirtyChange;
     onEditRef.current = onEdit;
     onScrollLineRef.current = onScrollLine;
+    onCommentRef.current = onComment;
     flushOnUnmountRef.current = flushOnUnmount;
   });
+
+  // Text-selection comment (DEC: semantic md comment, not an XY pin). On a non-empty
+  // selection we surface a floating "Comment" button at the selection; submitting
+  // routes {selected text, comment} to the AI via onComment.
+  const [selComment, setSelComment] = React.useState<{
+    text: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  const [commentOpen, setCommentOpen] = React.useState(false);
+  const [commentDraft, setCommentDraft] = React.useState("");
 
   const dirtyRef = React.useRef(false);
   const markDirty = React.useCallback((next: boolean) => {
@@ -728,6 +747,26 @@ function MarkdownEditorInner(
       if (!u.docChanged) return;
       markDirty(u.state.doc.toString() !== docRef.current.body);
       onEditRef.current?.();
+    });
+
+    // Surface a floating "Comment" button while text is selected (only when a parent
+    // wired onComment). Tracks the selection start through scroll/geometry changes.
+    const selectionListener = EditorView.updateListener.of((u) => {
+      if (!onCommentRef.current) return;
+      if (!u.selectionSet && !u.docChanged && !u.geometryChanged && !u.viewportChanged) return;
+      const r = u.state.selection.main;
+      if (r.empty) {
+        setSelComment(null);
+        setCommentOpen(false);
+        return;
+      }
+      const text = u.state.sliceDoc(r.from, r.to).trim();
+      const coords = u.view.coordsAtPos(r.from);
+      if (!text || !coords) {
+        setSelComment(null);
+        return;
+      }
+      setSelComment({ text, top: coords.top, left: coords.left });
     });
 
     // Doc directory: resolves relative image paths for inline render + is where
@@ -830,6 +869,7 @@ function MarkdownEditorInner(
           editorTheme,
           cmPlaceholder(tt("markdownEditor.placeholder")),
           updateListener,
+          selectionListener,
           EditorView.contentAttributes.of({
             spellcheck: "false",
             "aria-label": tt("markdownEditor.ariaLabel"),
@@ -952,11 +992,80 @@ function MarkdownEditorInner(
     [save, markDirty],
   );
 
+  const submitComment = () => {
+    const c = commentDraft.trim();
+    if (!c || !selComment) return;
+    onCommentRef.current?.(selComment.text, c);
+    setCommentDraft("");
+    setCommentOpen(false);
+    setSelComment(null);
+  };
+
   return (
-    <div
-      ref={hostRef}
-      className={cn("h-full w-full overflow-hidden", className)}
-    />
+    <div className={cn("relative h-full w-full overflow-hidden", className)}>
+      <div ref={hostRef} className="h-full w-full overflow-hidden" />
+      {selComment && onComment && (
+        <div
+          className="fixed z-50"
+          style={{ top: Math.max(8, selComment.top - 40), left: selComment.left }}
+        >
+          {!commentOpen ? (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()} // keep the editor selection alive
+              onClick={() => {
+                setCommentOpen(true);
+                setCommentDraft("");
+              }}
+              className="flex h-7 items-center gap-1 rounded-md border bg-popover px-2 text-[11px] font-medium text-foreground shadow-md hover:bg-muted"
+            >
+              <MessageSquarePlus className="size-3.5 text-primary" />
+              {tt("editorComment.button")}
+            </button>
+          ) : (
+            <div className="w-64 rounded-md border bg-popover p-2 shadow-lg">
+              <div className="mb-1 line-clamp-2 rounded bg-muted px-1.5 py-1 text-[10px] text-muted-foreground">
+                “{selComment.text.slice(0, 120)}
+                {selComment.text.length > 120 ? "…" : ""}”
+              </div>
+              <textarea
+                autoFocus
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || !e.shiftKey)) {
+                    e.preventDefault();
+                    submitComment();
+                  } else if (e.key === "Escape") {
+                    setCommentOpen(false);
+                  }
+                }}
+                rows={2}
+                placeholder={tt("editorComment.placeholder")}
+                className="w-full resize-none rounded border bg-background p-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+              <div className="mt-1.5 flex justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCommentOpen(false)}
+                  className="rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                >
+                  {tt("editorComment.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={submitComment}
+                  disabled={!commentDraft.trim()}
+                  className="rounded bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                >
+                  {tt("editorComment.send")}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

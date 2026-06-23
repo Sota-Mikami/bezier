@@ -20,6 +20,7 @@ import {
 } from "@/lib/variants";
 import { removePath, confirmDialog, writeFile } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { docTextCommentPrompt } from "@/lib/prompts";
 import { useT, tt } from "@/lib/i18n";
 import { useOrdered, useDragReorder } from "@/lib/use-ordered";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
@@ -382,6 +383,12 @@ export function IssueDesign({
               path={selectedItem.key}
               label={selectedItem.label}
               onExternalChange={onChange}
+              onComment={(text, comment) =>
+                void session.sendDesignFeedback(
+                  docTextCommentPrompt(selectedItem.key, text, comment),
+                  tt("editorComment.note", { label: selectedItem.label }),
+                )
+              }
             />
             {annotating && (
               <AnnotationLayer

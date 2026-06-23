@@ -440,6 +440,13 @@ export const ja: Messages = {
     note: "次の一手",
     dismiss: "閉じる",
   },
+  editorComment: {
+    button: "コメント",
+    placeholder: "この箇所をどう直すか AI に伝える…",
+    cancel: "キャンセル",
+    send: "AIに送る",
+    note: "「{label}」にコメント",
+  },
   welcome: {
     title: "Bezier へようこそ",
     lead: "やりたいことをチャットで書くと、あなたのコーディングエージェントが Spec を起こし、隔離された worktree で実装まで進めます。まず作業する repo フォルダを開いてください。",

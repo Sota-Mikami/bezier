@@ -329,6 +329,42 @@ export function docFeedbackPrompt(label: string, docPath: string, lines: string[
   return feedbackBody(p, [p.docHeader(label), p.docIntro(docPath)], lines, shot);
 }
 
+/** Text-selection comment on a doc (a SEMANTIC span, not an XY pin): the maker
+ *  selected a passage and gave an instruction; route it to the agent to update the
+ *  doc, anchored to the selected text's meaning. */
+export function docTextCommentPrompt(docPath: string, selectedText: string, comment: string): string {
+  const ja = getSettings().locale === "ja";
+  const sel = selectedText.length > 600 ? `${selectedText.slice(0, 600)}…` : selectedText;
+  const quoted = `> ${sel.split("\n").join("\n> ")}`;
+  return ja
+    ? [
+        `\`${docPath}\` の次の箇所について、maker から修正指示があります。`,
+        "",
+        "## 対象の箇所（選択テキスト）",
+        "",
+        quoted,
+        "",
+        "## 指示",
+        "",
+        comment,
+        "",
+        "この指示に沿って **その箇所を中心に** ドキュメントを更新してください（選択範囲の意味に基づく・座標ではない）。必要なら前後も整える。完了したら何を変えたか一言。",
+      ].join("\n")
+    : [
+        `The maker left a revision instruction on a passage of \`${docPath}\`.`,
+        "",
+        "## Target passage (selected text)",
+        "",
+        quoted,
+        "",
+        "## Instruction",
+        "",
+        comment,
+        "",
+        "Update the document per this instruction, **centered on that passage** (anchored to the selected text's meaning, not coordinates). Adjust surrounding text only if needed. State briefly what you changed when done.",
+      ].join("\n");
+}
+
 export function mapFeedbackPrompt(routes: string[], lines: string[], shot: string | null): string {
   const p = promptPhrases();
   return feedbackBody(p, [p.mapHeader, p.mapIntro(routes.join(", ") || p.routesUnset)], lines, shot);
