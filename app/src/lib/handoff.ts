@@ -57,8 +57,11 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
   }
 
   // QA: saved table, else seeded from the spec's acceptance criteria (mirrors what
-  // the app/share show, so the engineer gets the same cases).
+  // the app/share show, so the engineer gets the same cases). Track whether it was
+  // SEEDED (auto, never run) vs SAVED (human-curated) so the receiving engineer can
+  // tell them apart — otherwise auto-rows read as if someone verified them (Daniel).
   let qa = await readQa(issue).catch(() => null);
+  const qaSeeded = !qa;
   if (!qa) qa = await seedQaFromSpec(issue).catch(() => []);
 
   const env = await readPreviewEnv(root);
@@ -76,7 +79,10 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
           `> 🔗 **動くものを見る（レビューページ）**: ${reviewUrl}`,
           "> 実装済みアプリ＋Spec＋QA を1ページで確認できます（作り手のローカル localhost と違い、このリンクはそのまま開けます）。",
         ]
-      : []),
+      : [
+          "",
+          "> ℹ️ **共有レビューページは未発行です。** 動作を見るには、この branch を checkout して dev サーバを起動してください（接続先 env は下記「プレビューが叩いた環境」を参照）。",
+        ]),
     "",
     "## なぜ / 何を（Spec）",
     "",
@@ -96,7 +102,11 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
     "",
     "## QA",
     "",
-    qa.length ? qaToMarkdown(qa) : "_（QA 未作成）_",
+    qa.length
+      ? qaSeeded
+        ? `> ⚠️ **以下は Spec の受入基準から自動生成した QA で、まだ実行・検証されていません**（人が確認したものではありません）。引き継ぎ前に作り手と実行可否を確認してください。\n\n${qaToMarkdown(qa)}`
+        : qaToMarkdown(qa)
+      : "_（QA 未作成）_",
     "",
     "## プレビューが叩いた環境（Preview env）",
     "",
