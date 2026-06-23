@@ -30,10 +30,12 @@ export function designSurface(
         lines,
         shot,
       ),
-    // The variant path doesn't gate on a live agent, so it always "sends" (true).
-    send: (p, n) =>
-      revise(p, tt("designVariants.reviseNote", { id: pattern.id, note: n })).then(
-        () => true,
-      ),
+    // Inject into the running agent's chat (no restart); fall back to a fresh revise
+    // turn when none is live. The variant path doesn't gate on a live agent.
+    send: async (p, n) => {
+      if (await session.injectToAgent(p)) return true;
+      await revise(p, tt("designVariants.reviseNote", { id: pattern.id, note: n }));
+      return true;
+    },
   };
 }

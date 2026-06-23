@@ -102,9 +102,7 @@ export function AnnotationLayer({
   const [draftRect, setDraftRect] = React.useState<Rect | null>(null);
   const [captureMode, setCaptureMode] = React.useState<CaptureMode>("none");
   const [busy, setBusy] = React.useState(false);
-  // A redo stack + a single "send the whole batch with this instruction" note.
   const [redoStack, setRedoStack] = React.useState<Annotation[]>([]);
-  const [batchNote, setBatchNote] = React.useState("");
 
   // Load the live pins for this surface (survive navigation / restart). Re-keyed
   // by surface.key so switching Design patterns swaps the pin set.
@@ -327,7 +325,7 @@ export function AnnotationLayer({
   );
 
   const send = React.useCallback(
-    async (batch: Annotation[], note?: string) => {
+    async (batch: Annotation[]) => {
       if (batch.length === 0) return;
       if (!surface.canSend) {
         await messageDialog(surface.cannotSendMessage, {
@@ -339,10 +337,10 @@ export function AnnotationLayer({
       try {
         const shot = await captureShot(false);
         const ph = promptPhrases();
-        const marks = batch.map((a) => `${numberOf(a.id)}. [${describe(a)}] ${a.text.trim() || ph.markFallback}`);
-        const lines = note?.trim()
-          ? [ph.overall(note.trim()), "", ...marks]
-          : marks;
+        // Each annotation's own text IS the instruction (DEC: no batch-level note).
+        const lines = batch.map(
+          (a) => `${numberOf(a.id)}. [${describe(a)}] ${a.text.trim() || ph.markFallback}`,
+        );
         const promptText = surface.buildPrompt(lines, shot);
         const sent = await surface.send(
           promptText,
@@ -350,7 +348,6 @@ export function AnnotationLayer({
         );
         // Cancelled (e.g. declined to interrupt a live agent) — keep the drafts as-is.
         if (!sent) return;
-        setBatchNote("");
         sentTurnRef.current = true;
         sawRunningRef.current = false;
         const ids = new Set(batch.map((a) => a.id));
@@ -517,18 +514,6 @@ export function AnnotationLayer({
               <span className="shrink-0 px-1 text-xs whitespace-nowrap text-muted-foreground">
                 {t("annotations.unsentCount", { count: drafts.length })}
               </span>
-              <input
-                value={batchNote}
-                onChange={(e) => setBatchNote(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && drafts.length && !busy) {
-                    e.preventDefault();
-                    void send(drafts, batchNote);
-                  }
-                }}
-                placeholder={t("annotations.batchNotePlaceholder")}
-                className="h-7 w-44 min-w-0 rounded-md border bg-background px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring sm:w-56"
-              />
               <button
                 type="button"
                 title={t("annotations.undo")}
@@ -559,7 +544,7 @@ export function AnnotationLayer({
               <button
                 type="button"
                 disabled={busy || drafts.length === 0}
-                onClick={() => void send(drafts, batchNote)}
+                onClick={() => void send(drafts)}
                 className="flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}

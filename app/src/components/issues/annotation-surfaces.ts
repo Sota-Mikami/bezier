@@ -22,7 +22,7 @@ export function docAnnotationSurface(
     canSend: true,
     cannotSendMessage: tt("session.noAgent"),
     buildPrompt: (lines, shot) => docFeedbackPrompt(label, docPath, lines, shot),
-    send: (p, n) => session.sendDesignFeedback(p, n),
+    send: async (p, n) => (await session.injectToAgent(p)) || session.sendDesignFeedback(p, n),
   };
 }
 
@@ -36,7 +36,7 @@ export function mapAnnotationSurface(
     canSend: !!session.ref,
     cannotSendMessage: tt("map.needWorktree"),
     buildPrompt: (lines, shot) => mapFeedbackPrompt(routes, lines, shot),
-    send: (p, n) => session.sendDesignFeedback(p, n),
+    send: async (p, n) => (await session.injectToAgent(p)) || session.sendDesignFeedback(p, n),
   };
 }
 
@@ -47,6 +47,6 @@ export function qaAnnotationSurface(session: ImplementSession): AnnotationSurfac
     canSend: true,
     cannotSendMessage: tt("session.noAgent"),
     buildPrompt: (lines, shot) => qaFeedbackPrompt(lines, shot),
-    send: (p, n) => session.sendDesignFeedback(p, n),
+    send: async (p, n) => (await session.injectToAgent(p)) || session.sendDesignFeedback(p, n),
   };
 }
