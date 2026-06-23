@@ -5,6 +5,8 @@ import {
   buildDevCommand,
   verdictFor,
   isLoopbackUrl,
+  parseDeclaredPreviewUrl,
+  previewUrlDeclPath,
   type HttpProbeResult,
 } from "./preview";
 
@@ -138,5 +140,41 @@ describe("isLoopbackUrl (DEC-129 attach mode)", () => {
     expect(isLoopbackUrl("ftp://localhost")).toBe(false);
     expect(isLoopbackUrl("not a url")).toBe(false);
     expect(isLoopbackUrl("")).toBe(false);
+  });
+});
+
+describe("parseDeclaredPreviewUrl (DEC-141 #5 attach-first)", () => {
+  it("reads a bare loopback URL line, normalized to origin", () => {
+    expect(parseDeclaredPreviewUrl("http://localhost:3000")).toBe("http://localhost:3000/");
+    expect(parseDeclaredPreviewUrl("http://localhost:3000/some/path")).toBe("http://localhost:3000/");
+  });
+  it("extracts a URL wrapped in prose, trims trailing punctuation", () => {
+    expect(parseDeclaredPreviewUrl("Preview: http://localhost:5173.")).toBe("http://localhost:5173/");
+    expect(parseDeclaredPreviewUrl("running at (http://127.0.0.1:8080)")).toBe("http://127.0.0.1:8080/");
+  });
+  it("skips comments / blank lines and takes the first usable line", () => {
+    expect(parseDeclaredPreviewUrl("# my notes\n\nhttp://localhost:4100\n")).toBe(
+      "http://localhost:4100/",
+    );
+  });
+  it("rejects a non-loopback (SSRF) URL", () => {
+    expect(parseDeclaredPreviewUrl("https://evil.example.com")).toBeNull();
+    expect(parseDeclaredPreviewUrl("http://192.168.1.5:3000")).toBeNull();
+  });
+  it("returns null for empty / junk", () => {
+    expect(parseDeclaredPreviewUrl("")).toBeNull();
+    expect(parseDeclaredPreviewUrl("\n# only a comment\n")).toBeNull();
+    expect(parseDeclaredPreviewUrl("not a url at all")).toBeNull();
+  });
+});
+
+describe("previewUrlDeclPath", () => {
+  it("is the preview-url file in the issue dir", () => {
+    expect(previewUrlDeclPath("/r/.bezier/drafts/01ABC")).toBe(
+      "/r/.bezier/drafts/01ABC/preview-url",
+    );
+    expect(previewUrlDeclPath("/r/.bezier/drafts/01ABC/")).toBe(
+      "/r/.bezier/drafts/01ABC/preview-url",
+    );
   });
 });

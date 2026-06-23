@@ -1,4 +1,5 @@
 <!-- 作成日: 2026-06-22 / Owner: Principal Engineer + CEO -->
+<!-- ステータス: ①②③ 実装済（2026-06-22・本番13:46反映）。②(b) Rust discover_worktree_url / ②(a)(b) reader=use-preview-server 新 effect(issue worktree・web runner 限定) / ③ 待機カード+格下げ Start / ① previewBlock。検証 tsc0/eslint0/vitest96/cargo。詳細=decisions-log DEC-141 追補。**要 dogfood**。 -->
 # Preview を attach-first に — 確定設計（DEC-141 #5 / cmux 体験）
 
 > **CEO の体験像**: 「**AI Agent が能動的に dev サーバを起動 → Bezier が起動を検知したら自動でブラウザを開く**」を基本に、**手動 URL 入力はフォールバック**（= cmux 体験）。

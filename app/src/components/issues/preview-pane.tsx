@@ -118,12 +118,16 @@ function StatusBadge({ status }: { status: PreviewStatus }) {
 function RunningBadge({
   status,
   onStop,
+  owned = true,
 }: {
   status: PreviewStatus;
   onStop: () => void;
+  /** Bezier manages this dev server (can Stop it). False for an auto-attached /
+   *  external server it merely shows (DEC-141 #5 / DEC-129) — no Stop affordance. */
+  owned?: boolean;
 }) {
   const t = useT();
-  if (status !== "ready" && status !== "starting") {
+  if ((status !== "ready" && status !== "starting") || !owned) {
     return <StatusBadge status={status} />;
   }
   return (
@@ -306,9 +310,13 @@ export function PreviewPane({
   onCaptureDone?: () => void;
 }) {
   const t = useT();
-  const { status, config, apps, selectApp, scriptsDev, log, error, url, configLoaded, attach } =
+  const { status, config, apps, selectApp, scriptsDev, log, error, url, configLoaded, attach, autoAttached } =
     server;
   const externalUrl = config?.externalUrl?.trim() ?? "";
+  // Attach-first waiting state (DEC-141 #5 ③): manual-URL fallback input. The
+  // primary path is auto-detect (the agent starts the server, Bezier finds it);
+  // this lets the maker point at a URL by hand when needed.
+  const [waitUrlInput, setWaitUrlInput] = React.useState("");
   const { on: annotating, setLocked: setAnnotateLocked } = useAnnotationMode();
 
   // Edit Mode (DEC-131): a visual-edit mode living in the Preview header. While ON,
@@ -351,7 +359,11 @@ export function PreviewPane({
     if (viewStateId) setViewState(viewStateId, { previewPath: path });
   }, [path, viewStateId]);
 
-  const running = status === "starting" || status === "ready";
+  // A managed dev server that failed (or crashed after ready) — shows the error body
+  // + the header Start doubles as Retry. The idle/stopped "waiting" state (no error)
+  // is attach-first (DEC-141 #5 ③): its fallback Start lives in the waiting card, so
+  // the header Start no longer competes with the auto-detect messaging.
+  const showError = status === "error" || (status === "stopped" && !!error);
 
   // Measure the pane body so device presets can be CAPPED to it. A native
   // embedded webview can't clip/scroll inside a smaller container (it ignores
@@ -760,7 +772,7 @@ export function PreviewPane({
       {/* Controls: [status/stop] · [responsive + path] · [start/reload/設定] */}
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <RunningBadge status={status} onStop={() => void server.stop()} />
+          <RunningBadge status={status} onStop={() => void server.stop()} owned={!autoAttached} />
           <AppPicker
             apps={apps}
             active={config?.packageDir ?? ""}
@@ -868,7 +880,7 @@ export function PreviewPane({
               {t("preview.editMode")}
             </Button>
           )}
-          {!running && (
+          {showError && (
             <Button
               size="sm"
               className="h-7 gap-1.5"
@@ -1073,7 +1085,7 @@ export function PreviewPane({
             detail={url ?? undefined}
             log={log}
           />
-        ) : status === "error" || (status === "stopped" && error) ? (
+        ) : showError ? (
           // QA 1.B (DEC-130): a server that CRASHED after ready goes to "stopped"
           // WITH an error — surface it (the old code fell through to the "not started"
           // EmptyState, hiding the crash). An explicit Stop clears error → EmptyState.
@@ -1083,11 +1095,72 @@ export function PreviewPane({
             tone="error"
           />
         ) : (
-          <EmptyState
-            icon={<MonitorPlay className="size-6 text-muted-foreground" />}
-            title={t("preview.previewNotStarted")}
-            detail={t("preview.previewNotStartedDetail")}
-          />
+          // Attach-first waiting state (DEC-141 #5 ③): the default is "the agent
+          // starts the dev server, Bezier auto-detects it" — so this is a WAITING
+          // surface, not a "press Start" dead-end. Manual URL + "have Bezier start
+          // it" + Terminal are fallbacks. The auto-detect effect (usePreviewServer)
+          // is already polling; it flips status→ready when it finds a live server.
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{t("preview.waitingTitle")}</p>
+              <p className="max-w-md text-xs text-muted-foreground">{t("preview.waitingDetail")}</p>
+            </div>
+            {config && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const u = waitUrlInput.trim();
+                  if (!isLoopbackUrl(u)) return;
+                  void server.saveConfig({
+                    devCommand: config.devCommand,
+                    port: config.port,
+                    packageDir: config.packageDir,
+                    ...(config.runner ? { runner: config.runner } : {}),
+                    externalUrl: u,
+                  });
+                }}
+                className="flex w-full max-w-sm items-center gap-1.5"
+              >
+                <input
+                  value={waitUrlInput}
+                  onChange={(e) => setWaitUrlInput(e.target.value)}
+                  placeholder={t("preview.waitingUrlPlaceholder")}
+                  spellCheck={false}
+                  className="h-7 min-w-0 flex-1 rounded-md border bg-transparent px-2 font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <Button size="sm" type="submit" disabled={!isLoopbackUrl(waitUrlInput.trim())}>
+                  {t("preview.waitingShowUrl")}
+                </Button>
+              </form>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {/* Fallback: have Bezier start the dev server itself (the old default,
+                  now demoted off the critical path). */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5"
+                disabled={!configLoaded}
+                onClick={() => void server.start()}
+              >
+                <Play className="size-3.5" />
+                {t("preview.waitingStartSelf")}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1.5"
+                onClick={() => {
+                  setPanelTab("terminal");
+                  setPanelOpen(true);
+                }}
+              >
+                <Terminal className="size-3.5" />
+                {t("preview.terminal")}
+              </Button>
+            </div>
+          </div>
         )}
         </div>
         {editing && (

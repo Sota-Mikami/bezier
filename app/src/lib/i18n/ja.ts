@@ -553,6 +553,12 @@ export const ja: Messages = {
     panelTip: "出力ログとターミナル",
     resizePanel: "ドラッグで高さ調整（ダブルクリックでリセット）",
     terminalNeedsServer: "dev サーバーを起動するとここでターミナルを開けます。",
+    waitingTitle: "dev サーバの起動を待っています…",
+    waitingDetail:
+      "エージェントにアプリを起動してもらう（URL は Bezier 向けに書き込まれます）か、自分で起動してください。起動すればここに自動表示されます。",
+    waitingUrlPlaceholder: "または URL を指定 — http://localhost:3000",
+    waitingShowUrl: "表示",
+    waitingStartSelf: "Bezier に起動させる",
   },
 
   edit: {

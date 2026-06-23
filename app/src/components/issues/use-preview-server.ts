@@ -39,6 +39,8 @@ import {
   parseDevServerUrl,
   httpPing,
   httpFrameBlocked,
+  readDeclaredPreviewUrl,
+  discoverWorktreeUrls,
   findFreePort,
   packageCwd,
   hasPackageJson,
@@ -175,6 +177,10 @@ export interface PreviewServer {
   /** Attach mode (DEC-129): pointing at a URL the maker serves themselves (Docker /
    *  Rails / etc.) instead of managing a dev-server process. */
   attach: boolean;
+  /** Attach-first auto-detect (DEC-141 #5): we ADOPTED a dev server the agent/maker
+   *  started (declared <issue.dir>/preview-url, or lsof worktree-scoped) — Bezier
+   *  doesn't own the process, so there's nothing to "Stop", just like attach mode. */
+  autoAttached: boolean;
   /** All runnable apps found in the repo — render a picker when length > 1 (DEC-125). */
   apps: DetectedApp[];
   /** Switch the active app (monorepo): persist its packageDir and restart if running. */
@@ -215,6 +221,10 @@ export function usePreviewServer(
   root: string,
   worktreePath: string | null,
   previewKey: string,
+  /** Attach-first auto-detect (DEC-141 #5 ②a): the per-issue file the agent writes
+   *  its dev-server URL to (`<issue.dir>/preview-url`). Issue previews pass it; Live
+   *  passes null (auto-detect is scoped to issue worktrees — see the effect below). */
+  declUrlFile?: string | null,
 ): PreviewServer {
   const [status, setStatus] = React.useState<PreviewStatus>("idle");
   const [runner, setRunner] = React.useState<RunnerKind>("web");
@@ -230,6 +240,9 @@ export function usePreviewServer(
   // an "open in browser" CTA instead of a blank preview.
   const [frameBlocked, setFrameBlocked] = React.useState(false);
   const [url, setUrl] = React.useState<string | null>(null);
+  // Attach-first auto-detect (DEC-141 #5): true while we're showing a dev server the
+  // agent/maker started (adopted), which Bezier doesn't own (no Stop, like attach).
+  const [autoAttached, setAutoAttached] = React.useState(false);
   const [configLoaded, setConfigLoaded] = React.useState(false);
   const [installing, setInstalling] = React.useState(false);
   const [installCmd, setInstallCmd] = React.useState<string | null>(null);
@@ -878,6 +891,94 @@ export function usePreviewServer(
     };
   }, [externalUrl, previewKey]);
 
+  // Attach-first auto-detect (DEC-141 #5 ②) — issue worktrees only. The agent/maker
+  // starts the dev server; Bezier DETECTS it rather than auto-starting one. While
+  // WAITING (no managed server of ours, no manual external URL), poll for a server
+  // the agent started — (a) the URL it wrote to <issue.dir>/preview-url, then
+  // (b) any loopback port whose owning process cwd is inside THIS worktree (lsof,
+  // worktree-scoped so concurrent issues don't cross-detect). On a live hit, adopt
+  // it like attach (DEC-129); if it dies, fall back to waiting. Scoped to issue
+  // worktrees (worktreePath !== root) so Live's managed/readiness flow is untouched
+  // and the cwd-scoping stays unique. Manual external URL (attach) wins — this
+  // effect bails when one is set, and the attach effect above handles it. Web runner
+  // only: a tauri worktree launches a real dev WINDOW (TauriRunnerPane), so adopting
+  // its inner dev server here would wrongly flip that pane to "running".
+  const autoUrlRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!worktreePath || worktreePath === root || externalUrl || runner !== "web") return;
+    let cancelled = false;
+    // A managed dev server of OURS (fallback "have Bezier start it" / reattach) owns
+    // the pane — read live via refs/registry so we yield without needing reactivity.
+    const managedActive = () =>
+      ptyIdRef.current !== null || startingRef.current || previewRegistry.has(previewKey);
+    const adopt = (target: string) => {
+      autoUrlRef.current = target;
+      setAutoAttached(true);
+      setUrl(target);
+      setFrameBlocked(false); // the native top-level webview ignores X-Frame-Options
+      setError(null);
+      setStatus("ready");
+    };
+    const release = () => {
+      if (autoUrlRef.current === null) return;
+      autoUrlRef.current = null;
+      setAutoAttached(false);
+      setUrl(null);
+      setStatus((s) => (s === "ready" || s === "starting" ? "idle" : s));
+    };
+    const tick = async () => {
+      if (cancelled) return;
+      if (managedActive()) {
+        release(); // our managed server took over → drop any auto-attached state
+        return;
+      }
+      // Keep an adopted URL only while it's alive; otherwise re-discover.
+      const owned = autoUrlRef.current;
+      if (owned) {
+        const up = await httpPing(owned).catch(() => false);
+        if (cancelled || managedActive()) return;
+        if (!up) release();
+        return;
+      }
+      // Discover: (a) the agent's declared URL first, then (b) lsof worktree-scoped.
+      const candidates: string[] = [];
+      if (declUrlFile) {
+        const declared = await readDeclaredPreviewUrl(declUrlFile);
+        if (cancelled) return;
+        if (declared) candidates.push(declared);
+      }
+      if (candidates.length === 0) {
+        const found = await discoverWorktreeUrls(worktreePath);
+        if (cancelled) return;
+        candidates.push(...found);
+      }
+      for (const c of candidates) {
+        if (cancelled || managedActive()) return;
+        const up = await httpPing(c).catch(() => false);
+        if (cancelled || managedActive()) return;
+        if (up) {
+          adopt(c);
+          return;
+        }
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      // Leaving the issue / switching to a manual URL: drop the auto-attached state so
+      // the next owner (managed / attach) re-derives cleanly (mirrors the attach
+      // cleanup above). Steady managed/attach modes never set autoUrlRef, so untouched.
+      if (autoUrlRef.current !== null) {
+        autoUrlRef.current = null;
+        setAutoAttached(false);
+        setUrl(null);
+        setStatus((s) => (s === "ready" || s === "starting" ? "idle" : s));
+      }
+    };
+  }, [worktreePath, root, declUrlFile, externalUrl, previewKey, runner]);
+
   return {
     status,
     runner,
@@ -885,6 +986,7 @@ export function usePreviewServer(
     config,
     cwd,
     attach,
+    autoAttached,
     apps,
     selectApp,
     framework,

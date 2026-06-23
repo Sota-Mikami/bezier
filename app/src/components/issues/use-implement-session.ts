@@ -91,6 +91,7 @@ export type {
 import { usePreviewServer } from "./use-preview-server";
 import { usePublish } from "./use-publish";
 import { useJourney } from "./use-journey";
+import { previewUrlDeclPath } from "@/lib/preview";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -216,6 +217,9 @@ export function useImplementSession(
     root,
     ref ? workDir(ref.path) : null,
     issue.id,
+    // Attach-first auto-detect (DEC-141 #5 ②a): the agent writes its dev-server URL
+    // here (next to spec.md, in the issue dir it reads/writes via --add-dir).
+    previewUrlDeclPath(issue.dir),
   );
   const publish = usePublish(root, ref ? workDir(ref.path) : null, issue.id);
   const journey = useJourney(root, issue.id, issue.title);
@@ -1242,6 +1246,18 @@ export function useImplementSession(
         `https://github.com/${slug}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(ref.branch)}` +
         `?expand=1&title=${encodeURIComponent(issue.title || issue.id)}&body=${encodeURIComponent(body)}`;
       await openExternal(compareUrl).catch(() => {});
+      // Persist a PR-opened marker (DEC-141 #3 regression fix): the auto-"done"
+      // merge-detection effect and the "Open PR" link both key off ref.prUrl, which
+      // the compare-URL flow stopped setting (we no longer create the PR via gh) — so
+      // Bezier silently FORGOT the PR after handoff (merge never auto-detected, link
+      // gone on re-open). We store the compare URL: it's a valid reopenable link AND a
+      // sufficient "opened" gate (merge-detection itself resolves state via ghPrState
+      // on the branch). Resolving the canonical PR URL via `gh pr view` after the
+      // human clicks Create is a follow-up (needs a Rust gh_pr_view).
+      const opened: WorktreeRef = { ...ref, prUrl: compareUrl };
+      await writeWorktreeRef(issue, opened).catch(() => {});
+      setRef(opened);
+      setPrUrl(compareUrl);
       setInfo(tt("session.prPrefillOpened"));
       void logEvent("pr_opened", compareUrl);
       // The branch was pushed (and possibly WIP-committed); refresh the local view.

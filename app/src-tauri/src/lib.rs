@@ -2561,6 +2561,105 @@ fn http_ping(url: String) -> Result<bool, String> {
     }
 }
 
+/// Discover dev-server URLs bound by a process whose CWD is INSIDE `worktree`
+/// (DEC-141 #5 ②(b), attach-first preview). The attach-first model says Bezier
+/// shouldn't auto-START dev servers — it detects ones the agent/maker already
+/// started. The robust binding is by WORKTREE, not port: with several issues open
+/// each runs its own server on its own port, so matching "the agent's server" =
+/// matching the listening socket whose owning process runs inside THIS worktree.
+///
+/// macOS only (`lsof`). Two cheap passes:
+///   1. `lsof -nP -iTCP -sTCP:LISTEN -Fpn` → loopback LISTEN ports per pid.
+///   2. `lsof -a -d cwd -p <pids> -Fn`     → each candidate pid's cwd.
+/// Keep the ports whose pid's (canonical) cwd is under the (canonical) worktree;
+/// return `http://localhost:<port>/` for each, ascending. The frontend then
+/// `http_ping`s them (loopback-gated) and adopts the first that responds. Returns
+/// an empty list when lsof is absent (non-macOS / CI) or nothing matches — never
+/// errors on that, so the caller just keeps waiting.
+#[tauri::command]
+fn discover_worktree_url(worktree: String) -> Result<Vec<String>, String> {
+    use std::collections::BTreeSet;
+    reject_traversal(Path::new(&worktree))?;
+    let wt = match std::fs::canonicalize(&worktree) {
+        Ok(p) => p,
+        Err(_) => return Ok(Vec::new()), // worktree gone → nothing to find
+    };
+
+    let run_lsof = |args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new("lsof").args(args).output().ok()?;
+        // lsof exits non-zero when it finds nothing matching the filters; that's
+        // not an error for us. Take whatever it wrote to stdout.
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+
+    // Pass 1: listening loopback ports, grouped by owning pid.
+    let listen = match run_lsof(&["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"]) {
+        Some(s) => s,
+        None => return Ok(Vec::new()), // no lsof (non-macOS) → no discovery
+    };
+    // pid -> set of loopback ports it listens on.
+    let mut pid_ports: std::collections::HashMap<u32, BTreeSet<u16>> = std::collections::HashMap::new();
+    let mut cur_pid: Option<u32> = None;
+    for line in listen.lines() {
+        let Some((tag, val)) = line.split_at_checked(1) else { continue };
+        match tag {
+            "p" => cur_pid = val.trim().parse::<u32>().ok(),
+            "n" => {
+                let Some(pid) = cur_pid else { continue };
+                // val is like `*:3000`, `127.0.0.1:3000`, `[::1]:3000`.
+                let Some((host, port_s)) = val.rsplit_once(':') else { continue };
+                let Ok(port) = port_s.trim().parse::<u16>() else { continue };
+                // Loopback / wildcard only — a server bound to a specific LAN IP
+                // (192.168.x) isn't reachable as localhost, so skip it.
+                let loopback = matches!(
+                    host,
+                    "*" | "127.0.0.1" | "0.0.0.0" | "localhost" | "[::1]" | "::1" | "[::]" | "::"
+                );
+                if loopback && port > 0 {
+                    pid_ports.entry(pid).or_default().insert(port);
+                }
+            }
+            _ => {}
+        }
+    }
+    if pid_ports.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Pass 2: each candidate pid's cwd (one lsof call, comma-joined pids).
+    let pids_csv = pid_ports
+        .keys()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let cwds = run_lsof(&["-a", "-d", "cwd", "-p", &pids_csv, "-Fn"]).unwrap_or_default();
+    let mut cur_pid: Option<u32> = None;
+    let mut ports: BTreeSet<u16> = BTreeSet::new();
+    for line in cwds.lines() {
+        let Some((tag, val)) = line.split_at_checked(1) else { continue };
+        match tag {
+            "p" => cur_pid = val.trim().parse::<u32>().ok(),
+            "n" => {
+                let Some(pid) = cur_pid else { continue };
+                // Keep this pid's ports only when its cwd is inside the worktree.
+                if let Ok(cwd) = std::fs::canonicalize(val.trim()) {
+                    if cwd.starts_with(&wt) {
+                        if let Some(ps) = pid_ports.get(&pid) {
+                            ports.extend(ps.iter().copied());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(ports
+        .into_iter()
+        .map(|p| format!("http://localhost:{p}/"))
+        .collect())
+}
+
 /// Whether a dev server FORBIDS iframe embedding (`X-Frame-Options: DENY/
 /// SAMEORIGIN`, or a `Content-Security-Policy: frame-ancestors 'none'/'self'`), so
 /// Result of a dependency-free HTTP GET against a loopback dev server (DEC-125).
@@ -3612,6 +3711,7 @@ pub fn run() {
             http_ping,
             http_frame_blocked,
             http_probe,
+            discover_worktree_url,
             find_free_port,
             symlink,
             clone_dir,

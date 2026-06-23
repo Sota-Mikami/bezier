@@ -37,6 +37,22 @@ async function readPreviewEnv(root: string): Promise<Record<string, string>> {
   }
 }
 
+/** The published review/share URL for this issue (deployed app + spec + QA), if the
+ *  maker has shared it — read from `.bezier/share-urls.json` (keyed by issue id, the
+ *  same SoT use-journey persists). Lets the receiving engineer open the WORKING thing
+ *  (not just read the diff, and not the maker-only localhost preview). Null if never shared. */
+async function readReviewUrl(root: string, issueId: string): Promise<string | null> {
+  const txt = await readFile(`${trimSlash(root)}/.bezier/share-urls.json`).catch(() => "");
+  if (!txt.trim()) return null;
+  try {
+    const map = JSON.parse(txt) as Record<string, unknown>;
+    const v = map?.[issueId];
+    return typeof v === "string" && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Build the handoff Markdown for an issue: why/what (spec), acceptance criteria
  *  (flagged when empty — the seam Daniel hit), decisions/notes, QA (real table),
  *  and the preview env. All sources are read locally; the result is meant to be
@@ -61,6 +77,7 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
   if (!qa) qa = await seedQaFromSpec(issue).catch(() => []);
 
   const env = await readPreviewEnv(root);
+  const reviewUrl = await readReviewUrl(root, issue.id);
 
   return [
     `# Handoff — ${title}`,
@@ -68,6 +85,13 @@ export async function buildHandoffMarkdown(root: string, issue: Issue): Promise<
     "> Bezier がこの変更の「意図・受入基準・QA」をコードと一緒に届けるために生成したファイルです。",
     "> レビュー用の共有ページとは別に、実装を引き継ぐエンジニアが **git だけで** 全てを受け取れるようにするためのもの。",
     `> Issue: \`${issue.id}\``,
+    ...(reviewUrl
+      ? [
+          "",
+          `> 🔗 **動くものを見る（レビューページ）**: ${reviewUrl}`,
+          "> 実装済みアプリ＋Spec＋QA を1ページで確認できます（作り手のローカル localhost と違い、このリンクはそのまま開けます）。",
+        ]
+      : []),
     "",
     "## なぜ / 何を（Spec）",
     "",

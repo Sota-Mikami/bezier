@@ -554,6 +554,12 @@ export const en = {
     panelTip: "Output & terminal",
     resizePanel: "Drag to resize (double-click to reset)",
     terminalNeedsServer: "Start the dev server to open a terminal here.",
+    waitingTitle: "Waiting for a dev server…",
+    waitingDetail:
+      "Ask your agent to start the app (it writes the URL for Bezier), or start it yourself — it appears here automatically once it's running.",
+    waitingUrlPlaceholder: "or enter a URL — http://localhost:3000",
+    waitingShowUrl: "Show",
+    waitingStartSelf: "Have Bezier start it",
   },
 
   edit: {

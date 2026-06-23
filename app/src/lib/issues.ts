@@ -603,9 +603,11 @@ export interface WorktreeRef {
   /** SHA the branch was created off (best-effort; may be empty). */
   baseSHA: string;
   /**
-   * URL of the GitHub PR opened for this branch (DEC-015 Open-PR finalize).
-   * Persisted so re-opening the issue still surfaces the PR link. Absent until
-   * a PR has been opened.
+   * The PR link for this branch (DEC-015 Open-PR finalize). Since DEC-141 #3 we open
+   * GitHub's prefilled compare/create page rather than creating the PR programmatically,
+   * so this holds the COMPARE URL — which doubles as the "a PR was opened" marker that
+   * gates auto-merge-detection + the re-surfaced "Open PR" link. Persisted so re-opening
+   * the issue still surfaces it. Absent until Open PR has been used.
    */
   prUrl?: string;
 }

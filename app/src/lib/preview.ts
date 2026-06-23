@@ -621,6 +621,65 @@ export function httpFrameBlocked(url: string): Promise<boolean> {
   return invoke<boolean>("http_frame_blocked", { url });
 }
 
+// === attach-first preview auto-detect (DEC-141 #5 ②) ========================
+// The maker/agent starts the dev server; Bezier DETECTS it (it no longer
+// auto-starts one as the primary path). Two issue-correct sources, bound by
+// WORKTREE so concurrent issues don't cross-detect:
+//   (a) the URL the agent wrote to <issue.dir>/preview-url (the declared URL).
+//   (b) lsof: loopback ports whose owning process cwd is inside the worktree.
+
+/** The per-issue file the agent writes its dev-server URL to (DEC-141 #5 ②a).
+ *  Lives in the issue dir (next to spec.md), readable by the agent via --add-dir. */
+export function previewUrlDeclPath(issueDir: string): string {
+  return `${stripTrailingSlash(issueDir)}/preview-url`;
+}
+
+/**
+ * Parse the URL out of a `preview-url` file's contents (DEC-141 #5 ②a). Tolerant:
+ * takes the first non-comment line, extracts an http(s) URL even when wrapped in
+ * prose ("Preview: http://localhost:3000"), normalizes to its origin, and only
+ * returns a LOOPBACK url (the embedded webview will only load those, and a
+ * repo-planted remote URL must never be auto-polled — SSRF, cf. SEC-1/DEC-130).
+ * Returns null when empty / not a loopback URL. Pure (testable without Tauri).
+ */
+export function parseDeclaredPreviewUrl(text: string): string | null {
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const m = line.match(/https?:\/\/[^\s)>"']+/);
+    const candidate = (m ? m[0] : line).replace(/[).,;]+$/, "");
+    if (!isLoopbackUrl(candidate)) continue;
+    try {
+      return `${new URL(candidate).origin}/`;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Read + parse the URL the agent declared in `<issue.dir>/preview-url` (DEC-141
+ * #5 ②a). Returns null when the file is absent / empty / not a loopback URL.
+ */
+export async function readDeclaredPreviewUrl(file: string): Promise<string | null> {
+  try {
+    return parseDeclaredPreviewUrl(await readFile(file));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Discover dev-server URLs already running inside `worktree` (DEC-141 #5 ②b) via
+ * the Rust `discover_worktree_url` (lsof, worktree-cwd-scoped). Returns loopback
+ * `http://localhost:<port>/` candidates ascending; empty on non-macOS / no match.
+ * Best-effort — resolves [] on any failure.
+ */
+export function discoverWorktreeUrls(worktree: string): Promise<string[]> {
+  return invoke<string[]>("discover_worktree_url", { worktree }).catch(() => []);
+}
+
 /** A dependency-free HTTP GET against the dev server (Rust `http_probe`, DEC-125). */
 export interface HttpProbeResult {
   /** HTTP status code, or 0 if it couldn't be parsed. */
