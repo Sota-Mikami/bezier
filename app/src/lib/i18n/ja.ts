@@ -320,8 +320,8 @@ export const ja: Messages = {
   },
 
   topbar: {
-    annotate: "注釈",
-    annotateTitle: "注釈モード ・ ⌘⇧A（Pin / Area / Pen で agent へ修正依頼）",
+    annotate: "コメント",
+    annotateTitle: "コメントモード ・ ⌘⇧A（Pin / Area / Pen で agent へ修正依頼）",
     annotateLocked: "編集モード中は使えません（同時には使えません）",
     share: "共有",
     shareTitle: "共有する内容を選んで共有",
@@ -682,6 +682,7 @@ export const ja: Messages = {
     addNote: "空のメモ",
     edit: "編集",
     editDone: "完了",
+    editing: "編集中",
     editTip: "このモックを直接編集 — Layer / Style / テキスト。html ファイルに書き戻します。",
     variantFallback: "案 {id}",
     deleteConfirm: "「{label}」を削除しますか？",

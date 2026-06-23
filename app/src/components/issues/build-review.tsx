@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { PreviewPane } from "./preview-pane";
 import { IssueMap } from "./issue-map";
 import { QaProposal } from "./qa-proposal";
+import { AnnotationToggle } from "./annotation-mode";
 import type { ImplementSession } from "./implement-session-types";
 
 type ProtoTab = "preview" | "map" | "qa";
@@ -109,6 +110,10 @@ export function BuildReview({
           <ListChecks className="size-4" />
           {t("prototype.tabQa")}
         </UnderlineTab>
+        {/* Surface-aware mode bar (IA): Preview / Map / QA all support Comment only. */}
+        <div className="ml-auto flex shrink-0 items-center pr-1.5">
+          <AnnotationToggle />
+        </div>
       </div>
 
       <div className="relative min-h-0 flex-1">

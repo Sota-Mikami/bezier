@@ -30,7 +30,7 @@ import { UnderlineTab } from "@/components/ui/underline-tab";
 import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
 import { designSurface } from "./design-variants";
-import { useAnnotationMode } from "./annotation-mode";
+import { useAnnotationMode, AnnotationToggle } from "./annotation-mode";
 import { docAnnotationSurface } from "./annotation-surfaces";
 import { useVisualEdit } from "./use-visual-edit";
 import { EditLayerPanel, EditStylePanel, PendingEditsBar } from "./visual-edit-panels";
@@ -59,7 +59,7 @@ export function IssueDesign({
 }) {
   const t = useT();
   const issue = session.issue;
-  const { on: annotating } = useAnnotationMode();
+  const { on: annotating, setLocked } = useAnnotationMode();
   const [docs, setDocs] = React.useState<IssueDoc[]>([]);
   const [variants, setVariants] = React.useState<Variant[]>([]);
   // Restore the last-viewed Design tab across area switches (DEC-141).
@@ -199,6 +199,13 @@ export function IssueDesign({
       clearVedit();
     };
   }, [selected, clearVedit]);
+
+  // Edit ⊻ Comment: while editing a mock, lock annotation off (and release the lock on
+  // exit / unmount so switching to another area doesn't leave Comment stuck disabled).
+  React.useEffect(() => {
+    setLocked(editing);
+    return () => setLocked(false);
+  }, [editing, setLocked]);
 
   const enterEdit = () => {
     if (selectedItem?.kind !== "variant" || !html) return;
@@ -342,6 +349,29 @@ export function IssueDesign({
             )}
           </div>
         </div>
+        {/* Surface-aware mode bar (IA): co-located with the canvas, only the modes this
+            surface supports. Mock = Edit + Comment; doc = Comment. (Lives in the strip,
+            not floating over the canvas — the Preview's native webview would occlude it.) */}
+        <div className="flex shrink-0 items-center gap-1 border-l pl-2 pr-1.5">
+          {selectedItem?.kind === "variant" && (
+            <button
+              type="button"
+              onClick={editing ? exitEdit : enterEdit}
+              disabled={(annotating && !editing) || (!editing && !html)}
+              title={t("design.editTip")}
+              className={cn(
+                "flex h-6 shrink-0 items-center gap-1 rounded px-2 text-[11px] disabled:opacity-40",
+                editing
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <Pencil className="size-3" />
+              {editing ? t("design.editDone") : t("design.edit")}
+            </button>
+          )}
+          <AnnotationToggle />
+        </div>
       </div>
 
       {/* Body: doc → editor; design → wireframe + annotation + adopt. */}
@@ -381,21 +411,11 @@ export function IssueDesign({
               >
                 {selectedItem.variant.file}
               </span>
-              <button
-                type="button"
-                onClick={editing ? exitEdit : enterEdit}
-                disabled={(annotating && !editing) || (!editing && !html)}
-                title={t("design.editTip")}
-                className={cn(
-                  "ml-auto flex h-6 shrink-0 items-center gap-1 rounded px-2 text-[11px] disabled:opacity-40",
-                  editing
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <Pencil className="size-3" />
-                {editing ? t("design.editDone") : t("design.edit")}
-              </button>
+              {editing && (
+                <span className="ml-auto shrink-0 text-[11px] font-medium text-muted-foreground">
+                  {t("design.editing")}
+                </span>
+              )}
             </header>
             {editing ? (
               <>

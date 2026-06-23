@@ -321,8 +321,8 @@ export const en = {
   },
 
   topbar: {
-    annotate: "Annotate",
-    annotateTitle: "Annotation mode · ⌘⇧A (point with Pin / Area / Pen to ask the agent for a fix)",
+    annotate: "Comment",
+    annotateTitle: "Comment mode · ⌘⇧A (point with Pin / Area / Pen to ask the agent for a fix)",
     annotateLocked: "Paused while Edit mode is on (they can't run at once)",
     share: "Share",
     shareTitle: "Choose what to share, then share",
@@ -683,6 +683,7 @@ export const en = {
     addNote: "Blank note",
     edit: "Edit",
     editDone: "Done",
+    editing: "Editing",
     editTip: "Edit this mock directly — Layer / Style / Text. Saved back to the html file.",
     variantFallback: "Design {id}",
     deleteConfirm: "Delete “{label}”?",

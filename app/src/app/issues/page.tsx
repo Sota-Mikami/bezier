@@ -53,7 +53,7 @@ import { IssueDesign } from "@/components/issues/issue-design";
 import { TerrainChip } from "@/components/issues/terrain-chip";
 import { BuildReview } from "@/components/issues/build-review";
 import { RepoLive } from "@/components/issues/repo-live";
-import { AnnotationModeProvider, AnnotationToggle } from "@/components/issues/annotation-mode";
+import { AnnotationModeProvider } from "@/components/issues/annotation-mode";
 import { IssueShare } from "@/components/issues/issue-share";
 import {
   IssueMenu,
@@ -915,7 +915,8 @@ function IssueWorkbench({
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <AnnotationToggle />
+          {/* Comment/Edit modes moved to per-surface bars (canvas-local, surface-aware
+              IA) — see issue-design strip + build-review tab bar. */}
           <IssueShare session={session} />
           <IssueShip session={session} />
         </div>
