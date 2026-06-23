@@ -342,7 +342,11 @@ export function useImplementSession(
   }, [issue.id]);
 
   // Auto-"done" (DEC-027): once this issue's PR is MERGED on the platform, mark
-  // it merged. Best-effort, checked when a PR link is present.
+  // it merged. Best-effort, checked when a PR link is present. NOTE: since the
+  // compare-URL Open-PR flow, ref.prUrl may hold the COMPARE URL (a "PR was opened"
+  // marker), not a canonical .../pull/N — that's fine here, we resolve MERGED via
+  // ghPrState on the BRANCH; prUrl is only the non-null gate. If no PR was ever
+  // created, ghPrState returns "" and this exits harmlessly (no spin — one-shot).
   const refPrUrl = ref?.prUrl ?? null;
   const refBranch = ref?.branch ?? null;
   React.useEffect(() => {

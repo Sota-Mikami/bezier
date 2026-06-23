@@ -105,11 +105,54 @@
 
 ---
 
-## 着手順（承認後）
-1. ペルソナ自己レビュー（本スペックの E-1/E-2 設計＋実装済 E-3/E-4 挙動）→ 改善の道筋。← **今ここ**
-2. CEO 承認（E-3/E-4 を prod 反映＋E-1/E-2 first-cut 実装を green-light）。
-3. E-1 first-cut 実装 → 静的検証 → CEO dogfood → 調整。
-4. E-2: round-trip 単体テスト先行 → 非破壊確認 → first-cut → dogfood。
-5. E-4 next（terrain チップ UI）を dogfood 反復で追加。
+## ペルソナ自己レビュー結果 → 改善の道筋（確定）
+
+レビュアー: principal-engineer / qa-lead / Mai(solo-maker) / Kenji(pm-cant-design) / Priya(ds-lead) / Daniel(handoff-eng) / Leo(design-eng)。**E-3/E-4 = ship 可**（cheap な改善2点は適用済）。E-1/E-2 は下記を実装前に織り込む。
+
+### 収束した最重要シグナル（= 再シーケンス推奨）
+1. **terrain（E-4 後続）を「後で」→「次・最優先」へ昇格**。loop doctrine はプロンプト文だけだと Clippy 化（Mai/Leo/Kenji/PE 全員一致）。「今どこか」を UI チップ＋agent シードに**明示注入**して初めて提案が賢くなる＝orchestrator を本物にする最高レバレッジ。
+2. **BlockNote（E-2）の優先度を下げる**。主ペルソナ Mai が「今のエディタで困ってない・後回しでいい」。痛点は editor でなく terrain と mock 翻訳品質。
+3. **HTML モック生成が repo の部品/トークンを使えているかが、モック工程の存在価値を決める（Mai）**。使えてないと「置物を磨くだけ」＝spec から直接実装の方が速い。**moat（repo 規約継承）の核**。
+
+### E-1 実装前の必須対応
+- **[HIGH] 生成 HTML の `<meta CSP>`/`X-Frame-Options` を Edit Mode マウント前に除去**（PE — でないと eval 注入がブロックされる）。
+- **[HIGH] `serializeVariant` の overlay-host 除去を単体テスト**（QA — 漏れると commit HTML に overlay が混入）。
+- **[MED] iframeTransport の drain は `__bzEdit.drain()` ヘルパを poll**（PE — reorder イベントのレース回避）。
+- **[MED] mock 保存時に構造 diff を agent context に自動注入**（Leo — prose 再説明の seam を消す。"反映は agent 経由のみ" は保ちつつ agent が指示でなく diff を読む）。
+- 受入: discard=disk から reload / タブ復帰で再注入 / annotate⊻edit 排他 / preview に Edit 無し / same-origin 注入の実機確認（QA）。
+
+### E-1 + 実装の DS 逸脱対策（Priya・チーム期は必須／solo は段階導入）
+- スタイルパネルに**トークン候補表示＋DS 外値に警告**（raw CSS のままなら org 導入不可）。
+- **モック→実装の reconciliation**: 実装前に inline style を `design-system.md` トークンに突き合わせ「対応トークン/無し」を明示、無し=承認ゲート（magic number の repo 流入防止）。
+- per-value 変更ログ（git diff 以上の粒度・将来）。
+
+### E-2 実装前の必須ゲート
+- **[HIGH] round-trip 非破壊ゲートを実 spec.md で**（PE/QA/Leo）: 見出しレベル/箇条書き/チェックボックス/表/コード/リンク/太字斜体。構造欠落＝**BlockNote 採用却下→現 CodeMirror 継続**。
+- **[HIGH] 保存後 `baselineRef` を更新**（PE — でないと毎 agent ターンで幻の「外部変更」conflict バナー）。
+- 選択コメント→AI 後に**変更サマリ（diff）を提示**（Kenji — 他セクションを黙って書き換えない確認）。
+
+### ハンドオフ（E-3 強化・Daniel）
+- **[cheap] PR 本文に review リンク＋受入基準を直接 prefill**（compare URL の `body=`・commit ファイルへ潜らせない）。
+- QA 行に**実行ステータス**（env X で実行/未実行）— auto-seed と実走を区別。
+- **stubbed-surface インベントリ**（mock 返却の file/関数・RLS bypass・未試行エラー）＋ backend provenance（最低 `SUPABASE_URL`）。`publish-env.json` 空は write 時に hard 警告。
+- 決定ログに **Rejected options** 節。
+
+### E-4 後続（terrain・最優先昇格）
+- `lib/loop-state.ts`（純・単体テスト）で terrain を事実導出 → ヘッダ「今ここ」チップ＋agent シードへ注入。提案を**内容接地**（Kenji「3 roles 定義／flow は 1」級の具体性）。
+- 共有コメント→agent 届達 v1（GH 非同期）＋**非 GitHub 受信者フロー**（Mai）。
+
+### 適用済みの cheap 改善（このレビューから即反映）
+- E-4: loop doctrine を「返信の最後・作業が一区切り時のみ 1 提案（途中・保存毎には出さない）」に絞り込み（QA/Mai のうるさい化対策）。
+- E-3: merge-detection 呼び出し側に `prUrl` が compare URL である旨のコメント追加（QA）。
+
+---
+
+## 着手順（承認後・再シーケンス反映）
+1. ペルソナ自己レビュー → 改善の道筋（**完了**・本セクション上）。
+2. **CEO 承認待ち** ← 今ここ（E-3/E-4 を prod 反映＋下記の再シーケンスを green-light）。
+3. **terrain（E-4 後続）を最優先で**: `lib/loop-state.ts`＋「今ここ」チップ＋agent シード注入。loop doctrine を内容接地にする（これ無しだと提案がノイズ化＝レビュー総意）。
+4. **E-1 first-cut**: 上の必須対応（CSP 除去・serializeVariant テスト・drain ヘルパ・mock 保存 diff→agent context）込みで実装 → 静的検証 → CEO dogfood。**モック生成が repo 部品/トークンを使えているかを最初に確認**（Mai）。
+5. **E-2（後ろへ）**: round-trip 非破壊ゲートを実 spec.md で先行 → 通れば first-cut → dogfood（通らなければ CodeMirror 継続）。
+6. ハンドオフ強化（PR body prefill・QA 実行ステータス・stubbed inventory）と DS 逸脱対策（Priya）を段階的に。
 
 (コア価値監査 = `2026-06-23_core-value-cto-audit.md`。)
