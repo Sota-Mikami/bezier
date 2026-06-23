@@ -429,11 +429,6 @@ export const en = {
       "Bezier v{version} is available. Download it now?\n\nAfter downloading: open the .dmg, drag Bezier to Applications, then run in Terminal:\nxattr -dr com.apple.quarantine /Applications/Bezier.app",
     download: "Download",
   },
-  terrain: {
-    label: "Now",
-    tooltip:
-      "Where this issue stands — what exists right now (not a completion gate). Bezier is a loop: move forward or back anytime.",
-  },
   nextStep: {
     label: "Next step",
     proceed: "Proceed",

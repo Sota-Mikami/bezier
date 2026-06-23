@@ -1,8 +1,8 @@
 // Durable record of each issue's published SHARE-PAGE URL (DEC-135), keyed by issue
 // id, stored under the repo's gitignored `.bezier` store so an app restart doesn't
 // "lose" an already-shared link. Single source of truth for the file shape + path —
-// read by use-journey (Share UI), handoff.ts (PR bundle review link), and loop-state
-// (terrain "shared?" fact). Previously this read logic was copy-pasted in three places.
+// read by use-journey (Share UI) + handoff.ts (PR bundle review link). Previously this
+// read logic was copy-pasted.
 
 import { readFile, writeFile } from "@/lib/ipc";
 

@@ -101,7 +101,7 @@ const LOG_CAP = 20_000;
 const PTY_PREFIX = "journey:";
 
 // Durable record of the SHARE-PAGE URL (DEC-135) lives in `@/lib/share-urls` (the
-// single SoT shared with handoff.ts + loop-state). Thin aliases keep the call sites
+// single SoT shared with handoff.ts). Thin aliases keep the call sites
 // below readable.
 const loadShareUrlDisk = readShareUrl;
 const saveShareUrlDisk = writeShareUrl;

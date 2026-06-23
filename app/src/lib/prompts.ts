@@ -1194,9 +1194,6 @@ export function implementHandoffDoc(a: {
   userMessage?: string;
   followUp?: boolean;
   subPath?: string;
-  /** Grounded loop terrain (loop-state.terrainForAgent) so the agent's next-move
-   *  suggestion references what EXISTS, not a guess. Omitted = no terrain block. */
-  terrain?: string[];
 }): string {
   const h = handoff();
   const intro = a.userMessage
@@ -1209,7 +1206,6 @@ export function implementHandoffDoc(a: {
     "",
     ...intro,
     "",
-    ...(a.terrain && a.terrain.length ? a.terrain : []),
     ...(a.subPath ? h.monorepo(a.subPath) : []),
     "---",
     "",

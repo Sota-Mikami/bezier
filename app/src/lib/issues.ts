@@ -812,7 +812,7 @@ export async function buildImplementHandoff(
   root: string,
   issue: Issue,
   worktreePath: string,
-  opts?: { followUp?: boolean; userMessage?: string; subPath?: string; terrain?: string[] },
+  opts?: { followUp?: boolean; userMessage?: string; subPath?: string },
 ): Promise<{ path: string; content: string }> {
   let issueMd: string;
   try {
@@ -842,7 +842,6 @@ export async function buildImplementHandoff(
     userMessage: opts?.userMessage,
     followUp: opts?.followUp,
     subPath: opts?.subPath,
-    terrain: opts?.terrain,
   });
   // Write the durable guide alongside the handoff (read via --add-dir issue.dir).
   await writeFile(guidePath, bezierGuide(issue));

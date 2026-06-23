@@ -428,11 +428,6 @@ export const ja: Messages = {
       "Bezier v{version} が利用可能です。今ダウンロードしますか？\n\nダウンロード後: .dmg を開いて Bezier を Applications にドラッグ → ターミナルで:\nxattr -dr com.apple.quarantine /Applications/Bezier.app",
     download: "ダウンロード",
   },
-  terrain: {
-    label: "今ここ",
-    tooltip:
-      "この issue の現在地 — いま何があるか（完了ゲートではありません）。Bezier はループ：いつでも前にも後ろにも進めます。",
-  },
   nextStep: {
     label: "次の一手",
     proceed: "進める",
