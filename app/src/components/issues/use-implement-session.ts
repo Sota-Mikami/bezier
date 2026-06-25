@@ -73,13 +73,13 @@ import {
   ptyStatuses,
   type AgentState,
 } from "@/lib/pty";
-import { confirmDialog, openExternal } from "@/lib/ipc";
+import { confirmDialog, openExternal, grantPath, writeFileBytes } from "@/lib/ipc";
 import { notify, ensureNotificationPermission } from "@/lib/notify";
 import { isUntitled, titleFromMessage } from "@/lib/issue-domain";
 import { writeHandoffPrBody } from "@/lib/handoff";
 import { tt } from "@/lib/i18n";
 import { conflictResolvePrompt } from "@/lib/prompts";
-import { takePendingStart } from "@/lib/pending-start";
+import { takePendingStart, type PendingImageBlob } from "@/lib/pending-start";
 import type {
   ImplementSession,
   SessionAction,
@@ -794,8 +794,29 @@ export function useImplementSession(
             void updateIssueMeta(root, issue, { title: prov }).catch(() => {});
           }
         }
+        // Materialise any images from the New-Issue modal (DEC-150).
+        const pendingBlobs = pendingAutoBlobsRef.current ?? [];
+        pendingAutoBlobsRef.current = null;
+        const imagePaths: string[] = [];
+        if (pendingBlobs.length > 0) {
+          const chatDir = `${workDir(wt)}/.bezier/chat-attachments`;
+          for (const b of pendingBlobs) {
+            try {
+              const outPath = `${chatDir}/${Date.now()}-${b.name}`;
+              await grantPath(outPath);
+              await writeFileBytes(outPath, b.bytes);
+              imagePaths.push(outPath);
+            } catch {
+              // Non-fatal — skip images that can't be written.
+            }
+          }
+        }
+        const msgWithImages =
+          imagePaths.length > 0
+            ? `${msg}\n\n${imagePaths.map((p) => `![](${p})`).join("\n")}`
+            : msg;
         const { content } = await buildImplementHandoff(root, issue, workDir(wt), {
-          userMessage: msg,
+          userMessage: msgWithImages,
           subPath,
         });
         setRef(newRef);
@@ -1404,6 +1425,7 @@ export function useImplementSession(
 
   const pendingAutoMsgRef = React.useRef<string | null>(null);
   const pendingAutoBaseRef = React.useRef<string | null>(null);
+  const pendingAutoBlobsRef = React.useRef<PendingImageBlob[] | null>(null);
 
   // Effect A — consume the pending-start registry entry for this issue.
   React.useEffect(() => {
@@ -1411,6 +1433,8 @@ export function useImplementSession(
     if (!pending) return;
     pendingAutoMsgRef.current = pending.message;
     pendingAutoBaseRef.current = pending.base;
+    // eslint-disable-next-line react-hooks/immutability
+    pendingAutoBlobsRef.current = pending.imageBlobs ?? [];
   }, [issue.id]);
 
   // Effect B — fire auto-start once session is ready.

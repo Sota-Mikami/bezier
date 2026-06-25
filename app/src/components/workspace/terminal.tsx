@@ -26,10 +26,12 @@ import {
   commandExists,
   type UnlistenFn,
 } from "@/lib/pty";
-import { X, ArrowUp } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { grantPath, removePath, writeFileBytes } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { AttachmentTray } from "@/components/ui/attachment-tray";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 
 export interface TerminalPaneProps {
   /** Working directory the shell/agent launches in (workspace root). */
@@ -186,6 +188,8 @@ export default function TerminalPane({
   // the latest without re-spawning the pty (same pattern as onExitRef).
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const pendingRef = useRef<PendingAttachment[]>([]);
+  // Lightbox index: null = closed, number = index into `pending`.
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   useLayoutEffect(() => {
     pendingRef.current = pending;
   });
@@ -609,33 +613,14 @@ export default function TerminalPane({
           NO text input, so it doesn't reintroduce the "two inputs" of DEC-076. */}
       {pending.length > 0 && (
         <div className="flex shrink-0 items-center gap-2 border-t border-white/10 bg-[#0a0a0a] px-2 py-1.5">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-x-auto">
-            {pending.map((a) => (
-              <div
-                key={a.id}
-                className="flex items-center gap-1.5 rounded-md bg-white/5 py-1 pl-1 pr-1.5 ring-1 ring-white/10"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- local blob: thumbnail in a Tauri webview; next/image doesn't apply (same as design-annotations) */}
-                <img
-                  src={a.thumbUrl}
-                  alt={tt("chatAttach.imageAlt", { name: a.name })}
-                  className="size-8 rounded object-cover"
-                />
-                <span className="max-w-[8rem] truncate text-xs text-zinc-300">
-                  {a.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(a.id)}
-                  title={tt("chatAttach.remove")}
-                  aria-label={tt("chatAttach.remove")}
-                  className="rounded p-0.5 text-zinc-400 hover:text-destructive"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
+          <AttachmentTray
+            items={pending}
+            onRemove={removeAttachment}
+            onOpen={(id) =>
+              setLightboxIndex(pending.findIndex((a) => a.id === id))
+            }
+            className="min-w-0 flex-1 overflow-x-auto"
+          />
           <span className="hidden shrink-0 text-[10px] text-zinc-500 sm:inline">
             {tt("chatAttach.sendHint")}
           </span>
@@ -649,6 +634,12 @@ export default function TerminalPane({
           </button>
         </div>
       )}
+      <ImageLightbox
+        items={pending}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onNavigate={setLightboxIndex}
+      />
     </div>
   );
 }

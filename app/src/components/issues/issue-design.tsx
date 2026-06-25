@@ -37,7 +37,8 @@ import { UnderlineTab } from "@/components/ui/underline-tab";
 import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
 import { designSurface } from "./design-variants";
-import { useAnnotationMode, AnnotationToggle } from "./annotation-mode";
+import { useAnnotationMode } from "./annotation-mode";
+import { ModeToggleGroup } from "./mode-toggle-group";
 import { useVisualEdit } from "./use-visual-edit";
 import { EditLayerPanel, EditStylePanel, PendingEditsBar } from "./visual-edit-panels";
 import type { ImplementSession } from "./implement-session-types";
@@ -335,18 +336,20 @@ export function IssueDesign({
   };
   const saveMock = async () => {
     const item = selectedItem;
-    const doc = mockFrameRef.current?.contentDocument;
-    if (item?.kind !== "variant" || !doc) {
+    if (item?.kind !== "variant") {
       exitEdit();
       return;
     }
     setSavingMock(true);
     try {
-      veTransport.deactivate(); // drop the overlay's selection-box host before serializing
-      const raw = `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
-      const clean = cleanSerializedMock(raw);
-      await writeFile(item.variant.path, clean);
-      setHtmlByPath({ path: item.key, html: clean });
+      // Ask the in-iframe bridge to deactivate the overlay + serialize the edited DOM
+      // back (the iframe is opaque now, so we can't read contentDocument directly).
+      const raw = (await veTransport.serialize?.()) ?? "";
+      if (raw) {
+        const clean = cleanSerializedMock(raw);
+        await writeFile(item.variant.path, clean);
+        setHtmlByPath({ path: item.key, html: clean });
+      }
     } catch {
       /* write failed — keep the edits in the live DOM so nothing is lost */
     } finally {
@@ -363,7 +366,8 @@ export function IssueDesign({
     setSavingMock(true);
     try {
       const prompt = visualEditPrompt(item.label, vedit.diffs, vedit.reorders, vedit.textEdits);
-      await session.sendDesignFeedback(prompt, tt("design.applyMockNote", { label: item.label }));
+      // Inject into the running chat (no restart); fall back to feedback only if idle.
+      await session.injectOrFeedback(prompt, tt("design.applyMockNote", { label: item.label }));
     } catch {
       /* surfaced via session.error */
     } finally {
@@ -487,23 +491,15 @@ export function IssueDesign({
             editor. (Lives in the strip, not floating over the canvas — the Preview's
             native webview would occlude it.) */}
         {selectedItem?.kind === "variant" && (
-          <div className="flex shrink-0 items-center gap-1 border-l pl-2 pr-1.5">
-            <button
-              type="button"
-              onClick={editing ? exitEdit : enterEdit}
-              disabled={(annotating && !editing) || (!editing && !html)}
-              title={t("design.editTip")}
-              className={cn(
-                "flex h-6 shrink-0 items-center gap-1 rounded px-2 text-[11px] disabled:opacity-40",
-                editing
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <Pencil className="size-3" />
-              {editing ? t("design.editDone") : t("design.edit")}
-            </button>
-            <AnnotationToggle />
+          <div className="flex shrink-0 items-center border-l pl-2 pr-1.5">
+            <ModeToggleGroup
+              size="xs"
+              editing={editing}
+              onToggleEdit={editing ? exitEdit : enterEdit}
+              editDisabled={!editing && !html}
+              editLabel={editing ? t("design.editDone") : t("design.edit")}
+              editTip={t("design.editTip")}
+            />
           </div>
         )}
       </div>
@@ -617,7 +613,10 @@ export function IssueDesign({
                     <iframe
                       ref={mockFrameRef}
                       key={`edit-${selectedItem.key}`}
-                      sandbox="allow-scripts allow-same-origin"
+                      // Opaque (no allow-same-origin) — the WKWebView-robust isolation the
+                      // VIEW iframe uses. The overlay is driven over postMessage (the
+                      // in-iframe bridge), so no direct contentWindow access is needed.
+                      sandbox="allow-scripts"
                       srcDoc={editHtml ?? ""}
                       title={selectedItem.label}
                       onLoad={() => {

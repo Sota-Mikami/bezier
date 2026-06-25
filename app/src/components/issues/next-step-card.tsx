@@ -52,7 +52,10 @@ export function NextStepCard({ session }: { session: ImplementSession }) {
     if (busy) return;
     setBusy(true);
     try {
-      await session.sendDesignFeedback(
+      // Inject into the RUNNING chat (prefill), never restart the agent — the
+      // no-restart seam (DEC-142). injectOrFeedback falls back to a fresh feedback
+      // turn only when no agent is live.
+      await session.injectOrFeedback(
         tt("nextStep.proceedPrompt", { suggestion }),
         tt("nextStep.note"),
       );

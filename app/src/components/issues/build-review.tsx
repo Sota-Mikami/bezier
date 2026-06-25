@@ -23,12 +23,22 @@ import { cn } from "@/lib/utils";
 import { PreviewPane } from "./preview-pane";
 import { IssueMap } from "./issue-map";
 import { QaProposal } from "./qa-proposal";
-import { AnnotationToggle } from "./annotation-mode";
 import type { ImplementSession } from "./implement-session-types";
 import type { ManifestEntry } from "@/lib/map-manifest";
 
 type ProtoTab = "preview" | "map" | "qa";
 const PROTO_TABS: ProtoTab[] = ["preview", "map", "qa"];
+
+// Map + QA are still unverified (DEC-148). A small "Beta" tag on the tab sets
+// expectations for people we hand the build to, so it doesn't read as finished.
+function BetaBadge() {
+  const t = useT();
+  return (
+    <span className="rounded bg-muted px-1 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-muted-foreground">
+      {t("prototype.beta")}
+    </span>
+  );
+}
 
 export function BuildReview({
   session,
@@ -131,15 +141,16 @@ export function BuildReview({
         <UnderlineTab active={tab === "map"} onClick={() => setTab("map")}>
           <MapIcon className="size-4" />
           {t("prototype.tabMap")}
+          <BetaBadge />
         </UnderlineTab>
         <UnderlineTab active={tab === "qa"} onClick={() => setTab("qa")}>
           <ListChecks className="size-4" />
           {t("prototype.tabQa")}
+          <BetaBadge />
         </UnderlineTab>
-        {/* Surface-aware mode bar (IA): Preview / Map / QA all support Comment only. */}
-        <div className="ml-auto flex shrink-0 items-center pr-1.5">
-          <AnnotationToggle />
-        </div>
+        {/* Comment + Edit now live together as one mode control on the surface that
+            has them (the Preview / the mock) — see ModeToggleGroup. Map / QA have no
+            live surface to annotate, so no mode bar here (they're Beta). */}
       </div>
 
       <div className="relative min-h-0 flex-1">

@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { captureRegion, messageDialog } from "@/lib/ipc";
+import { captureRegion, messageDialog, grantPath, writeFileBytes } from "@/lib/ipc";
 import {
   readAnnotations,
   writeAnnotations,
@@ -40,6 +40,9 @@ import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
 import { promptPhrases } from "@/lib/prompts";
 import type { ImplementSession } from "./implement-session-types";
+import { useImageAttachments, type ImageBlob } from "@/lib/use-image-attachments";
+import { AttachmentTray } from "@/components/ui/attachment-tray";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 
 // Comment is now Figma-style — click = point pin, drag = area rect (DEC-068), so
 // there's no separate "rect" tool. The "rect" annotation KIND still exists (a
@@ -76,9 +79,9 @@ export interface AnnotationSurface {
   cannotSendMessage: string;
   /** Build the agent prompt from the numbered instruction lines + screenshot. */
   buildPrompt: (lines: string[], shot: string | null) => string;
-  /** Send the batch to the agent (sendDesignFeedback / reviseDesignPattern).
-   *  Resolves false if the maker cancelled (e.g. declined to interrupt a live
-   *  agent) — the caller then leaves the annotations as unsent drafts. */
+  /** Send the batch to the agent (injectOrFeedback = inject into the running chat,
+   *  no restart / reviseDesignPattern). Resolves false if the send didn't go
+   *  through — the caller then leaves the annotations as unsent drafts. */
   send: (promptText: string, note: string) => Promise<boolean>;
 }
 
@@ -325,7 +328,7 @@ export function AnnotationLayer({
   );
 
   const send = React.useCallback(
-    async (batch: Annotation[]) => {
+    async (batch: Annotation[], imageBlobs: ImageBlob[] = []) => {
       if (batch.length === 0) return;
       if (!surface.canSend) {
         await messageDialog(surface.cannotSendMessage, {
@@ -341,6 +344,20 @@ export function AnnotationLayer({
         const lines = batch.map(
           (a) => `${numberOf(a.id)}. [${describe(a)}] ${a.text.trim() || ph.markFallback}`,
         );
+        // Materialise attached images (DEC-150) and append paths to the lines.
+        if (imageBlobs.length > 0) {
+          const dir = `${issue.dir}/chat-attachments`;
+          for (const b of imageBlobs) {
+            try {
+              const outPath = `${dir}/${Date.now()}-${b.name}`;
+              await grantPath(outPath);
+              await writeFileBytes(outPath, new Uint8Array(await b.blob.arrayBuffer()));
+              lines.push(`Image: ${outPath}`);
+            } catch {
+              // Non-fatal — skip images that can't be written.
+            }
+          }
+        }
         const promptText = surface.buildPrompt(lines, shot);
         const sent = await surface.send(
           promptText,
@@ -369,7 +386,7 @@ export function AnnotationLayer({
         setBusy(false);
       }
     },
-    [surface, captureShot, numberOf, save],
+    [surface, captureShot, numberOf, save, issue],
   );
 
   // Pen marks are visual (no text needed); comment/area/element need an
@@ -492,7 +509,7 @@ export function AnnotationLayer({
           annotation={active}
           busy={busy}
           onChange={(t) => patch(active.id, { text: t })}
-          onSend={() => void send([active])}
+          onSend={(blobs) => void send([active], blobs)}
           onClose={() => setActiveId(null)}
           onDelete={() => removeItem(active.id)}
         />
@@ -760,7 +777,7 @@ function Composer({
   annotation: Annotation;
   busy: boolean;
   onChange: (t: string) => void;
-  onSend: () => void;
+  onSend: (blobs: ImageBlob[]) => void;
   onClose: () => void;
   onDelete: () => void;
 }) {
@@ -770,6 +787,15 @@ function Composer({
   const editable = !done && !runningState;
   const nearRight = annotation.x > 0.6;
   const nearBottom = annotation.y > 0.7;
+
+  const { blobs, remove, clear, fromDataTransfer } = useImageAttachments();
+  const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
+
+  const handleSend = React.useCallback(() => {
+    onSend(blobs);
+    clear();
+  }, [blobs, onSend, clear]);
+
   return (
     <div
       className="absolute w-64 rounded-lg border bg-popover p-2.5 text-popover-foreground shadow-xl"
@@ -811,11 +837,14 @@ function Composer({
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
-              if (annotation.text.trim()) onSend();
+              if (annotation.text.trim() || blobs.length > 0) handleSend();
             } else if (e.key === "Escape") {
               e.preventDefault();
               onClose();
             }
+          }}
+          onPaste={(e) => {
+            if (e.clipboardData) fromDataTransfer(e.clipboardData);
           }}
           rows={3}
           placeholder={t("annotations.composerPlaceholder")}
@@ -827,14 +856,27 @@ function Composer({
         </p>
       )}
 
+      {/* Image attachment tray (DEC-150). */}
+      {editable && blobs.length > 0 && (
+        <div className="mt-1.5">
+          <AttachmentTray
+            items={blobs}
+            onRemove={remove}
+            onOpen={(id) =>
+              setLightboxIndex(blobs.findIndex((b) => b.id === id))
+            }
+          />
+        </div>
+      )}
+
       {done && <ShotViewer before={annotation.beforeShot} after={annotation.afterShot} />}
 
       <div className="mt-1.5 flex items-center gap-1.5">
         {editable && (
           <button
             type="button"
-            disabled={busy || !annotation.text.trim()}
-            onClick={onSend}
+            disabled={busy || (!annotation.text.trim() && blobs.length === 0)}
+            onClick={handleSend}
             className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />}
@@ -858,6 +900,14 @@ function Composer({
           <Trash2 className="size-3.5" />
         </button>
       </div>
+
+      {/* Image lightbox (DEC-150). */}
+      <ImageLightbox
+        items={blobs}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onNavigate={setLightboxIndex}
+      />
     </div>
   );
 }

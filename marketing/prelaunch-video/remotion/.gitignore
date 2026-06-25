@@ -1,0 +1,6 @@
+node_modules
+out
+.DS_Store
+# 録画素材は public/ に置く（差し替え時）。重いので git には入れない。
+public/*.mov
+public/*.mp4

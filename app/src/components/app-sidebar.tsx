@@ -85,7 +85,7 @@ import { cn, IS_DEV } from "@/lib/utils";
 import { notify, OPEN_ISSUE_EVENT } from "@/lib/notify";
 import { useT, tt } from "@/lib/i18n";
 import { NewIssueModal } from "@/components/new-issue-modal";
-import { setPendingStart } from "@/lib/pending-start";
+import { setPendingStart, type PendingImageBlob } from "@/lib/pending-start";
 
 /** How many issues a repo toggle shows before "もっと見る". */
 const PAGE = 5;
@@ -384,13 +384,13 @@ export function AppSidebar() {
   // navigates. The session on the new issue page will consume the registry entry
   // and auto-fire handleStart once the session is ready (DEC-146).
   const handleModalSubmit = React.useCallback(
-    async (folder: string, message: string, base: string) => {
+    async (folder: string, message: string, base: string, imageBlobs: PendingImageBlob[]) => {
       if (creating) return;
       setCreating(true);
       setShowTrash(false);
       try {
         const issue = await createIssue(folder, "");
-        setPendingStart(issue.id, { message, base });
+        setPendingStart(issue.id, { message, base, imageBlobs });
         if (folder !== root) switchTo(folder);
         void loadIssues(folder);
         router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);

@@ -28,7 +28,6 @@ import {
   Terminal,
   ChevronDown,
   Check,
-  SquarePen,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -51,6 +50,7 @@ import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
 import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
 import { useAnnotationMode } from "./annotation-mode";
+import { ModeToggleGroup } from "./mode-toggle-group";
 import { EmbeddedBrowser } from "./embedded-browser";
 import { AppPicker } from "./app-picker";
 import { usePreviewDiagnostic } from "./use-preview-diagnostic";
@@ -708,7 +708,8 @@ export function PreviewPane({
   );
 
   // "Fix with agent" (DEC-127): hand the verdict + dev-log tail + doctor playbook
-  // to THIS issue's agent (sendDesignFeedback relaunches claude seeded with it).
+  // to THIS issue's agent. injectOrFeedback injects into the running chat (no
+  // restart); only relaunches if no agent is live.
   const diagVerdict = diag.verdict;
   const diagStatus = diag.status;
   const fixWithAgent = React.useCallback(() => {
@@ -719,7 +720,7 @@ export function PreviewPane({
       url: src ?? path,
       logTail: log.split("\n").slice(-60).join("\n"),
     });
-    void session.sendDesignFeedback(prompt, "preview_doctor").catch(() => {});
+    void session.injectOrFeedback(prompt, "preview_doctor").catch(() => {});
   }, [session, diagVerdict, diagStatus, src, path, log]);
 
   const handleSubmit = React.useCallback(
@@ -753,7 +754,7 @@ export function PreviewPane({
     if (!session || veCount === 0) return;
     setApplyingEdits(true);
     try {
-      const ok = await session.sendDesignFeedback(
+      const ok = await session.injectOrFeedback(
         visualEditPrompt(path, veDiffs, veReorders, veTextEdits),
         "visual_edit",
       );
@@ -952,19 +953,14 @@ export function PreviewPane({
 
         <div className="flex flex-1 items-center justify-end gap-1.5">
           {/* 共有 (publish / journey) moved to the top bar near Checkpoints/Ship. */}
-          {/* Edit Mode toggle (DEC-131) — only when an app is running to edit. */}
+          {/* Edit ⊻ Comment — co-located mode control (only when an app is running). */}
           {status === "ready" && (
-            <Button
-              size="sm"
-              variant={editing ? "secondary" : "ghost"}
-              className="h-7 gap-1.5"
-              aria-pressed={editing}
-              onClick={() => setEditing((v) => !v)}
-              title={t("preview.editModeTip")}
-            >
-              <SquarePen className="size-3.5" />
-              {t("preview.editMode")}
-            </Button>
+            <ModeToggleGroup
+              editing={editing}
+              onToggleEdit={() => setEditing((v) => !v)}
+              editLabel={t("preview.editMode")}
+              editTip={t("preview.editModeTip")}
+            />
           )}
           {showError && (
             <Button

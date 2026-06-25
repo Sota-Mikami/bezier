@@ -148,6 +148,10 @@ export const ja: Messages = {
     attachAndSend: "添付して送信",
     remove: "添付を削除",
     imageAlt: "添付画像: {name}",
+    lightboxClose: "プレビューを閉じる",
+    prevImage: "前の画像",
+    nextImage: "次の画像",
+    openPreview: "画像プレビューを開く",
   },
 
   live: {
@@ -621,6 +625,7 @@ export const ja: Messages = {
     tabPreview: "プレビュー",
     tabMap: "マップ",
     tabQa: "QA",
+    beta: "Beta",
   },
 
   annotations: {

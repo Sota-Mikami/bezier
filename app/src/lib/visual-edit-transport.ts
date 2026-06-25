@@ -23,6 +23,9 @@ export interface VisualEditTransport {
   subscribe(onEvents: (events: unknown[]) => void): () => void;
   /** Deactivate the overlay (removes its selection boxes/listeners). */
   deactivate(): void;
+  /** Serialize the edited DOM back to an html string (mock/iframe only — the webview
+   *  edits live code via the agent, so it doesn't implement this). Empty on failure. */
+  serialize?(): Promise<string>;
 }
 
 /** Serialize a `__bzEdit.<method>(...)` call for string-eval transports. */
@@ -71,57 +74,51 @@ export function webviewTransport(): VisualEditTransport {
   };
 }
 
-/** The overlay's installed API on a same-origin iframe window (loosely typed — the
- *  overlay is dynamic JS). */
-type BzEditWin = Window & {
-  __bzEdit?: { q?: unknown[]; [method: string]: unknown };
-};
-
-/** Drives the overlay inside a same-origin IFRAME (the design mock) via DIRECT calls —
- *  no eval, so no `unsafe-eval` CSP dependency. `getWin` returns the live
- *  contentWindow (it changes across reloads, so we read it lazily each call). */
+/** Drives the overlay inside an OPAQUE IFRAME (the design mock) over postMessage — the
+ *  iframe is sandboxed `allow-scripts` with NO `allow-same-origin` (the WKWebView-robust
+ *  isolation the VIEW iframe uses), so we can't touch `contentWindow.__bzEdit` directly.
+ *  The in-iframe bridge (mock-edit `BRIDGE_JS`) relays calls/events/serialize both ways.
+ *  `getWin` returns the live contentWindow (changes across reloads, read lazily). */
 export function iframeTransport(getWin: () => Window | null): VisualEditTransport {
-  const api = () => (getWin() as BzEditWin | null)?.__bzEdit;
+  const post = (msg: unknown) => {
+    try {
+      getWin()?.postMessage(msg, "*");
+    } catch {
+      /* iframe navigated / not ready — ignore */
+    }
+  };
   return {
-    call: (method, args = []) => {
-      try {
-        const fn = api()?.[method];
-        if (typeof fn === "function") (fn as (...a: unknown[]) => void)(...args);
-      } catch {
-        /* iframe navigated / not ready — ignore */
-      }
-    },
-    activate: () => {
-      try {
-        const fn = api()?.activate;
-        if (typeof fn === "function") (fn as () => void)();
-      } catch {
-        /* not ready — the next activate (on load) covers it */
-      }
-    },
+    call: (method, args = []) => post({ __bz: "call", method, args }),
+    activate: () => post({ __bz: "call", method: "activate", args: [] }),
     subscribe: (onEvents) => {
-      let stopped = false;
-      const timer = window.setInterval(() => {
-        if (stopped) return;
-        try {
-          const q = api()?.q;
-          if (Array.isArray(q) && q.length) onEvents(q.splice(0));
-        } catch {
-          /* ignore */
-        }
-      }, DRAIN_MS);
-      return () => {
-        stopped = true;
-        window.clearInterval(timer);
+      const onMsg = (e: MessageEvent) => {
+        if (e.source !== getWin()) return; // only our iframe
+        const d = e.data as { __bz?: string; events?: unknown[] };
+        if (d && d.__bz === "events" && Array.isArray(d.events)) onEvents(d.events);
       };
+      window.addEventListener("message", onMsg);
+      return () => window.removeEventListener("message", onMsg);
     },
-    deactivate: () => {
-      try {
-        const fn = api()?.deactivate;
-        if (typeof fn === "function") (fn as () => void)();
-      } catch {
-        /* ignore */
-      }
-    },
+    deactivate: () => post({ __bz: "call", method: "deactivate", args: [] }),
+    serialize: () =>
+      new Promise<string>((resolve) => {
+        let done = false;
+        const finish = (html: string) => {
+          if (done) return;
+          done = true;
+          window.removeEventListener("message", onMsg);
+          window.clearTimeout(timer);
+          resolve(html);
+        };
+        const onMsg = (e: MessageEvent) => {
+          if (e.source !== getWin()) return;
+          const d = e.data as { __bz?: string; html?: string };
+          if (d && d.__bz === "html" && typeof d.html === "string") finish(d.html);
+        };
+        window.addEventListener("message", onMsg);
+        // The bridge deactivates the overlay then posts the serialized DOM back.
+        post({ __bz: "serialize" });
+        const timer = window.setTimeout(() => finish(""), 2000);
+      }),
   };
 }

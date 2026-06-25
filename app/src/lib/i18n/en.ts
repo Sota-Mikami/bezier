@@ -149,6 +149,10 @@ export const en = {
     attachAndSend: "Attach & send",
     remove: "Remove attachment",
     imageAlt: "Attached image: {name}",
+    lightboxClose: "Close preview",
+    prevImage: "Previous image",
+    nextImage: "Next image",
+    openPreview: "Open image preview",
   },
 
   live: {
@@ -622,6 +626,7 @@ export const en = {
     tabPreview: "Preview",
     tabMap: "Map",
     tabQa: "QA",
+    beta: "Beta",
   },
 
   annotations: {
