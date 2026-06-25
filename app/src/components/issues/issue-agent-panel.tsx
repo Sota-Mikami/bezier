@@ -96,13 +96,15 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
           // as the start state appears (defaults to the repo's current branch; the
           // list fills in once branches load). After starting it's pinned (the
           // `→ base` indicator above).
-          <BaseBranchPicker
-            value={chosenBase}
-            branches={branches}
-            onChange={setChosenBase}
-            onRefresh={refreshBranches}
-            refreshing={refreshingBranches}
-          />
+          <div className="ml-auto flex min-w-0">
+            <BaseBranchPicker
+              value={chosenBase}
+              branches={branches}
+              onChange={setChosenBase}
+              onRefresh={refreshBranches}
+              refreshing={refreshingBranches}
+            />
+          </div>
         )}
       </div>
 

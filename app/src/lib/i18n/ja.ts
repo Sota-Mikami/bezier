@@ -760,6 +760,19 @@ export const ja: Messages = {
     branchInto: "{branch} → {base} に向ける（Sync / Merge / PR）",
   },
 
+  newIssueModal: {
+    title: "新しい Issue",
+    chatPlaceholder: "やりたいことを書く…（Enter で開始 / Shift+Enter で改行）",
+    folderLabel: "フォルダ",
+    folderSearch: "フォルダを検索…",
+    folderNoMatch: "一致するフォルダなし",
+    openFolder: "フォルダを開く…",
+    branchLabel: "Base",
+    start: "開始",
+    via: "{agent} 経由",
+    creating: "作成中…",
+  },
+
   map: {
     needWorktree: "先に Prototype で worktree を作成してください。",
     loadingMap: "Map を読み込み中…",
@@ -778,6 +791,28 @@ export const ja: Messages = {
     capturing: "撮影中 {done}/{total}…",
     notCaptured: "未撮影",
     captureHint: "各ルートを Preview ブラウザでログイン済みのままスクショします。",
+    // Agentic Map (ISSUE-006) — manifest ベースのグリッド
+    manifestMissing: "マニフェストがありません。チャットで /bezier:map を実行してください。",
+    manifestInvalid: "マニフェストが無効です: {error}",
+    manifestChanged: "{added} 件追加 · {removed} 件削除",
+    generateManifest: "/bezier:map を実行",
+    captureManifest: "Map を撮影",
+    captureManifestHint: "URL で到達できるエントリを認証済み Preview ブラウザで自動撮影します。",
+    gapManual: "手動",
+    gapSeed: "シード必要",
+    gapSteps: "手順必要",
+    gapHarness: "ハーネス必要",
+    gapRedirected: "リダイレクト",
+    gapNotCaptured: "未撮影",
+    cellCitation: "根拠: {ref}",
+    openInPreview: "Preview で開く",
+    stateHeader: "状態",
+    routeHeader: "画面",
+    manifestEntryCount: "{count} 件",
+    confidenceLow: "低信頼度",
+    confidenceMedium: "中信頼度",
+    noUrlEntries: "URL で到達できるエントリがありません。全状態が手動確認が必要です。",
+    specStatesBlockMissing: "/bezier:states ブロックがありません — 状態を本文から推測しました（精度が低い可能性があります）。",
   },
 
   ship: {

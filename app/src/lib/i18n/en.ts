@@ -761,6 +761,19 @@ export const en = {
     branchInto: "{branch} → targets {base} (Sync / Merge / PR)",
   },
 
+  newIssueModal: {
+    title: "New issue",
+    chatPlaceholder: "What do you want to do? (Enter to start, Shift+Enter for new line)",
+    folderLabel: "Folder",
+    folderSearch: "Search folders…",
+    folderNoMatch: "No matching folder",
+    openFolder: "Open folder…",
+    branchLabel: "Base",
+    start: "Start",
+    via: "via {agent}",
+    creating: "Creating…",
+  },
+
   map: {
     needWorktree: "Create a worktree first via Prototype.",
     loadingMap: "Loading Map…",
@@ -779,6 +792,28 @@ export const en = {
     capturing: "Capturing {done}/{total}…",
     notCaptured: "Not captured yet",
     captureHint: "Captures a logged-in screenshot of each route via the Preview browser.",
+    // Agentic Map (ISSUE-006) — manifest-based grid
+    manifestMissing: "No manifest yet. Run /bezier:map in chat to generate one.",
+    manifestInvalid: "Manifest invalid: {error}",
+    manifestChanged: "{added} added · {removed} removed",
+    generateManifest: "Run /bezier:map",
+    captureManifest: "Capture map",
+    captureManifestHint: "Captures URL-reachable entries via the authed Preview browser.",
+    gapManual: "Manual",
+    gapSeed: "Seed required",
+    gapSteps: "Steps required",
+    gapHarness: "Harness required",
+    gapRedirected: "Redirected",
+    gapNotCaptured: "Not captured yet",
+    cellCitation: "Cited: {ref}",
+    openInPreview: "Open in Preview",
+    stateHeader: "state",
+    routeHeader: "screen",
+    manifestEntryCount: "{count} entries",
+    confidenceLow: "Low confidence",
+    confidenceMedium: "Medium confidence",
+    noUrlEntries: "No URL-reachable entries in manifest. All states require manual capture.",
+    specStatesBlockMissing: "No /bezier:states block found — states inferred from prose (less reliable).",
   },
 
   ship: {

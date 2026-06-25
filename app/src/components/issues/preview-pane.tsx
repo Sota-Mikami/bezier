@@ -36,7 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { openExternal, openLiveWindow, captureRegion, pathMtime } from "@/lib/ipc";
+import { openExternal, openLiveWindow, captureRegion, pathMtime, embedBrowserUrl } from "@/lib/ipc";
 import { loadImageDataUrl } from "@/lib/annotations";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
@@ -45,6 +45,7 @@ import { isLoopbackUrl, type PreviewConfig } from "@/lib/preview";
 import { gitStatus, changedPathsFromStatus } from "@/lib/git";
 import { deriveRoutesFromChangedFiles } from "@/lib/changed-route";
 import { mapStillPath } from "@/lib/scope";
+import { manifestStillPath, type ManifestEntry } from "@/lib/map-manifest";
 import { getViewState, setViewState } from "@/lib/view-state";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
@@ -299,16 +300,26 @@ export function PreviewPane({
   captureReq,
   onCaptureProgress,
   onCaptureDone,
+  onCaptureGap,
 }: {
   server: PreviewServer;
   hasRef: boolean;
   /** When present (web runner), enables the design-feedback overlay (DEC-045). */
   session?: ImplementSession;
-  /** DEC-133 Map-A: when `nonce` bumps, screenshot each `routes` entry via this
-   *  (logged-in) browser so the Map can tile real screens. Driven by BuildReview. */
-  captureReq?: { routes: string[]; nonce: number };
+  /** DEC-133 Map-A / ISSUE-006: when `nonce` bumps, screenshot each entry via this
+   *  (logged-in) browser so the Map can tile real screens. Driven by BuildReview.
+   *  Exactly one of `routes` (flat list, DEC-133) or `entries` (manifest-based,
+   *  ISSUE-006) is set per request. */
+  captureReq?: {
+    routes?: string[];
+    entries?: ManifestEntry[];
+    nonce: number;
+  };
   onCaptureProgress?: (done: number, total: number) => void;
   onCaptureDone?: () => void;
+  /** Called when a capture attempt is skipped due to an auth redirect or other
+   *  error — the Map renders a gap cell with this reason. */
+  onCaptureGap?: (entryId: string, reason: string) => void;
 }) {
   const t = useT();
   const { status, config, apps, selectApp, scriptsDev, log, error, url, configLoaded, attach, autoAttached } =
@@ -529,20 +540,27 @@ export function PreviewPane({
     else if (becameReady) void applyChangedRoute({ capture: false });
   }, [status, session?.running, applyChangedRoute]);
 
-  // DEC-133 Map-A: capture a logged-in screenshot of each scope route via THIS
-  // (authenticated) Preview browser, so the Map can tile real screens instead of
-  // login-walled iframes. Driven by the Map (BuildReview switches to Preview, bumps
-  // captureReq.nonce). Reuses navigateAndSettle + captureRouteStill (same capture_
-  // region path as the annotate freeze) — no change to the shared-webview coordinator
-  // (login-critical, DEC-120/130). Progress shows in the header (`mapCapture`).
+  // DEC-133 Map-A / ISSUE-006 Phase 1: capture logged-in screenshots of each
+  // route (flat board) or manifest entry (screen×state board) via THIS authenticated
+  // Preview browser. Driven by the Map (BuildReview switches to Preview, bumps
+  // captureReq.nonce). Reuses navigateAndSettle + captureRouteStill (same
+  // capture_region path as the annotate freeze) — no change to the shared-webview
+  // coordinator (login-critical, DEC-120/130).
+  //
+  // B-2 redirect guard (AI Eng review): after navigateAndSettle, we call
+  // embedBrowserUrl() to verify the browser actually landed on the intended route.
+  // If the pathname differs (auth wall, 404 → redirect), we skip the capture and
+  // call onCaptureGap() so the Map can render an honest "Redirected" gap cell.
   const captureNonceRef = React.useRef(captureReq?.nonce ?? 0);
   React.useEffect(() => {
     const nonce = captureReq?.nonce ?? 0;
     if (nonce === captureNonceRef.current) return;
     captureNonceRef.current = nonce;
     const routes = captureReq?.routes ?? [];
+    const entries = captureReq?.entries ?? [];
+    const total = entries.length || routes.length;
     if (
-      !routes.length ||
+      !total ||
       !issue ||
       status !== "ready" ||
       !url ||
@@ -556,17 +574,82 @@ export function PreviewPane({
     capturingMapRef.current = true;
     const orig = pathRef.current;
     let cancelled = false;
+
+    // Resolve: (entryId, route, outPath) for each item to capture.
+    const items: Array<{ id: string; route: string; navUrl: string; outPath: string }> =
+      entries.length > 0
+        ? entries
+            .filter((e) => e.reach.kind === "url")
+            .map((e) => ({
+              id: e.id,
+              route: e.route,
+              // Navigate to the STATE-reaching URL (reach.url — may carry a query
+              // param that triggers the state). `route` is the canonical pathname,
+              // kept for the redirect check + progress display.
+              navUrl: e.reach.kind === "url" ? e.reach.url : e.route,
+              outPath: manifestStillPath(issue, e.id),
+            }))
+        : routes.map((r) => ({
+            id: r, // for route-based captures, id === route string
+            route: r,
+            navUrl: r,
+            outPath: mapStillPath(issue, r),
+          }));
+
     void (async () => {
       try {
-        await sleep(400); // let the tab switch settle so the webview is shown
-        for (let i = 0; i < routes.length; i++) {
+        await sleep(400); // let the tab switch settle so the webview is visible
+        for (let i = 0; i < items.length; i++) {
           if (cancelled) break;
-          const route = routes[i];
-          setMapCapture({ route, done: i, total: routes.length });
-          await navigateAndSettle(route);
+          const { id, route, navUrl, outPath } = items[i];
+          setMapCapture({ route, done: i, total: items.length });
+          await navigateAndSettle(navUrl);
           if (cancelled) break;
-          await captureRouteStill(route);
-          onCaptureProgress?.(i + 1, routes.length);
+
+          // B-2: verify the browser actually landed on the intended route.
+          // embedBrowserUrl() returns the actual current URL of the embedded
+          // webview (null if none exists). If the pathname differs from our
+          // intended route (auth redirect, 404 fallback, etc.), skip the capture
+          // and record a gap rather than saving a misleading screenshot.
+          const actualHref = await embedBrowserUrl().catch(() => null);
+          if (actualHref) {
+            try {
+              const actualPath = new URL(actualHref).pathname;
+              // Compare against the PATHNAME we intended to land on (resolve navUrl
+              // against the actual origin so a query-only state still matches its page).
+              const expectedPath = new URL(navUrl, actualHref).pathname;
+              // Normalise: strip trailing slash for comparison (except root).
+              const norm = (p: string) => (p === "/" ? p : p.replace(/\/$/, ""));
+              if (norm(actualPath) !== norm(expectedPath)) {
+                onCaptureGap?.(id, `redirected to ${actualPath}`);
+                onCaptureProgress?.(i + 1, items.length);
+                continue; // skip screenshot — gap cell is more honest
+              }
+            } catch {
+              // URL parse failure: proceed with capture (best-effort)
+            }
+          }
+
+          // Capture the (now-settled, correctly-landed) webview.
+          if (!cancelled) {
+            const el = containerRef.current;
+            if (el && el.offsetParent !== null) {
+              const r = el.getBoundingClientRect();
+              if (r.width >= 1 && r.height >= 1) {
+                const win = getCurrentWindow();
+                const pos = await win.innerPosition();
+                const scale = await win.scaleFactor();
+                await captureRegion(
+                  pos.x / scale + r.left,
+                  pos.y / scale + r.top,
+                  r.width,
+                  r.height,
+                  outPath,
+                ).catch(() => {});
+              }
+            }
+          }
+          onCaptureProgress?.(i + 1, items.length);
         }
       } finally {
         setMapCapture(null);

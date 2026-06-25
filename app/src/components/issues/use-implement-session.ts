@@ -79,6 +79,7 @@ import { isUntitled, titleFromMessage } from "@/lib/issue-domain";
 import { writeHandoffPrBody } from "@/lib/handoff";
 import { tt } from "@/lib/i18n";
 import { conflictResolvePrompt } from "@/lib/prompts";
+import { takePendingStart } from "@/lib/pending-start";
 import type {
   ImplementSession,
   SessionAction,
@@ -1383,6 +1384,56 @@ export function useImplementSession(
       (await injectToAgent(text)) || sendDesignFeedback(text, note),
     [injectToAgent, sendDesignFeedback],
   );
+
+  // --- Modal auto-start (DEC-146) -----------------------------------------
+  //
+  // When the New-Issue modal's Start is clicked: the issue folder is created,
+  // a {message, base} payload is stashed in pending-start.ts, and the router
+  // navigates here. We consume the payload and auto-fire handleStart once the
+  // session is genuinely ready (git repo confirmed + agent available + no
+  // worktree yet + no ongoing action).
+  //
+  // Two refs, two effects:
+  //   Ref pendingAutoMsgRef  — message to pass to handleStart (null = nothing pending)
+  //   Ref pendingAutoBaseRef — base branch to apply BEFORE handleStart reads chosenBaseRef
+  //
+  // Effect A: consumes the registry entry (fires once per issue id mount).
+  // Effect B: watches readiness conditions; fires handleStart exactly once when met.
+  //   It reads from the refs (not state) so it can be in a normal deps-driven effect
+  //   without needing the refs themselves in deps (refs are mutable, not reactive).
+
+  const pendingAutoMsgRef = React.useRef<string | null>(null);
+  const pendingAutoBaseRef = React.useRef<string | null>(null);
+
+  // Effect A — consume the pending-start registry entry for this issue.
+  React.useEffect(() => {
+    const pending = takePendingStart(issue.id);
+    if (!pending) return;
+    pendingAutoMsgRef.current = pending.message;
+    pendingAutoBaseRef.current = pending.base;
+  }, [issue.id]);
+
+  // Effect B — fire auto-start once session is ready.
+  // Deps: everything that gates handleStart so the effect re-evaluates on each
+  // state change until conditions are met or the ref is cleared.
+  React.useEffect(() => {
+    const msg = pendingAutoMsgRef.current;
+    if (!msg) return;
+    // Not yet ready — wait for next state change.
+    if (!gitRepo || action || ref || !selectedAgent?.available) return;
+    // Conditions met: consume the pending start.
+    pendingAutoMsgRef.current = null;
+    const pendingBase = pendingAutoBaseRef.current;
+    pendingAutoBaseRef.current = null;
+    // Apply the chosen base to the ref NOW (synchronously) so handleStart
+    // reads the right value when it executes `const base = chosenBaseRef.current`.
+    if (pendingBase) {
+      chosenBaseRef.current = pendingBase;
+      setChosenBaseState(pendingBase);
+    }
+    void handleStart(msg);
+  }, [gitRepo, action, ref, selectedAgent, handleStart]);
+  // -------------------------------------------------------------------------
 
   const canImplement =
     gitRepo === true && issue.slots.spec && !!selectedAgent?.available && !action;

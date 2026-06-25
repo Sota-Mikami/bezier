@@ -25,6 +25,7 @@ import { IssueMap } from "./issue-map";
 import { QaProposal } from "./qa-proposal";
 import { AnnotationToggle } from "./annotation-mode";
 import type { ImplementSession } from "./implement-session-types";
+import type { ManifestEntry } from "@/lib/map-manifest";
 
 type ProtoTab = "preview" | "map" | "qa";
 const PROTO_TABS: ProtoTab[] = ["preview", "map", "qa"];
@@ -50,26 +51,51 @@ export function BuildReview({
   // through the (authenticated) Preview browser. The Map requests it; we switch to
   // Preview so its webview is painted (capture_region needs it visible), bump a
   // nonce the PreviewPane acts on, then return to the Map showing fresh stills.
-  const [captureReq, setCaptureReq] = React.useState<{ routes: string[]; nonce: number } | null>(
-    null,
-  );
+  //
+  // CaptureReq can be route-based (DEC-133 flat list) or manifest-entry-based
+  // (ISSUE-006 Phase 1: screen×state board). Only one kind fires at a time.
+  const [captureReq, setCaptureReq] = React.useState<{
+    routes?: string[];
+    entries?: ManifestEntry[];
+    nonce: number;
+  } | null>(null);
   const [capturing, setCapturing] = React.useState(false);
   const [captureProgress, setCaptureProgress] = React.useState<{ done: number; total: number } | null>(
     null,
   );
   const [stillsNonce, setStillsNonce] = React.useState(0);
+  // Gap tracking: entryId → gap reason string (transient, reset on next capture).
+  const [captureGaps, setCaptureGaps] = React.useState<Record<string, string>>({});
+
+  /** DEC-133 path: capture a list of routes (flat board). */
   const startCapture = React.useCallback((routes: string[]) => {
     if (!routes.length) return;
     setTab("preview");
     setCapturing(true);
     setCaptureProgress({ done: 0, total: routes.length });
+    setCaptureGaps({});
     setCaptureReq((prev) => ({ routes, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
+
+  /** ISSUE-006 path: capture manifest entries (screen×state board). */
+  const startManifestCapture = React.useCallback((entries: ManifestEntry[]) => {
+    if (!entries.length) return;
+    setTab("preview");
+    setCapturing(true);
+    setCaptureProgress({ done: 0, total: entries.length });
+    setCaptureGaps({});
+    setCaptureReq((prev) => ({ entries, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
   const handleCaptureDone = React.useCallback(() => {
     setCapturing(false);
     setCaptureProgress(null);
     setStillsNonce((n) => n + 1);
     setTab("map");
+  }, []);
+
+  const handleCaptureGap = React.useCallback((entryId: string, reason: string) => {
+    setCaptureGaps((prev) => ({ ...prev, [entryId]: reason }));
   }, []);
 
   // Same Chrome-style nav as Design (⌘1–9 / ⌘⌥←→ / Ctrl+Tab).
@@ -126,14 +152,17 @@ export function BuildReview({
             captureReq={captureReq ?? undefined}
             onCaptureProgress={(done, total) => setCaptureProgress({ done, total })}
             onCaptureDone={handleCaptureDone}
+            onCaptureGap={handleCaptureGap}
           />
         </div>
         {tab === "map" && (
           <IssueMap
             session={session}
             onCapture={startCapture}
+            onManifestCapture={startManifestCapture}
             capturing={capturing}
             captureProgress={captureProgress}
+            captureGaps={captureGaps}
             stillsNonce={stillsNonce}
           />
         )}

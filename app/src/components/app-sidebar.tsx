@@ -84,6 +84,8 @@ import {
 import { cn, IS_DEV } from "@/lib/utils";
 import { notify, OPEN_ISSUE_EVENT } from "@/lib/notify";
 import { useT, tt } from "@/lib/i18n";
+import { NewIssueModal } from "@/components/new-issue-modal";
+import { setPendingStart } from "@/lib/pending-start";
 
 /** How many issues a repo toggle shows before "もっと見る". */
 const PAGE = 5;
@@ -121,6 +123,8 @@ export function AppSidebar() {
     new Map(),
   );
   const [creating, setCreating] = React.useState(false);
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [modalFolder, setModalFolder] = React.useState("");
   const loadingIssues = React.useRef<Set<string>>(new Set());
   // Last seen "needs attention?" per key, to fire a notification only on the
   // transition INTO needs-attention (not every poll).
@@ -360,9 +364,10 @@ export function AppSidebar() {
     [creating, root, switchTo, loadIssues, router, t],
   );
 
-  // New issue (⌘N / top "New" / ⌘K): create in the ACTIVE repo (opening a folder
-  // first if none). The target is no longer chosen at the door (DEC-083 reverted);
-  // it's shown + changeable from the Issue header until work starts (DEC-084).
+  // New issue (⌘N / top "New" / ⌘K): open the focused new-issue modal (DEC-146).
+  // The modal shows Chat + Folder + Base; pressing Start creates the issue and
+  // auto-fires handleStart in the session. DEC-083/084 history: repo picker at the
+  // door was reverted; this modal is different — chat is the hero, not a repo gate.
   const handleNew = React.useCallback(async () => {
     if (creating) return;
     let target = root;
@@ -370,8 +375,56 @@ export function AppSidebar() {
       target = await openRoot();
       if (!target) return;
     }
-    await createIssueIn(target);
-  }, [creating, root, openRoot, createIssueIn]);
+    setModalFolder(target);
+    setModalOpen(true);
+  }, [creating, root, openRoot]);
+
+  // Called by the modal when the maker clicks Start. Creates the issue (= a real
+  // folder on disk), stashes the message+base in the pending-start registry, then
+  // navigates. The session on the new issue page will consume the registry entry
+  // and auto-fire handleStart once the session is ready (DEC-146).
+  const handleModalSubmit = React.useCallback(
+    async (folder: string, message: string, base: string) => {
+      if (creating) return;
+      setCreating(true);
+      setShowTrash(false);
+      try {
+        const issue = await createIssue(folder, "");
+        setPendingStart(issue.id, { message, base });
+        if (folder !== root) switchTo(folder);
+        void loadIssues(folder);
+        router.push(`/issues?issue=${encodeURIComponent(issue.id)}`);
+        setModalOpen(false);
+        // Best-effort freshness nudge (same as createIssueIn) — never blocks.
+        void (async () => {
+          try {
+            const snap = await gitDefaultBehind(folder);
+            if (snap.hasRemote && snap.behind > 0 && snap.ahead === 0) {
+              const ok = await confirmDialog(
+                t("freshness.issueConfirm", { base: snap.base, n: snap.behind }),
+                {
+                  title: t("freshness.issueConfirmTitle"),
+                  okLabel: t("freshness.update"),
+                  cancelLabel: t("freshness.skip"),
+                },
+              );
+              if (ok) await gitUpdateDefault(folder);
+            }
+          } catch {
+            /* never block issue creation */
+          }
+        })();
+      } catch (e) {
+        await messageDialog(
+          t("sidebar.createFailed", { msg: e instanceof Error ? e.message : String(e) }),
+          { title: t("sidebar.createErrorTitle") },
+        );
+      } finally {
+        setCreating(false);
+      }
+    },
+    [creating, root, switchTo, loadIssues, router, t],
+  );
 
   // Delete an Issue straight from the sidebar's per-issue "…" menu (DEC-089):
   // confirm → move to trash → refresh that repo's issues + trash. If the deleted
@@ -856,6 +909,19 @@ export function AppSidebar() {
           {t("sidebar.feedback")}
         </button>
       </SidebarFooter>
+
+      {/* New-Issue modal (DEC-146): mounts only when open so each open = fresh state. */}
+      {modalOpen && (
+        <NewIssueModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          defaultFolder={modalFolder}
+          recents={recents}
+          onOpenFolder={openRoot}
+          onSubmit={handleModalSubmit}
+          submitting={creating}
+        />
+      )}
     </Sidebar>
   );
 }
