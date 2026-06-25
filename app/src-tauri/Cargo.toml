@@ -3,7 +3,9 @@ name = "bezier"
 version = "0.1.1"
 description = "Bezier — agent workbench for designers and PMs"
 edition = "2021"
-rust-version = "1.77"
+# 1.80: the code uses `str::split_at_checked` (stable since 1.80). Builds run on
+# stable (CI) / Homebrew 1.83 locally; kept < 1.85 to stay pre-edition2024 (pins below).
+rust-version = "1.80"
 
 [lib]
 # The desktop entrypoint links against this lib; name must be a valid ident.

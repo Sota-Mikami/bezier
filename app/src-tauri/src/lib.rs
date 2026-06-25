@@ -3156,7 +3156,7 @@ fn collect_https_origins(text: &str, set: &mut std::collections::BTreeSet<String
             .chars()
             .take_while(|&c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':')
             .collect();
-        let host = host.trim_end_matches(|c: char| c == ':' || c == '.' || c == '-');
+        let host = host.trim_end_matches([':', '.', '-']);
         if host.is_empty() {
             continue;
         }
