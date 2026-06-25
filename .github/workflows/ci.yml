@@ -57,7 +57,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pin to the project's intended toolchain (Homebrew 1.83 locally; deps are
+      # pinned <edition2024/1.85 in Cargo.toml). `@stable` drifted to 1.96, whose
+      # clippy flags lints the dev's 1.83 can't see + reproduce — so CI failed on
+      # things that pass locally. Pinning makes local == CI. Bump deliberately.
+      - uses: dtolnay/rust-toolchain@1.83
         with:
           components: rustfmt, clippy
 
