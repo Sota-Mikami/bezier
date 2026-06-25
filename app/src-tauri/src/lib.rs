@@ -1730,15 +1730,23 @@ fn git_init(path: String) -> Result<(), String> {
     Err(format!("git commit failed: {}", err.trim()))
 }
 
-/// Create `branch` off the repo's current HEAD and add a worktree at
-/// `worktree_path`. If `branch` already exists, attach it to the new worktree
-/// instead of failing. A pre-existing `worktree_path` is surfaced as an Err.
+/// Create `branch` off `base` and add a worktree at `worktree_path`. `base` is a
+/// commit-ish: a local branch (`feat-x`), a remote-tracking ref (`origin/feat-x`),
+/// or empty -> the repo's current HEAD (the original behavior, for callers that
+/// don't pin a base / DEC-145). If `branch` already exists, attach it to the new
+/// worktree instead of failing. A pre-existing `worktree_path` is surfaced as Err.
 #[tauri::command]
-fn git_worktree_add(repo: String, branch: String, worktree_path: String) -> Result<(), String> {
+fn git_worktree_add(
+    repo: String,
+    branch: String,
+    worktree_path: String,
+    base: String,
+) -> Result<(), String> {
     reject_traversal(Path::new(&repo))?;
     reject_traversal(Path::new(&worktree_path))?;
 
-    // Fast path: create a fresh branch off HEAD and check it out in the worktree.
+    // Fast path: create a fresh branch off the chosen base (HEAD when unpinned).
+    let start = if base.trim().is_empty() { "HEAD" } else { base.trim() };
     let out = std::process::Command::new("git")
         .args([
             "-C",
@@ -1748,7 +1756,7 @@ fn git_worktree_add(repo: String, branch: String, worktree_path: String) -> Resu
             "-b",
             &branch,
             &worktree_path,
-            "HEAD",
+            start,
         ])
         .output()
         .map_err(|e| format!("git_worktree_add {repo}: {e}"))?;
@@ -1961,6 +1969,47 @@ fn git_behind_ahead(worktree_path: String, base: String) -> Result<BehindAhead, 
 fn git_base_branch(repo_path: String) -> Result<String, String> {
     reject_traversal(Path::new(&repo_path))?;
     current_branch(&repo_path)
+}
+
+/// Branches available as a base for a new issue's worktree (DEC-145): local heads
+/// plus remote-tracking refs (returned WITH their remote prefix, e.g. `origin/x`,
+/// so they resolve as a worktree start-point). The repo's CURRENT branch is also
+/// returned separately as `current` (the picker's default); it stays IN the list
+/// too so the picker can select back to it. `origin/HEAD` aliases are dropped.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchList {
+    pub current: String,
+    pub branches: Vec<String>,
+}
+
+#[tauri::command]
+fn git_list_branches(repo_path: String) -> Result<BranchList, String> {
+    reject_traversal(Path::new(&repo_path))?;
+    let repo = repo_path.as_str();
+    let current = current_branch(repo).unwrap_or_default();
+    let locals = git_run(&[
+        "-C", repo, "for-each-ref", "--format=%(refname:short)", "refs/heads",
+    ])
+    .unwrap_or_default();
+    let remotes = git_run(&[
+        "-C", repo, "for-each-ref", "--format=%(refname:short)", "refs/remotes",
+    ])
+    .unwrap_or_default();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut branches: Vec<String> = Vec::new();
+    // Includes `current` (so the picker can always select back to it); `current`
+    // is also returned separately as the default. `origin/HEAD` aliases are dropped.
+    for name in locals.lines().chain(remotes.lines()) {
+        let name = name.trim();
+        if name.is_empty() || name.ends_with("/HEAD") {
+            continue;
+        }
+        if seen.insert(name.to_string()) {
+            branches.push(name.to_string());
+        }
+    }
+    Ok(BranchList { current, branches })
 }
 
 /// A snapshot of how the repo's default branch compares to its origin upstream —
@@ -3708,6 +3757,7 @@ pub fn run() {
             git_branch_delete,
             git_behind_ahead,
             git_base_branch,
+            git_list_branches,
             git_fetch,
             git_default_behind,
             git_update_default,

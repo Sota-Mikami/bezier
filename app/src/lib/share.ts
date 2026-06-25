@@ -5,13 +5,14 @@
 // / wireframes added later are shared by default (no re-opt-in). Stored at
 // <issue.dir>/share.json (under .bezier, never committed).
 
-import { readFile, writeFile } from "@/lib/ipc";
+import { readFile, writeFile, saveFileDialog, writeFileBytes } from "@/lib/ipc";
 import { tt } from "@/lib/i18n";
 import { listDocuments, type Issue } from "@/lib/issues";
 import { listVariants, readVariant } from "@/lib/variants";
 import { readQa, seedQaFromSpec } from "@/lib/qa";
 import { readScope } from "@/lib/scope";
-import type { JourneyDesignTab, JourneyProtoTab } from "@/lib/journey";
+import type { JourneyDesignTab, JourneyProtoTab, JourneyQaRow } from "@/lib/journey";
+import { zipSync, type ZipFile } from "@/lib/zip";
 
 /** Stable, relative selection keys (so they survive the issue moving on disk). */
 export const docKey = (file: string) => `doc:${file}`;
@@ -163,4 +164,84 @@ export async function gatherJourneyData(
   }
 
   return { design, prototype };
+}
+
+// ---------------------------------------------------------------------------
+// Export to ZIP (DEC-146) — the OTHER way to share: bundle the SELECTED pages as
+// Markdown / HTML files into a .zip the maker can drop straight into Slack etc.
+// Uses the SAME per-issue selection as URL share. Live Preview / Map are a running
+// app / route screenshots, not file content, so they're skipped (URL-only).
+// ---------------------------------------------------------------------------
+
+/** A filesystem-safe file name (no path separators / reserved chars), capped. */
+function safeName(s: string): string {
+  const cleaned = s
+    .replace(/[/\\:*?"<>|]+/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return cleaned || "untitled";
+}
+
+/** Render a QA tab's rows as a GitHub-flavored markdown table. */
+function qaToMarkdown(label: string, rows: JourneyQaRow[]): string {
+  const cell = (s: string) => (s ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  const head =
+    "| Area | Scenario | Expected | Status | Priority |\n|---|---|---|---|---|";
+  const body = rows
+    .map((r) => `| ${cell(r.area)} | ${cell(r.scenario)} | ${cell(r.expected)} | ${cell(r.status)} | ${cell(r.priority)} |`)
+    .join("\n");
+  return `# ${label}\n\n${head}\n${body}\n`;
+}
+
+/** Build the ZIP entries for the selected pages: design docs -> `.md`, design html
+ *  wireframes -> `.html`, QA -> a markdown table. Names are numbered + deduped. */
+export async function buildExportEntries(
+  issue: Issue,
+  cfg: ShareConfig,
+): Promise<ZipFile[]> {
+  const { design, prototype } = await gatherJourneyData(issue, null, cfg);
+  const enc = new TextEncoder();
+  const used = new Set<string>();
+  const entries: ZipFile[] = [];
+  const add = (base: string, ext: string, content: string) => {
+    const stem = safeName(base);
+    let name = `${stem}.${ext}`;
+    for (let i = 2; used.has(name.toLowerCase()); i++) name = `${stem}-${i}.${ext}`;
+    used.add(name.toLowerCase());
+    entries.push({ name, data: enc.encode(content) });
+  };
+  design.forEach((tab, i) => {
+    const n = String(i + 1).padStart(2, "0");
+    if (tab.kind === "doc") add(`${n}-${tab.label}`, "md", tab.md);
+    else add(`${n}-${tab.label}`, "html", tab.html);
+  });
+  for (const p of prototype) {
+    if (p.kind === "qa" && p.rows.length > 0) add(p.label, "md", qaToMarkdown(p.label, p.rows));
+    // preview / map are a live app URL / route screenshots — not file content.
+  }
+  return entries;
+}
+
+export type ExportResult =
+  | { ok: true; path: string; count: number }
+  | { ok: false; reason: "empty" | "cancelled" };
+
+/** Gather the selected pages, prompt for a save location, and write the .zip.
+ *  Returns "empty" when nothing exportable is selected and "cancelled" when the
+ *  maker dismisses the save dialog. */
+export async function exportShareZip(
+  issue: Issue,
+  cfg: ShareConfig,
+  defaultName: string,
+): Promise<ExportResult> {
+  const entries = await buildExportEntries(issue, cfg);
+  if (entries.length === 0) return { ok: false, reason: "empty" };
+  const path = await saveFileDialog({
+    defaultPath: `${safeName(defaultName)}.zip`,
+    filters: [{ name: "ZIP", extensions: ["zip"] }],
+  });
+  if (!path) return { ok: false, reason: "cancelled" };
+  await writeFileBytes(path, zipSync(entries));
+  return { ok: true, path, count: entries.length };
 }

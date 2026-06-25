@@ -8,17 +8,21 @@
 import { tt } from "@/lib/i18n";
 import { SHARE_SCRIPT } from "@/lib/journey-script";
 
-// CSP hash of SHARE_SCRIPT (DEC-113) — allows ONLY that exact inline script to run
-// (keyboard shortcuts), keeping the page's no-arbitrary-script guarantee. Locked to
-// the script by journey.test.ts: change the script → recompute → update this.
-const SHARE_SCRIPT_HASH = "sha256-h8Jw6EvmmAoVr6NK7XMG0md8MmHMKN2g3ZmVEoYoI3w=";
-
 // DF-5: the share page MIRRORS the maker's Issue detail — a Design / Prototype
 // segmented control, each with its own tabs, showing only what the maker chose to
 // share (per-issue). A "doc" tab is rendered (escaped) markdown; an "html" tab is
-// a sandboxed design wireframe; Prototype tabs are the live app (preview), a QA
-// table, or a Map grid of route previews. Tabs are CSS-ONLY (radio + :checked) so
-// the page needs NO script — the strict `default-src 'none'` CSP holds.
+// the maker's self-contained design HTML; Prototype tabs are the live app (preview),
+// a QA table, or a Map grid of route previews. The page CHROME is CSS-only (radio +
+// :checked) so tab-switching needs no script.
+//
+// Scripts (DEC-143, supersedes DEC-113's hash-lock): design "html" tabs may run their
+// OWN inline JS so shared prototypes are actually touchable (toggles, modals, …). They
+// render in an iframe sandboxed WITHOUT allow-same-origin (opaque origin → no access to
+// the parent page, the decrypted content, the password, or storage), and the inherited
+// `default-src 'none'` still blocks fetch/XHR/forms/top-nav — so a prototype can only
+// drive its own DOM. That ISOLATION (not a CSP hash) is the guard, so `script-src` is
+// `'unsafe-inline'`; the parent page stays safe because all Spec / markdown / QA text is
+// ESCAPED at generation time and can never form a live <script>.
 
 /** A Design-segment tab: a markdown doc, or a self-contained html wireframe. */
 export type JourneyDesignTab =
@@ -122,7 +126,7 @@ async function tryDecrypt(pw){
   var pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:b2u(B.iv)},key,b2u(B.data));
   return new TextDecoder().decode(pt);
 }
-function show(html){var f=document.createElement("iframe");f.className="view";f.srcdoc=html;document.body.innerHTML="";document.body.appendChild(f);}
+function show(html){var f=document.createElement("iframe");f.className="view";f.setAttribute("sandbox","allow-scripts allow-same-origin allow-forms allow-popups");f.srcdoc=html;document.body.innerHTML="";document.body.appendChild(f);}
 function remember(pw){try{localStorage.setItem(KEY,JSON.stringify({pw:pw,exp:Date.now()+TTL}));}catch(e){}}
 function cachedPw(){try{var r=JSON.parse(localStorage.getItem(KEY)||"null");if(r&&r.exp>Date.now())return r.pw;}catch(e){}return null;}
 document.getElementById("f").addEventListener("submit",function(e){
@@ -281,8 +285,11 @@ function renderDesignTab(tab: JourneyDesignTab): string {
         : "";
     return `<div class="doc">${tocHtml}${html}</div>`;
   }
-  // A self-contained wireframe: no-privilege sandbox (no scripts, no same-origin).
-  return `<iframe class="design" sandbox="" title="${escAttr(tab.label)}" srcdoc="${escAttr(tab.html)}"></iframe>`;
+  // The maker's self-contained design HTML. `allow-scripts` (but NOT allow-same-origin)
+  // lets its inline JS run for real interactions while staying on an opaque origin —
+  // no parent/password/storage access; the inherited `default-src 'none'` blocks
+  // network, forms, and top-nav so it can only drive its own DOM (DEC-143).
+  return `<iframe class="design" sandbox="allow-scripts" title="${escAttr(tab.label)}" srcdoc="${escAttr(tab.html)}"></iframe>`;
 }
 
 function renderProtoTab(tab: JourneyProtoTab): string {
@@ -397,7 +404,7 @@ function buildPage(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; script-src '${SHARE_SCRIPT_HASH}'; frame-src 'self' https://*.vercel.app; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src 'self' https://*.vercel.app; base-uri 'none'; form-action 'none'">
 <title>${safeTitle} — Bezier</title>
 <style>
 :root{--bg:#faf9f7;--fg:#1c1a17;--muted:#6b6660;--line:#e7e3dd;--accent:#1c1a17}

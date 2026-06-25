@@ -31,6 +31,7 @@ import {
   type Range,
 } from "@codemirror/state";
 import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
+import { search, searchKeymap } from "@codemirror/search";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import {
@@ -629,6 +630,73 @@ const editorTheme = EditorView.theme({
     fontWeight: "700",
     color: "inherit",
   },
+
+  // --- Find / replace panel (@codemirror/search, ⌘F) ----------------------
+  // Themed to the app's shadcn tokens so it doesn't read as stock CM chrome.
+  ".cm-panels": {
+    backgroundColor: "var(--popover)",
+    color: "var(--popover-foreground)",
+    fontFamily:
+      "var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif)",
+  },
+  ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--border)" },
+  ".cm-search": {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "6px",
+    padding: "8px 10px",
+    fontSize: "12px",
+  },
+  ".cm-search label": {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "3px",
+    color: "var(--muted-foreground)",
+    fontSize: "12px",
+  },
+  ".cm-textfield, .cm-search input[type=text]": {
+    backgroundColor: "var(--background)",
+    color: "var(--foreground)",
+    border: "1px solid var(--border)",
+    borderRadius: "7px",
+    padding: "4px 8px",
+    fontSize: "12px",
+    outline: "none",
+  },
+  ".cm-textfield:focus, .cm-search input[type=text]:focus": {
+    borderColor: "var(--ring)",
+    boxShadow: "0 0 0 1px var(--ring)",
+  },
+  ".cm-button, .cm-search button": {
+    backgroundColor: "var(--muted)",
+    backgroundImage: "none",
+    color: "var(--foreground)",
+    border: "1px solid var(--border)",
+    borderRadius: "7px",
+    padding: "3px 9px",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
+  ".cm-button:hover, .cm-search button:hover": {
+    backgroundColor: "var(--accent)",
+    color: "var(--accent-foreground)",
+  },
+  ".cm-search [name=close]": {
+    color: "var(--muted-foreground)",
+    border: "0",
+    background: "transparent",
+    fontSize: "16px",
+    cursor: "pointer",
+  },
+  ".cm-searchMatch": {
+    backgroundColor: "color-mix(in oklab, var(--primary) 22%, transparent)",
+    borderRadius: "2px",
+  },
+  ".cm-searchMatch-selected": {
+    backgroundColor: "color-mix(in oklab, var(--primary) 46%, transparent)",
+    outline: "1px solid var(--primary)",
+  },
 });
 
 // --- Live change flash (DEC-012 §7) --------------------------------------
@@ -837,6 +905,10 @@ function MarkdownEditorInner(
           // codeHighlightStyle replaces it for fenced-code tokens only.
           highlightSpecialChars(),
           history(),
+          // ⌘F find / replace (a panel at the top): highlight matches, next/prev,
+          // match count. searchKeymap binds Mod-f / Mod-g etc. (added to the keymap
+          // below, before defaultKeymap, so ⌘F is owned by search).
+          search({ top: true }),
           drawSelection(),
           EditorView.lineWrapping,
           syntaxHighlighting(codeHighlightStyle),
@@ -857,6 +929,8 @@ function MarkdownEditorInner(
             // Markdown list/quote continuation (falls through when N/A).
             { key: "Enter", run: insertNewlineContinueMarkup },
             { key: "Backspace", run: deleteMarkupBackward },
+            // ⌘F / ⌘G find. Before defaultKeymap so Mod-f opens the search panel.
+            ...searchKeymap,
             ...defaultKeymap,
             ...historyKeymap,
           ]),

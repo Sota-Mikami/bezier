@@ -86,6 +86,17 @@ export interface ImplementSession {
   journey: JourneyController;
 
   baseBranch: string;
+  /** Base-branch picker (DEC-145): the branch a not-yet-started issue is cut from
+   *  (default = repo's current branch), the available branches, and whether the
+   *  worktree exists yet (after which the base is pinned/read-only). */
+  chosenBase: string;
+  setChosenBase: (b: string) => void;
+  branches: string[];
+  /** Re-fetch origin/* + re-list branches (no terminal needed) so a just-pushed
+   *  branch becomes selectable; `refreshingBranches` drives the spinner. */
+  refreshBranches: () => Promise<void>;
+  refreshingBranches: boolean;
+  hasWorktree: boolean;
   behind: number | null;
   ahead: number | null;
   mergeClean: boolean | null;

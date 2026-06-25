@@ -49,7 +49,8 @@ import {
   gitWorktreeRemove,
   gitBranchDelete,
   gitBehindAhead,
-  gitBaseBranch,
+  gitListBranches,
+  gitFetch,
   gitSyncMain,
   gitMergeConflictCheck,
   gitMergeToMain,
@@ -168,6 +169,50 @@ export function useImplementSession(
   // stable loadBehind/syncMain callbacks, the state feeds UI labels.
   const [baseBranch, setBaseBranch] = React.useState(DEFAULT_BASE);
   const baseBranchRef = React.useRef(DEFAULT_BASE);
+  // True once the base is PINNED (a started/loaded worktree). Set synchronously so
+  // the async branch-list resolve below never overrides a pinned base, whichever of
+  // the two mount effects wins the race (DEC-145).
+  const basePinnedRef = React.useRef(false);
+  // Base-branch PICKER (DEC-145): the branch a NOT-yet-started issue will be cut
+  // from + that Sync / Merge / PR will target. Default = the repo's current branch;
+  // editable until the worktree exists, then PINNED to ref.base. `branches` feeds
+  // the dropdown. Once started, baseBranch is read from the pinned ref.base, so the
+  // target stays correct even if the main repo is later checked out elsewhere.
+  const [chosenBase, setChosenBaseState] = React.useState(DEFAULT_BASE);
+  const chosenBaseRef = React.useRef(DEFAULT_BASE);
+  const [branches, setBranches] = React.useState<string[]>([]);
+  const setChosenBase = React.useCallback((b: string) => {
+    chosenBaseRef.current = b;
+    setChosenBaseState(b);
+  }, []);
+  const [refreshingBranches, setRefreshingBranches] = React.useState(false);
+  // Refresh the base list WITHOUT the terminal (the persona can't `git fetch`):
+  // a best-effort, fast-failing fetch of origin/* (GIT_TERMINAL_PROMPT=0) then a
+  // re-list, so a just-pushed feature branch shows up. Auto-run on opening a NOT-
+  // started issue + behind the picker's refresh button. Never overrides a pinned base.
+  const refreshBranches = React.useCallback(async () => {
+    setRefreshingBranches(true);
+    await gitFetch(root).catch(() => {});
+    try {
+      const { current, branches: list } = await gitListBranches(root);
+      if (!current) return;
+      setBranches(list);
+      if (!basePinnedRef.current) {
+        chosenBaseRef.current = current;
+        setChosenBaseState(current);
+        baseBranchRef.current = current;
+        setBaseBranch(current);
+      }
+    } catch {
+      /* keep the current list */
+    } finally {
+      setRefreshingBranches(false);
+    }
+  }, [root]);
+  const refreshBranchesRef = React.useRef(refreshBranches);
+  React.useEffect(() => {
+    refreshBranchesRef.current = refreshBranches;
+  }, [refreshBranches]);
 
   // Checkpoints (§D / DEC-080): the branch's own commits = restore points. List
   // for the dropdown; create commits the current state; rollback resets the
@@ -269,9 +314,23 @@ export function useImplementSession(
       });
     readWorktreeRef(issue)
       .then((r) => {
-        if (cancelled || !r) return;
+        if (cancelled) return;
+        if (!r) {
+          // Not started yet → the base picker is live. Fetch origin/* so a
+          // just-pushed feature branch is selectable WITHOUT a terminal (DEC-145).
+          void refreshBranchesRef.current();
+          return;
+        }
         setRef(r);
         setPrUrl(r.prUrl ?? null);
+        // Pin the base to what this worktree was cut from (DEC-145). Older refs
+        // lack it -> leave baseBranch on the live current-branch fallback.
+        if (r.base) {
+          basePinnedRef.current = true;
+          baseBranchRef.current = r.base;
+          setBaseBranch(r.base);
+          setChosenBase(r.base);
+        }
         // Lazy-load the diff for a resumed worktree.
         Promise.all([gitDiff(r.path), gitStatus(r.path)])
           .then(([d, s]) => {
@@ -292,19 +351,25 @@ export function useImplementSession(
     return () => {
       cancelled = true;
     };
-  }, [root, issue, loadBehind, loadCheckpoints]);
+  }, [root, issue, loadBehind, loadCheckpoints, setChosenBase]);
 
-  // Resolve the repo's REAL integration branch once (OPEN-001). Until it lands,
-  // loadBehind/syncMain use DEFAULT_BASE; when it resolves to something else we
-  // re-probe the open worktree so the merge-safety badge reflects the true base
-  // (and `git_merge_to_main`, which merges into this same branch, stays aligned).
+  // Resolve the repo's branches once (OPEN-001 + DEC-145): `current` is the picker
+  // DEFAULT and, for a not-yet-pinned issue, the live integration base; `branches`
+  // feeds the base dropdown. A worktree already pinned to `ref.base` keeps its
+  // pinned base (don't override) but we still re-probe behind/checkpoints once the
+  // real base is known so the merge-safety badge is accurate.
   React.useEffect(() => {
     let cancelled = false;
-    void gitBaseBranch(root)
-      .then((b) => {
-        if (cancelled || !b) return;
-        baseBranchRef.current = b;
-        setBaseBranch(b);
+    void gitListBranches(root)
+      .then(({ current, branches: list }) => {
+        if (cancelled || !current) return;
+        setBranches(list);
+        if (!basePinnedRef.current) {
+          chosenBaseRef.current = current;
+          setChosenBaseState(current);
+          baseBranchRef.current = current;
+          setBaseBranch(current);
+        }
         if (refRef.current) {
           void loadBehind(refRef.current.path);
           void loadCheckpoints(refRef.current.path);
@@ -649,9 +714,14 @@ export function useImplementSession(
     try {
       const branch = branchName(issue);
       const wt = await worktreeDir(root, issue);
-      await gitWorktreeAdd(root, branch, wt);
-      const newRef: WorktreeRef = { branch, path: wt, baseSHA: "" };
+      const base = chosenBaseRef.current;
+      await gitWorktreeAdd(root, branch, wt, base);
+      const newRef: WorktreeRef = { branch, path: wt, baseSHA: "", base };
       await writeWorktreeRef(issue, newRef);
+      // Pin the base so Sync / Merge / PR target what we branched from (DEC-145).
+      basePinnedRef.current = true;
+      baseBranchRef.current = base;
+      setBaseBranch(base);
       await updateIssueMeta(root, issue, { status: "in-progress" });
       onStatusChange("in-progress");
       const { content } = await buildImplementHandoff(root, issue, workDir(wt), {
@@ -660,7 +730,7 @@ export function useImplementSession(
       setRef(newRef);
       launchAgent(selectedAgent, workDir(wt), { prompt: content });
       void logEvent("implement");
-      // Branch is fresh off HEAD here, but main may already be ahead — show it.
+      // Branch is fresh off the chosen base here, but the base may already be ahead — show it.
       void loadBehind(wt);
     } catch (e) {
       setError(errMsg(e));
@@ -703,9 +773,14 @@ export function useImplementSession(
       try {
         const branch = branchName(issue);
         const wt = await worktreeDir(root, issue);
-        await gitWorktreeAdd(root, branch, wt);
-        const newRef: WorktreeRef = { branch, path: wt, baseSHA: "" };
+        const base = chosenBaseRef.current;
+        await gitWorktreeAdd(root, branch, wt, base);
+        const newRef: WorktreeRef = { branch, path: wt, baseSHA: "", base };
         await writeWorktreeRef(issue, newRef);
+        // Pin the base so Sync / Merge / PR target what we branched from (DEC-145).
+        basePinnedRef.current = true;
+        baseBranchRef.current = base;
+        setBaseBranch(base);
         await updateIssueMeta(root, issue, { status: "in-progress" });
         onStatusChange("in-progress");
         // Give the issue a real name immediately (DEC-141) so the sidebar +
@@ -1355,6 +1430,12 @@ export function useImplementSession(
     publish,
     journey,
     baseBranch,
+    chosenBase,
+    setChosenBase,
+    branches,
+    refreshBranches,
+    refreshingBranches,
+    hasWorktree: ref !== null,
     behind,
     ahead,
     mergeClean,

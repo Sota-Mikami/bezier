@@ -2,11 +2,12 @@
 // shortcuts that mirror the app — ⌘⇧[ / ⌘⇧] switch the Design/Prototype segment,
 // ⌘⌥←/→ switch tabs within the active segment, ⌘1–9 jump to a tab. It only flips
 // the existing CSS-tab radios + scrolls the chosen tab into view (helps the
-// horizontally-scrollable tab bar). No innerHTML, no user data — so it's allowed
-// via a CSP `script-src 'sha256-…'` hash (NOT 'unsafe-inline'); any OTHER inline
-// script (e.g. one slipped through an escaping bug) still can't run. The string is
-// hashed verbatim, so it MUST contain no backticks (journey.test.ts locks the
-// hash ↔ script so drift fails the build, never silently).
+// horizontally-scrollable tab bar). No innerHTML, no user data. The page CSP is
+// `script-src 'unsafe-inline'` (DEC-143 — so the isolated design-wireframe iframes
+// can run their own JS); the PARENT page stays safe NOT via a script hash but via
+// (1) escape-first rendering of all Spec / markdown / QA content (no raw-HTML path)
+// and (2) design iframes sandboxed to an opaque origin. This is the only inline
+// script the page itself ships.
 export const SHARE_SCRIPT = `(function(){
 function g(n){return [].slice.call(document.querySelectorAll('input.r[name="'+n+'"]'));}
 function pick(rs,i){if(!rs[i])return;rs[i].checked=true;var l=document.querySelector('label[for="'+rs[i].id+'"]');if(l&&l.scrollIntoView)l.scrollIntoView({inline:'nearest',block:'nearest'});}

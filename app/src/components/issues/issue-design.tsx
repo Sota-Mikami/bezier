@@ -32,6 +32,7 @@ import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
 import { getViewState, setViewState } from "@/lib/view-state";
 import { iframeTransport, type VisualEditTransport } from "@/lib/visual-edit-transport";
 import { buildEditableSrcdoc, cleanSerializedMock } from "@/lib/mock-edit";
+import { withDesignFind } from "@/lib/design-find";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
@@ -195,6 +196,9 @@ export function IssueDesign({
   >([]);
   const [mockCommentDraft, setMockCommentDraft] = React.useState("");
   const mockFrameRef = React.useRef<HTMLIFrameElement>(null);
+  // View-mode design iframe (the read-only html tab). Held so ⌘F can be forwarded
+  // into it (its content runs an injected find overlay — see withDesignFind).
+  const viewFrameRef = React.useRef<HTMLIFrameElement>(null);
   // Stable transport (created once via useState lazy-init). Its getWin reads the
   // iframe's contentWindow LAZILY — only when the transport issues a command/poll,
   // never during render — so it always sees the live window after (re)load.
@@ -202,6 +206,25 @@ export function IssueDesign({
   const [veTransport] = React.useState<VisualEditTransport>(() =>
     iframeTransport(() => mockFrameRef.current?.contentWindow ?? null),
   );
+
+  // ⌘F in a design html tab → forward to the iframe's injected find overlay. The
+  // iframe is sandboxed (no same-origin), so the parent can't search it directly;
+  // when focus is INSIDE the iframe its own keydown opens find — this covers the
+  // case where focus is on the app chrome. md (doc) tabs use CodeMirror's own ⌘F,
+  // and edit mode is a different surface, so only forward for the read-only view.
+  React.useEffect(() => {
+    if (selectedItem?.kind !== "variant" || editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F")) {
+        const win = viewFrameRef.current?.contentWindow;
+        if (!win) return;
+        e.preventDefault();
+        win.postMessage({ __bzfind: "open" }, "*");
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [selectedItem?.kind, editing]);
   const vedit = useVisualEdit({
     active: editing && mockTool === "select",
     navKey: selected ?? "",
@@ -716,10 +739,16 @@ export function IssueDesign({
               </>
             ) : (
               <div className="relative min-h-0 flex-1 bg-background">
+                {/* Design html runs its own inline JS so prototypes are actually
+                    touchable (toggles, selection, modals…). `allow-scripts` WITHOUT
+                    `allow-same-origin` keeps it isolated: scripts run on an opaque
+                    origin (no parent access, no storage/cookies). The html stays a
+                    single self-contained file (no external deps) → still dev-server-free. */}
                 <iframe
+                  ref={viewFrameRef}
                   key={`frame-${selectedItem.key}`}
-                  sandbox=""
-                  srcDoc={html}
+                  sandbox="allow-scripts"
+                  srcDoc={withDesignFind(html, t("design.findPlaceholder"))}
                   title={selectedItem.label}
                   className="size-full bg-white"
                 />

@@ -27,6 +27,7 @@ import { useT, tt } from "@/lib/i18n";
 import type { TerminalPaneProps } from "@/components/workspace/terminal";
 import type { ImplementSession } from "./implement-session-types";
 import { NextStepCard } from "./next-step-card";
+import { BaseBranchPicker } from "./base-branch-picker";
 
 // xterm-backed terminal — client-only (DOM + CSS), like /workspace.
 const TerminalPane = dynamic(() => import("@/components/workspace/terminal"), {
@@ -64,6 +65,12 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
     canResume,
     handleResume,
     handleStart,
+    chosenBase,
+    setChosenBase,
+    branches,
+    refreshBranches,
+    refreshingBranches,
+    baseBranch,
   } = session;
 
   return (
@@ -73,14 +80,29 @@ export function IssueAgentPanel({ session }: IssueAgentPanelProps) {
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <MessageSquare className="size-3.5 text-muted-foreground" />
         <span className="text-xs font-medium">{t("agentPanel.chat")}</span>
-        {ref && (
+        {ref ? (
           <span
             className="ml-auto flex min-w-0 items-center gap-1 font-mono text-[10px] text-muted-foreground"
-            title={ref.branch}
+            title={t("agentPanel.branchInto", { branch: ref.branch, base: baseBranch })}
           >
             <GitBranch className="size-3 shrink-0" />
             <span className="truncate">{ref.branch}</span>
+            {/* Pinned base (DEC-145): what Sync / Merge / PR target. */}
+            <span className="shrink-0 opacity-70">→ {baseBranch}</span>
           </span>
+        ) : (
+          // Base-branch picker (DEC-145): a SEARCHABLE combobox to pick what this
+          // issue branches from + what Sync / Merge / PR will target. Shown as soon
+          // as the start state appears (defaults to the repo's current branch; the
+          // list fills in once branches load). After starting it's pinned (the
+          // `→ base` indicator above).
+          <BaseBranchPicker
+            value={chosenBase}
+            branches={branches}
+            onChange={setChosenBase}
+            onRefresh={refreshBranches}
+            refreshing={refreshingBranches}
+          />
         )}
       </div>
 

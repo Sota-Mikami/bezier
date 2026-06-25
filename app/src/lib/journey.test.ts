@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { test } from "vitest";
 
 import { buildJourneyHtml, type JourneyData } from "./journey.ts";
@@ -53,7 +52,7 @@ test("buildJourneyHtml emits CSP and sandboxed embeds", () => {
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /default-src 'none'/);
   assert.match(html, /sandbox="allow-scripts allow-same-origin allow-forms"/);
-  assert.match(html, /<iframe class="design" sandbox=""/);
+  assert.match(html, /<iframe class="design" sandbox="allow-scripts"/);
   assert.equal(html.includes("allow-popups"), false);
 });
 
@@ -68,14 +67,18 @@ test("buildJourneyHtml rejects non-https app URLs", () => {
   assert.equal(html.includes('class="cta"'), false);
 });
 
-test("buildJourneyHtml allows only the hash-pinned keyboard script (no 'unsafe-inline')", () => {
+test("buildJourneyHtml runs design prototypes in an isolated, script-enabled sandbox (DEC-143)", () => {
   const html = buildJourneyHtml(base);
-  const hash = `sha256-${createHash("sha256").update(SHARE_SCRIPT, "utf8").digest("base64")}`;
-  // The exact script is embedded, and the CSP whitelists it by hash — so this one
-  // script runs but any injected inline script (different bytes) cannot.
+  // The keyboard handler still runs (now via 'unsafe-inline', so isolated design
+  // tabs can run their own inline JS — hash + 'unsafe-inline' are mutually exclusive).
   assert.equal(html.includes(`<script>${SHARE_SCRIPT}</script>`), true);
-  assert.match(html, new RegExp(`script-src '${hash.replace(/[+/=]/g, "\\$&")}'`));
-  assert.equal(html.includes("'unsafe-inline'") && /script-src[^;]*'unsafe-inline'/.test(html), false);
+  assert.match(html, /script-src 'unsafe-inline'/);
+  // The real guard is ISOLATION: the design iframe is sandboxed WITHOUT same-origin
+  // (opaque origin → no parent/password/storage), and inherited `default-src 'none'`
+  // blocks fetch/forms/top-nav. Granting same-origin here would break that.
+  assert.match(html, /<iframe class="design" sandbox="allow-scripts"/);
+  assert.equal(/<iframe class="design" sandbox="allow-scripts allow-same-origin/.test(html), false);
+  assert.match(html, /default-src 'none'/);
 });
 
 test("buildJourneyHtml renders task lists as checkboxes (no bullet, no literal [ ])", () => {

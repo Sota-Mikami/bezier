@@ -6,9 +6,11 @@ import {
   ChevronDown,
   Cloud,
   Copy,
+  Download,
   ExternalLink,
   Eye,
   EyeOff,
+  FolderOpen,
   Loader2,
   Lock,
   Share2,
@@ -25,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { copyText } from "@/lib/clipboard";
-import { openExternal, confirmDialog, messageDialog } from "@/lib/ipc";
+import { openExternal, confirmDialog, messageDialog, revealInFinder } from "@/lib/ipc";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -35,6 +37,7 @@ import {
   toggleShare,
   isShared,
   gatherJourneyData,
+  exportShareZip,
   type ShareConfig,
   type ShareItems,
 } from "@/lib/share";
@@ -51,6 +54,11 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   const t = useT();
   const [items, setItems] = React.useState<ShareItems | null>(null);
   const [cfg, setCfg] = React.useState<ShareConfig>({ exclude: [] });
+  // Two ways to share (DEC-146): a hosted URL ("link") or a ZIP of the selected
+  // pages as md/html files ("export").
+  const [tab, setTab] = React.useState<"link" | "export">("link");
+  const [exporting, setExporting] = React.useState(false);
+  const [exportedPath, setExportedPath] = React.useState<string | null>(null);
   // Password protection (DEC-102). Ephemeral — never written to disk.
   const [pwOn, setPwOn] = React.useState(false);
   const [pw, setPw] = React.useState("");
@@ -90,6 +98,32 @@ export function IssueShare({ session }: { session: ImplementSession }) {
   const previewOn = isShared(cfg, "preview");
   const mapOn = isShared(cfg, "map");
   const pwMissing = pwOn && !pw.trim();
+  // Export only handles file-representable pages: design docs/wireframes + QA.
+  // (Live Preview / Map are URL-only.)
+  const anyExportable =
+    (items?.design.some((it) => isShared(cfg, it.key)) ?? false) || isShared(cfg, "qa");
+
+  // Bundle the selected pages as md/html into a .zip at a maker-chosen location.
+  const runExport = async () => {
+    if (exporting || !anyExportable) return;
+    setExportedPath(null);
+    setExporting(true);
+    try {
+      const res = await exportShareZip(issue, cfg, issue.title || issue.id);
+      if (res.ok) setExportedPath(res.path);
+      else if (res.reason === "empty")
+        await messageDialog(t("share.exportEmpty"), {
+          title: t("share.tabExport"),
+          kind: "info",
+        });
+    } catch (e) {
+      await messageDialog(e instanceof Error ? e.message : String(e), {
+        title: t("share.tabExport"),
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Share the app. The persona just clicks: on the FIRST app-share, a headless agent
   // DECIDES the public deploy env (hard-blocked from .env, so no secret reaches the
@@ -219,25 +253,27 @@ export function IssueShare({ session }: { session: ImplementSession }) {
         <ChevronDown className="size-3.5 opacity-70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-72 p-2">
-        {publish.connections.length > 1 && (
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="px-1 text-[11px] font-normal text-muted-foreground">
-              {t("share.publishingAccount")}
-            </DropdownMenuLabel>
-            <DropdownMenuRadioGroup
-              value={publish.connectionId}
-              onValueChange={publish.setConnectionId}
+        {/* Two ways to share (DEC-146): a hosted URL ("link") or a ZIP of the
+            selected pages as Markdown / HTML files ("export"). */}
+        <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-muted p-0.5">
+          {(["link", "export"] as const).map((tb) => (
+            <button
+              key={tb}
+              type="button"
+              onClick={() => setTab(tb)}
+              className={cn(
+                "rounded-md px-2 py-1.5 text-xs font-medium transition",
+                tab === tb
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              {publish.connections.map((c) => (
-                <DropdownMenuRadioItem key={c.id} value={c.id} className="text-xs">
-                  {c.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-          </DropdownMenuGroup>
-        )}
+              {tb === "link" ? t("share.tabLink") : t("share.tabExport")}
+            </button>
+          ))}
+        </div>
 
+        {/* Common: choose WHICH pages — the same selection feeds both tabs. */}
         <div className="px-1 text-[11px] font-medium text-muted-foreground">
           {t("share.chooseContent")}
         </div>
@@ -252,7 +288,28 @@ export function IssueShare({ session }: { session: ImplementSession }) {
           </>
         )}
 
-        <DropdownMenuSeparator />
+        {tab === "link" ? (
+          <>
+            {publish.connections.length > 1 && (
+              <DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="px-1 text-[11px] font-normal text-muted-foreground">
+                  {t("share.publishingAccount")}
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={publish.connectionId}
+                  onValueChange={publish.setConnectionId}
+                >
+                  {publish.connections.map((c) => (
+                    <DropdownMenuRadioItem key={c.id} value={c.id} className="text-xs">
+                      {c.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+            )}
+
+            <DropdownMenuSeparator />
         <button
           type="button"
           aria-pressed={pwOn}
@@ -408,6 +465,52 @@ export function IssueShare({ session }: { session: ImplementSession }) {
               </button>
             </div>
           </div>
+        )}
+          </>
+        ) : (
+          <>
+            {/* Export tab: bundle the selected pages as a .zip the maker chooses
+                where to save (the file is otherwise hard to locate). DEC-146. */}
+            <div className="mt-2 rounded-md bg-muted/30 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+              {t("share.exportDesc")}
+            </div>
+            <button
+              type="button"
+              disabled={exporting || !anyExportable}
+              onClick={() => void runExport()}
+              className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exporting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              {t("share.exportZip")}
+            </button>
+            {!anyExportable && (
+              <div className="mt-1.5 px-1 text-[11px] leading-snug text-muted-foreground">
+                {t("share.exportEmpty")}
+              </div>
+            )}
+            {exportedPath && (
+              <div className="mt-2 rounded-md border bg-muted/40 p-1.5">
+                <div
+                  className="truncate px-0.5 pb-1 text-[11px] text-muted-foreground"
+                  title={exportedPath}
+                >
+                  {exportedPath}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void revealInFinder(exportedPath).catch(() => {})}
+                  className="inline-flex w-full items-center justify-center gap-1 rounded border bg-background px-2 py-1 text-[11px] transition hover:bg-muted"
+                >
+                  <FolderOpen className="size-3" />
+                  {t("share.revealExport")}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

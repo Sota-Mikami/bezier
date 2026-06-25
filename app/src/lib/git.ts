@@ -38,16 +38,18 @@ export function gitInit(path: string): Promise<void> {
 }
 
 /**
- * Create `branch` off the repo's current HEAD and add a worktree at
- * `worktreePath`. Existing branch is attached; an existing worktree path errors.
- * -> invoke("git_worktree_add", { repo, branch, worktreePath })
+ * Create `branch` off `base` and add a worktree at `worktreePath`. `base` is a
+ * commit-ish (local branch, `origin/feat-x`, or "" -> the repo's current HEAD;
+ * DEC-145). Existing branch is attached; an existing worktree path errors.
+ * -> invoke("git_worktree_add", { repo, branch, worktreePath, base })
  */
 export function gitWorktreeAdd(
   repo: string,
   branch: string,
   worktreePath: string,
+  base: string,
 ): Promise<void> {
-  return invoke<void>("git_worktree_add", { repo, branch, worktreePath });
+  return invoke<void>("git_worktree_add", { repo, branch, worktreePath, base });
 }
 
 /**
@@ -160,6 +162,17 @@ export function gitBehindAhead(
  */
 export function gitBaseBranch(repoPath: string): Promise<string> {
   return invoke<string>("git_base_branch", { repoPath });
+}
+
+/** Branches available as a base for a new issue's worktree (DEC-145): the repo's
+ *  CURRENT branch (the default) plus the other local + remote-tracking branches.
+ *  -> invoke("git_list_branches", { repoPath }) */
+export interface BranchList {
+  current: string;
+  branches: string[];
+}
+export function gitListBranches(repoPath: string): Promise<BranchList> {
+  return invoke<BranchList>("git_list_branches", { repoPath });
 }
 
 // ---------------------------------------------------------------------------

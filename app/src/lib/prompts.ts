@@ -128,7 +128,7 @@ const JA: PromptPhrases = {
   reviseIntro: (filePath) =>
     `\`${filePath}\` を、下記の番号付き注釈に従って改訂してください。`,
   reviseKeepConvention:
-    "**html の規約は維持**：自己完結（プレーンな html + インライン CSS のみ・外部依存なし）。`design-system.md` やトークンがあればブランドに沿わせる。**実装コードは書かない**（これは Design）。",
+    "**html の規約は維持**：自己完結（外部依存なしの単一 html・**インライン CSS と JS は OK**＝触れる動きを入れてよい）。`design-system.md` やトークンがあればブランドに沿わせる。**実装コードは書かない**（これは Design）。",
   reviseSummarize: "改訂したらチャットで一言だけ要約してください。",
 
   conflict: (worktree, base, files) =>
@@ -217,7 +217,7 @@ const EN: PromptPhrases = {
   reviseIntro: (filePath) =>
     `Revise \`${filePath}\` according to the numbered annotations below.`,
   reviseKeepConvention:
-    "**Keep the html conventions**: self-contained (plain html + inline CSS only, no external deps). Stay on-brand via `design-system.md` / tokens if present. **Do not write implementation code** (this is Design).",
+    "**Keep the html conventions**: self-contained (a single html with no external deps; **inline CSS and JS are both fine** — add touchable interaction). Stay on-brand via `design-system.md` / tokens if present. **Do not write implementation code** (this is Design).",
   reviseSummarize: "Once revised, give a one-line summary in the chat.",
 
   conflict: (worktree, base, files) =>
@@ -615,7 +615,7 @@ const JA_HANDOFF: HandoffPhrases = {
     "UI の構造や見た目を **文章より視覚で示す方が早い** 時（方向を決めたい・「デザイン案を出して」「他の方向は？」と言われた等）に、下記の規約で **html** を作ってください。Bezier の Design ボードに自動で並びます（別途プロンプト不要）。**md で十分なら md（docs/）で書く** — md か html かは内容で判断する。",
     `- **保存先**: \`${designDir}/NN-<短いkebab-slug>.html\`（NN=2桁ゼロ埋め連番。既存の最大+1から・**使い回さない＝蓄積**）。例 \`${designDir}/01-toolbar-filter.html\`。`,
     "- **html の役割は自由**: 1案のワイヤーでも、**複数パターンを1つの html に並べて比較**でも、簡単なインタラクションのスケッチでもよい。「1ファイル=1方向」「色は使わない」の縛りはない（その html が一番都合よく示せる形にする）。",
-    "- **自己完結**: プレーンな html + インライン CSS のみ。Tailwind class・外部 CSS/JS/CDN・外部画像に依存しない（sandboxed iframe で静的描画されるため）。",
+    "- **自己完結（1ファイル）**: 外部 CSS/JS/CDN・外部画像・Tailwind class に依存しない **単一の html** にする（だから dev サーバ不要で安全に描画できる）。**インライン CSS に加えてインライン JS（`<script>`）もOK** — トグル・選択・モーダル・並べ替え等、**実際に触れる動き**を入れて確認できるようにしてよい。ただし**隔離 sandbox（same-origin 無し）**で動くので、状態は**メモリ内のみ**（localStorage / cookie / fetch / 外部通信は使わない）。",
     "- **「このプロダクトの一部」に見えるようにする（汎用モックにしない）**: 描く前に repo のデザイン言語を掴む — `design-system.md`・デザイントークン・`globals.css`/Tailwind 設定・主要コンポーネント（ボタン/入力/カード）の見た目。色・タイポスケール・余白・角丸をそれに寄せ、モックが**プロダクトの一部に見える**ようにする。コードベース全体を読む必要はない（視覚的な語彙を掴むのに必要な分だけ）。デザイン言語が本当に無ければニュートラルでよい。",
     "- 各ファイル先頭に `<title>短い名前</title>` と `<!-- bezier:prompt: 〈一言〉 -->`。書いたらチャットで「NN: 〈何を示したか〉」を1行報告（コード・commit は不要）。",
     "- **実装着手はチャットから**: 「html を作る → 確定」という線形フローではない。ユーザーが「この方向で実装して」（例: 「02 の nav と 01 のレイアウトで」）と言ったら、その方向を **repo の実コンポーネント・実トークンを使って**実装する — モックの inline 値は既存のトークン/コンポーネントに**突き合わせて**から使い、生の色・余白を magic number として持ち込まない。対応するトークン/コンポーネントが無い値は、黙ってハードコードせず**その旨を伝える**。",
@@ -686,7 +686,7 @@ const JA_HANDOFF: HandoffPhrases = {
     "## repo のデザイン言語に寄せる（重要）",
     "",
     "- 描く前に repo のデザイン言語を掴む — `design-system.md`・デザイントークン・`globals.css`/Tailwind 設定・主要コンポーネント（ボタン/入力/カード）の見た目。色・タイポスケール・余白・角丸をそれに寄せ、各案が**プロダクトの一部に見える**ようにする（汎用モックにしない）。コードベース全体は読まなくてよい（視覚的な語彙を掴む分だけ）。デザイン言語が本当に無ければニュートラルでよい。",
-    "- **完全に自己完結した HTML**：**プレーンなインライン CSS のみ**（fully sandboxed iframe で静的描画されるため）。**Tailwind の class・外部 CSS/JS/CDN・外部画像は使わない** — repo のトークン値（色・余白・角丸など）は **inline CSS に書き写して**再現する。アイコンは文字（▾ × ＋ ⌕ 等）や CSS シェイプで。",
+    "- **完全に自己完結した単一 HTML**：**Tailwind の class・外部 CSS/JS/CDN・外部画像は使わない**（だから dev サーバ不要で安全に描画される）。repo のトークン値（色・余白・角丸など）は **inline CSS に書き写して**再現し、アイコンは文字（▾ × ＋ ⌕ 等）や CSS シェイプで。**インライン CSS に加えてインライン JS もOK**（触れる動きを入れてよい）が、**隔離 sandbox（same-origin 無し）**なので状態はメモリ内のみ（localStorage / cookie / 外部通信は不可）。",
     "",
     "## 差は『構造』で出す — でも見た目はブランド忠実",
     "",
@@ -772,7 +772,7 @@ const EN_HANDOFF: HandoffPhrases = {
     "When a UI's structure or look is **faster to show than to describe** (settling a direction, the user says “show me some designs” / “any other directions?”, etc.), make **html** with the convention below. It lines up automatically on Bezier's Design board (no separate prompt needed). **If md is enough, write md (docs/)** — judge md vs html by the content.",
     `- **Save to**: \`${designDir}/NN-<short-kebab-slug>.html\` (NN = 2-digit zero-padded serial; start from the existing max + 1, **never reuse — they accumulate**). e.g. \`${designDir}/01-toolbar-filter.html\`.`,
     "- **The html's role is open**: a single wireframe, **several patterns side-by-side in one html** to compare, or a small interaction sketch — whatever shows it best. No “one file = one direction” / “no color” rule.",
-    "- **Self-contained**: plain html + inline CSS only. Don't depend on Tailwind classes, external CSS/JS/CDN, or external images (it renders statically in a sandboxed iframe).",
+    "- **Self-contained (one file)**: a **single html** that doesn't depend on Tailwind classes, external CSS/JS/CDN, or external images (so it needs no dev server and renders safely). **Inline JS (`<script>`) is allowed alongside inline CSS** — add real, touchable interactions (toggles, selection, modals, sorting…) when that's what best shows the idea. It runs in an **isolated sandbox (no same-origin)**, so keep all state **in memory** — no localStorage / cookies / fetch / external requests.",
     "- **Make it look like it belongs to THIS product (not a generic mock)**: before drawing, capture the repo's design language — `design-system.md`, design tokens, `globals.css` / Tailwind config, and the LOOK of a few key components (button, input, card). Mirror its colors, type scale, spacing, and radius so the mock reads as part of the product. You don't need to read the whole codebase — just enough to capture the visual vocabulary. If the repo genuinely has no design language, neutral is fine.",
     "- At the top of each file, put `<title>short name</title>` and `<!-- bezier:prompt: 〈one line〉 -->`. After writing, report one line in chat: “NN: 〈what it shows〉” (no code, no commit).",
     "- **Implementation starts from chat**: it's NOT a linear “make html → adopt”. When the user says “implement this direction” (e.g. “02's nav with 01's layout”), implement it in the **real code using the repo's REAL components and tokens** — reconcile the mock's inline values to existing tokens/components; never carry a mock's raw color/spacing in as a magic number. If a value has no matching token/component, say so rather than silently hardcoding it.",
@@ -843,7 +843,7 @@ const EN_HANDOFF: HandoffPhrases = {
     "## Match the repo's design language (important)",
     "",
     "- Before drawing, capture the repo's design language — `design-system.md`, design tokens, `globals.css` / Tailwind config, and the LOOK of a few key components (button, input, card). Mirror its colors, type scale, spacing, and radius so each variant reads as part of the product (not a generic mock). You don't need to read the whole codebase — just enough for the visual vocabulary. If the repo genuinely has no design language, neutral is fine.",
-    "- **Fully self-contained HTML**: **plain inline CSS only** (it renders statically in a fully sandboxed iframe). **No Tailwind classes, no external CSS/JS/CDN, no external images** — reproduce the repo's token values (colors, spacing, radius) by **writing them into the inline CSS**. Use text glyphs (▾ × ＋ ⌕ etc.) or CSS shapes for icons.",
+    "- **Fully self-contained, single HTML**: **no Tailwind classes, no external CSS/JS/CDN, no external images** (so it needs no dev server and renders safely). Reproduce the repo's token values (colors, spacing, radius) by **writing them into the inline CSS**, and use text glyphs (▾ × ＋ ⌕ etc.) or CSS shapes for icons. **Inline JS is allowed alongside inline CSS** (add touchable interaction when useful), but it runs in an **isolated sandbox (no same-origin)** — keep state in memory (no localStorage / cookies / external requests).",
     "",
     "## Vary the STRUCTURE — but keep the look brand-faithful",
     "",
@@ -991,7 +991,7 @@ const JA_COMMANDS: PackCommand[] = [
     body: [
       "$ARGUMENTS の UI について、**方向性をデザインとして見せて**ください（引数が無ければ、いま検討中の画面について）。文章より視覚で示す方が早い時に html を作る。",
       "",
-      "- BEZIER.md の Design 規約に従う（`design/NN-slug.html`、自己完結の html+inline CSS、Design ボードに自動で並ぶ）。",
+      "- BEZIER.md の Design 規約に従う（`design/NN-slug.html`、自己完結の単一 html・インライン CSS と JS 可、Design ボードに自動で並ぶ）。",
       "- **同時に複数案を作る場合は、必ず1つの html に横並び（カラム/グリッド）でまとめる**（案ごとに別ファイルに分けない）。各案にラベル（案 01/02…）と**トレードオフ1行**を添える。",
       "- **ブランドに沿わせる**: repo に `design-system.md` やトークンがあれば参照し、色・タイポ・余白を寄せる（無ければニュートラル）。",
       "- 各案に**トレードオフを1行**添える。まだ実装はしない — ユーザーがチャットで方向を選んでから実装に入る。",
@@ -1087,7 +1087,7 @@ const EN_COMMANDS: PackCommand[] = [
     body: [
       "Show design directions for the UI in $ARGUMENTS (if no argument, use the screen under discussion). When showing beats telling, make html.",
       "",
-      "- Follow the Design convention in BEZIER.md (`design/NN-slug.html`, self-contained html + inline CSS, auto-lines-up on the Design board).",
+      "- Follow the Design convention in BEZIER.md (`design/NN-slug.html`, a self-contained single html with inline CSS and JS, auto-lines-up on the Design board).",
       "- **When you make several variants at once, always put them in ONE html, side by side** (columns / grid) — don't split into separate files. Label each (Variant 01/02…) with a **one-line trade-off**.",
       "- **Stay on-brand**: if the repo has a `design-system.md` or tokens, follow the colors / type / spacing (neutral if none).",
       "- Add a **one-line trade-off** to each. Don't implement yet — implementation starts once the user picks a direction in chat.",

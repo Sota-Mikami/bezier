@@ -603,6 +603,13 @@ export interface WorktreeRef {
   /** SHA the branch was created off (best-effort; may be empty). */
   baseSHA: string;
   /**
+   * The base BRANCH this worktree was cut from and that Sync / Merge / PR target
+   * (DEC-145). Pinned at creation so it stays correct even if the main repo is
+   * later checked out to a different branch. Absent on older refs -> the session
+   * falls back to the repo's live current branch (the pre-DEC-145 behavior).
+   */
+  base?: string;
+  /**
    * The PR link for this branch (DEC-015 Open-PR finalize). Since DEC-141 #3 we open
    * GitHub's prefilled compare/create page rather than creating the PR programmatically,
    * so this holds the COMPARE URL — which doubles as the "a PR was opened" marker that
