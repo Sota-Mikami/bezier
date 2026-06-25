@@ -615,7 +615,8 @@ fn embed_browser_open(
         tauri::WebviewUrl::External(parsed),
     )
     .on_new_window(move |u, f| open_live_child_window(&popups, u, f));
-    win.add_child(builder, pos, size).map_err(|e| e.to_string())?;
+    win.add_child(builder, pos, size)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1746,7 +1747,11 @@ fn git_worktree_add(
     reject_traversal(Path::new(&worktree_path))?;
 
     // Fast path: create a fresh branch off the chosen base (HEAD when unpinned).
-    let start = if base.trim().is_empty() { "HEAD" } else { base.trim() };
+    let start = if base.trim().is_empty() {
+        "HEAD"
+    } else {
+        base.trim()
+    };
     let out = std::process::Command::new("git")
         .args([
             "-C",
@@ -1989,11 +1994,19 @@ fn git_list_branches(repo_path: String) -> Result<BranchList, String> {
     let repo = repo_path.as_str();
     let current = current_branch(repo).unwrap_or_default();
     let locals = git_run(&[
-        "-C", repo, "for-each-ref", "--format=%(refname:short)", "refs/heads",
+        "-C",
+        repo,
+        "for-each-ref",
+        "--format=%(refname:short)",
+        "refs/heads",
     ])
     .unwrap_or_default();
     let remotes = git_run(&[
-        "-C", repo, "for-each-ref", "--format=%(refname:short)", "refs/remotes",
+        "-C",
+        repo,
+        "for-each-ref",
+        "--format=%(refname:short)",
+        "refs/remotes",
     ])
     .unwrap_or_default();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -2645,7 +2658,10 @@ fn discover_worktree_url(worktree: String) -> Result<Vec<String>, String> {
     };
 
     let run_lsof = |args: &[&str]| -> Option<String> {
-        let out = std::process::Command::new("lsof").args(args).output().ok()?;
+        let out = std::process::Command::new("lsof")
+            .args(args)
+            .output()
+            .ok()?;
         // lsof exits non-zero when it finds nothing matching the filters; that's
         // not an error for us. Take whatever it wrote to stdout.
         Some(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -2657,17 +2673,24 @@ fn discover_worktree_url(worktree: String) -> Result<Vec<String>, String> {
         None => return Ok(Vec::new()), // no lsof (non-macOS) → no discovery
     };
     // pid -> set of loopback ports it listens on.
-    let mut pid_ports: std::collections::HashMap<u32, BTreeSet<u16>> = std::collections::HashMap::new();
+    let mut pid_ports: std::collections::HashMap<u32, BTreeSet<u16>> =
+        std::collections::HashMap::new();
     let mut cur_pid: Option<u32> = None;
     for line in listen.lines() {
-        let Some((tag, val)) = line.split_at_checked(1) else { continue };
+        let Some((tag, val)) = line.split_at_checked(1) else {
+            continue;
+        };
         match tag {
             "p" => cur_pid = val.trim().parse::<u32>().ok(),
             "n" => {
                 let Some(pid) = cur_pid else { continue };
                 // val is like `*:3000`, `127.0.0.1:3000`, `[::1]:3000`.
-                let Some((host, port_s)) = val.rsplit_once(':') else { continue };
-                let Ok(port) = port_s.trim().parse::<u16>() else { continue };
+                let Some((host, port_s)) = val.rsplit_once(':') else {
+                    continue;
+                };
+                let Ok(port) = port_s.trim().parse::<u16>() else {
+                    continue;
+                };
                 // Loopback / wildcard only — a server bound to a specific LAN IP
                 // (192.168.x) isn't reachable as localhost, so skip it.
                 let loopback = matches!(
@@ -2695,7 +2718,9 @@ fn discover_worktree_url(worktree: String) -> Result<Vec<String>, String> {
     let mut cur_pid: Option<u32> = None;
     let mut ports: BTreeSet<u16> = BTreeSet::new();
     for line in cwds.lines() {
-        let Some((tag, val)) = line.split_at_checked(1) else { continue };
+        let Some((tag, val)) = line.split_at_checked(1) else {
+            continue;
+        };
         match tag {
             "p" => cur_pid = val.trim().parse::<u32>().ok(),
             "n" => {
@@ -2757,7 +2782,11 @@ fn http_probe_inner(url: &str, timeout: std::time::Duration) -> Result<HttpProbe
         .unwrap_or(url);
     let slash = rest.find('/').unwrap_or(rest.len());
     let authority = &rest[..slash];
-    let path = if slash < rest.len() { &rest[slash..] } else { "/" };
+    let path = if slash < rest.len() {
+        &rest[slash..]
+    } else {
+        "/"
+    };
     let (host, port) = match authority.rsplit_once(':') {
         Some((h, p)) => match p.parse::<u16>() {
             Ok(port) => (h.to_string(), port),
@@ -2776,7 +2805,9 @@ fn http_probe_inner(url: &str, timeout: std::time::Duration) -> Result<HttpProbe
     let _ = stream.set_read_timeout(Some(timeout));
     let _ = stream.set_write_timeout(Some(timeout));
     let req = format!("GET {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-    stream.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| e.to_string())?;
     let mut data = Vec::new();
     let mut buf = [0u8; 4096];
     loop {
@@ -2814,7 +2845,11 @@ fn http_probe_inner(url: &str, timeout: std::time::Duration) -> Result<HttpProbe
     });
     let content_type = lower
         .lines()
-        .find_map(|l| l.trim().strip_prefix("content-type:").map(|v| v.trim().to_string()))
+        .find_map(|l| {
+            l.trim()
+                .strip_prefix("content-type:")
+                .map(|v| v.trim().to_string())
+        })
         .unwrap_or_default();
     Ok(HttpProbe {
         status,
@@ -2829,9 +2864,11 @@ fn http_probe_inner(url: &str, timeout: std::time::Duration) -> Result<HttpProbe
 /// embeddable). Dependency-free HTTP via `http_probe_inner`.
 #[tauri::command]
 fn http_frame_blocked(url: String) -> Result<bool, String> {
-    Ok(http_probe_inner(&url, std::time::Duration::from_millis(1500))
-        .map(|p| p.frame_blocked)
-        .unwrap_or(false))
+    Ok(
+        http_probe_inner(&url, std::time::Duration::from_millis(1500))
+            .map(|p| p.frame_blocked)
+            .unwrap_or(false),
+    )
 }
 
 /// GET a loopback dev-server URL and report status + frame headers + body shape, so
@@ -3033,9 +3070,9 @@ fn mirror_worktree_env(root: String, worktree_path: String) -> Result<Vec<String
 /// not a secret leak (DEC-098).
 fn is_public_env_key(k: &str) -> bool {
     (k.starts_with("VITE_") || k.starts_with("NEXT_PUBLIC_"))
-        && k.bytes().enumerate().all(|(i, b)| {
-            b == b'_' || b.is_ascii_alphanumeric() && !(i == 0 && b.is_ascii_digit())
-        })
+        && k.bytes()
+            .enumerate()
+            .all(|(i, b)| b == b'_' || b.is_ascii_alphanumeric() && !(i == 0 && b.is_ascii_digit()))
 }
 
 /// Parse one `.env` line into a PUBLIC `(KEY, VALUE)` pair, or None. Skips blanks /
@@ -3254,9 +3291,10 @@ fn parse_env_line(line: &str) -> Option<(String, String)> {
         return None;
     }
     let k = body[..eq].trim();
-    let valid = k.bytes().enumerate().all(|(i, b)| {
-        b == b'_' || b.is_ascii_alphabetic() || (b.is_ascii_digit() && i != 0)
-    });
+    let valid = k
+        .bytes()
+        .enumerate()
+        .all(|(i, b)| b == b'_' || b.is_ascii_alphabetic() || (b.is_ascii_digit() && i != 0));
     if !valid {
         return None;
     }
@@ -3373,7 +3411,14 @@ fn vercel_sync_env(
         let mut c = std::process::Command::new(&bin);
         de_agent(&mut c);
         c.current_dir(cwd_p).args([
-            "env", "add", k, "production", "--value", v, "--force", "--yes",
+            "env",
+            "add",
+            k,
+            "production",
+            "--value",
+            v,
+            "--force",
+            "--yes",
         ]);
         if !scope.is_empty() {
             c.args(["--scope", &scope]);
@@ -3676,9 +3721,10 @@ pub fn run() {
                 let sc_palette = MenuItemBuilder::with_id("shortcut.palette", "Command Palette…")
                     .accelerator("CmdOrCtrl+K")
                     .build(app)?;
-                let sc_annotate = MenuItemBuilder::with_id("shortcut.annotate", "Toggle Annotations")
-                    .accelerator("CmdOrCtrl+Shift+A")
-                    .build(app)?;
+                let sc_annotate =
+                    MenuItemBuilder::with_id("shortcut.annotate", "Toggle Annotations")
+                        .accelerator("CmdOrCtrl+Shift+A")
+                        .build(app)?;
                 let sc_new = MenuItemBuilder::with_id("shortcut.new-issue", "New Issue")
                     .accelerator("CmdOrCtrl+N")
                     .build(app)?;
