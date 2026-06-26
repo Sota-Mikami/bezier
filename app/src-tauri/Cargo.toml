@@ -17,6 +17,8 @@ tauri-build = { version = "2", features = [] }
 # Pin: toml 1.1.x requires Cargo/Rust 1.85 (edition2024); Homebrew rust is 1.83.
 # 1.0.7 (MSRV 1.76) satisfies tauri's `toml >=0.9,<=1` and unifies the 1.x group.
 toml = "=1.0.7"
+# Compiles snapshot_helper.m on macOS (build.rs uses #[cfg] to gate the call).
+cc = "1"
 
 [dependencies]
 # `unstable` enables Window::add_child — the cmux-style embedded native webview

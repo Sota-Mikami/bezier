@@ -647,6 +647,9 @@ export const ja: Messages = {
     composerPlaceholder: "ここをどう変えたい？ 見えている言葉も添えて（例:「送信」ボタン）…  ⌘Enter",
     noInstruction: "(指示なし)",
     draft: "下書き",
+    panelTitle: "コメント",
+    panelEmpty: "ページ上でクリックまたはドラッグしてコメントを追加",
+    penHint: "ページ上に描いてから注記を追加",
     kind: {
       pin: "コメント（点）",
       pen: "ペン注釈",

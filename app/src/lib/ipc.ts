@@ -240,8 +240,35 @@ export function embedBrowserDrain(js: string): Promise<void> {
 }
 
 /**
- * Capture a screen region (POINTS, global top-left origin) to a PNG (DEC-045 —
- * design feedback). Returns the written path. -> invoke("capture_region", …)
+ * Snapshot a Bezier-owned WKWebView to a PNG without triggering the macOS
+ * Screen Recording permission. Uses `takeSnapshotWithConfiguration:` which
+ * renders the app's OWN content in-process (no TCC prompt, no screencapture).
+ *
+ * `label` — Tauri webview label:
+ *   "embedded-browser"  live-preview child webview
+ *   "main"              Bezier's primary React UI webview
+ *
+ * `x`, `y`, `width`, `height` — crop rect in the webview's LOCAL coordinate
+ *   space (CSS pixels == macOS logical points). Pass all zeros for a full-view
+ *   capture (WKSnapshotConfiguration default).
+ *
+ * `outPath` must reside under a .bezier store (same guard as capture_region).
+ */
+export function webviewSnapshot(
+  label: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  outPath: string,
+): Promise<string> {
+  return invoke<string>("webview_snapshot", { label, x, y, width, height, outPath });
+}
+
+/**
+ * @deprecated  Use `webviewSnapshot` instead — screencapture requires Screen
+ *   Recording permission which re-prompts on every unsigned build (TCC ad-hoc
+ *   signature). Kept for reference; no longer called by UI code.
  */
 export function captureRegion(
   x: number,

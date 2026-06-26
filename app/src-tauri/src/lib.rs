@@ -768,6 +768,155 @@ fn capture_region(
     Ok(out_path)
 }
 
+// ── WKWebView snapshot (no Screen Recording permission) ─────────────────────
+//
+// `bz_webview_snapshot` is compiled from `src/snapshot_helper.m` via build.rs
+// + the `cc` crate. It calls `-[WKWebView takeSnapshotWithConfiguration:]`
+// which renders the webview's OWN content in-process. macOS never shows a TCC
+// Screen Recording prompt for this API.
+//
+// Threading: `with_webview` dispatches its closure to the Tauri/winit main
+// (event loop) thread. `bz_webview_snapshot` spins `NSRunLoop` in 50 ms
+// increments while waiting for the async completion handler — a standard macOS
+// nested-run-loop pattern (used by AppKit for modal sheets etc.).
+// The result is sent back to the command thread via an `mpsc` channel.
+
+#[cfg(target_os = "macos")]
+extern "C" {
+    /// C entry point defined in snapshot_helper.m.
+    /// MUST be called on the main thread (enforced by `with_webview`).
+    /// Returns 0 on success, -1 on error (errBuf filled).
+    fn bz_webview_snapshot(
+        webview_ptr: *mut std::ffi::c_void,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        out_path: *const std::ffi::c_char,
+        err_buf: *mut std::ffi::c_char,
+        err_buf_len: i32,
+    ) -> i32;
+}
+
+/// Snapshot a Bezier-owned webview without Screen Recording permission.
+///
+/// `label` is the Tauri webview label:
+///   - `"embedded-browser"` — the child WKWebView (live-preview native browser)
+///   - `"main"` — Bezier's primary React UI webview
+///
+/// `x`, `y`, `width`, `height` are in the webview's LOGICAL coordinate space
+/// (CSS pixels == macOS points). Pass all-zeros for a full-view capture.
+///
+/// `out_path` must reside inside a `.bezier` store (same guard as capture_region).
+#[cfg(target_os = "macos")]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // a Tauri command's args map 1:1 to JS invoke params
+fn webview_snapshot(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, PathGrantState>,
+    label: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    out_path: String,
+) -> Result<String, String> {
+    // Security guards (identical to capture_region).
+    let target = Path::new(&out_path);
+    reject_traversal(target)?;
+    ensure_granted(&state, target)?;
+    if !target.components().any(|c| c.as_os_str() == ".bezier") {
+        return Err("refusing to write a snapshot outside a .bezier store".to_string());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("webview_snapshot mkdir {}: {e}", parent.display()))?;
+    }
+
+    let wv = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("webview_snapshot: no webview with label '{label}'"))?;
+
+    // Bridge: command thread (Tokio pool) ↔ main thread (with_webview closure).
+    let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
+    let out_path_owned = out_path.clone();
+
+    wv.with_webview(move |pw| {
+        let webview_ptr = pw.inner();
+        if webview_ptr.is_null() {
+            let _ = tx.send(Err(
+                "webview_snapshot: null native webview pointer".to_string()
+            ));
+            return;
+        }
+
+        let out_cstring = match std::ffi::CString::new(out_path_owned.as_bytes()) {
+            Ok(s) => s,
+            Err(_) => {
+                let _ = tx.send(Err(
+                    "webview_snapshot: out_path contains a null byte".to_string()
+                ));
+                return;
+            }
+        };
+
+        let mut err_buf = vec![0u8; 512];
+        // SAFETY: webview_ptr is the raw WKWebView* obtained from Tauri's
+        // with_webview, called here on the main thread. bz_webview_snapshot
+        // performs the ObjC call and run-loop spin entirely on this thread.
+        let ret = unsafe {
+            bz_webview_snapshot(
+                webview_ptr,
+                x,
+                y,
+                width,
+                height,
+                out_cstring.as_ptr(),
+                err_buf.as_mut_ptr() as *mut std::ffi::c_char,
+                err_buf.len() as i32,
+            )
+        };
+
+        let result = if ret == 0 {
+            Ok(out_path_owned)
+        } else {
+            // Extract the null-terminated C string from err_buf.
+            let msg = err_buf
+                .split(|&b| b == 0)
+                .next()
+                .and_then(|s| std::str::from_utf8(s).ok())
+                .unwrap_or("unknown error")
+                .to_string();
+            Err(msg)
+        };
+        let _ = tx.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+
+    // 20 s outer timeout — the .m helper already imposes 15 s internally.
+    rx.recv_timeout(std::time::Duration::from_secs(20))
+        .map_err(|_| "webview_snapshot: channel timed out (main thread unreachable?)".to_string())?
+}
+
+/// Non-macOS stub so the invoke_handler compiles on all targets.
+/// Bezier ships macOS-only; this is never called in practice.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+#[allow(unused_variables)]
+#[allow(clippy::too_many_arguments)]
+fn webview_snapshot(
+    _app: tauri::AppHandle,
+    _state: tauri::State<'_, PathGrantState>,
+    _label: String,
+    _x: f64,
+    _y: f64,
+    _width: f64,
+    _height: f64,
+    _out_path: String,
+) -> Result<String, String> {
+    Err("webview_snapshot is only supported on macOS".to_string())
+}
+
 /// Open a folder in the user's IDE (DEC-041 "…" menu → IDEで開く). Tries known
 /// editor CLIs on PATH in preference order and launches the first one found with
 /// the folder as its argument. Returns the editor name on success; a clear Err
@@ -3775,6 +3924,7 @@ pub fn run() {
             embed_browser_drain,
             open_in_editor,
             capture_region,
+            webview_snapshot,
             remove_path,
             remove_vercel_dir,
             move_path,

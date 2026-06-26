@@ -648,6 +648,9 @@ export const en = {
     composerPlaceholder: "What should change here? Mention what you see (e.g. the “Submit” button)…  ⌘Enter",
     noInstruction: "(no instruction)",
     draft: "Draft",
+    panelTitle: "Comments",
+    panelEmpty: "Click or drag on the page to add a comment",
+    penHint: "Draw on the page, then add your note",
     kind: {
       pin: "Comment (point)",
       pen: "Pen note",

@@ -64,6 +64,18 @@ export interface Annotation {
   /** Before (annotated, at send) / after (clean, on done) screenshots (DEC-046 #2). */
   beforeShot?: string;
   afterShot?: string;
+  /** Page coordinates in px (absolute doc coords). Set in live/in-page annotation mode. */
+  pageX?: number;
+  pageY?: number;
+  /** Document scroll width/height at placement. */
+  docW?: number;
+  docH?: number;
+  /** Rect size in page px (rect kind, live mode). */
+  pageRect?: { w: number; h: number };
+  /** Pen path in page px (pen kind, live mode). */
+  pagePath?: { x: number; y: number }[];
+  /** Nearest element context (from in-page gesture). */
+  near?: { selector?: string; tag?: string; text?: string };
 }
 
 function strip(p: string): string {
@@ -96,6 +108,13 @@ export function newAnnotation(
     path?: { x: number; y: number }[];
     rect?: { w: number; h: number };
     element?: ElementContext;
+    pageX?: number;
+    pageY?: number;
+    docW?: number;
+    docH?: number;
+    pageRect?: { w: number; h: number };
+    pagePath?: { x: number; y: number }[];
+    near?: { selector?: string; tag?: string; text?: string };
   },
 ): Annotation {
   return {
@@ -106,6 +125,13 @@ export function newAnnotation(
     ...(opts?.path && opts.path.length ? { path: opts.path } : {}),
     ...(opts?.rect ? { rect: opts.rect } : {}),
     ...(opts?.element ? { element: opts.element } : {}),
+    ...(opts?.pageX !== undefined ? { pageX: opts.pageX } : {}),
+    ...(opts?.pageY !== undefined ? { pageY: opts.pageY } : {}),
+    ...(opts?.docW !== undefined ? { docW: opts.docW } : {}),
+    ...(opts?.docH !== undefined ? { docH: opts.docH } : {}),
+    ...(opts?.pageRect ? { pageRect: opts.pageRect } : {}),
+    ...(opts?.pagePath && opts.pagePath.length ? { pagePath: opts.pagePath } : {}),
+    ...(opts?.near ? { near: opts.near } : {}),
     text: "",
     status: "draft",
     createdAt: new Date().toISOString(),
@@ -136,6 +162,15 @@ function coerce(raw: unknown): Annotation[] {
         ...(e.element && typeof e.element === "object"
           ? { element: e.element as ElementContext }
           : {}),
+        ...(typeof e.pageX === "number" ? { pageX: e.pageX } : {}),
+        ...(typeof e.pageY === "number" ? { pageY: e.pageY } : {}),
+        ...(typeof e.docW === "number" ? { docW: e.docW } : {}),
+        ...(typeof e.docH === "number" ? { docH: e.docH } : {}),
+        ...(e.pageRect && typeof e.pageRect.w === "number" && typeof e.pageRect.h === "number"
+          ? { pageRect: { w: e.pageRect.w, h: e.pageRect.h } }
+          : {}),
+        ...(Array.isArray(e.pagePath) ? { pagePath: e.pagePath as { x: number; y: number }[] } : {}),
+        ...(e.near && typeof e.near === "object" ? { near: e.near as { selector?: string; tag?: string; text?: string } } : {}),
         text: typeof e.text === "string" ? e.text : "",
         status:
           e.status === "running" || e.status === "done" ? e.status : "draft",

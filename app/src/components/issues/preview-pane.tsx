@@ -29,14 +29,11 @@ import {
   ChevronDown,
   Check,
 } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { openExternal, openLiveWindow, captureRegion, pathMtime, embedBrowserUrl } from "@/lib/ipc";
-import { loadImageDataUrl } from "@/lib/annotations";
+import { openExternal, openLiveWindow, webviewSnapshot, pathMtime, embedBrowserUrl } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { useT, tt } from "@/lib/i18n";
 import { previewFeedbackPrompt, previewDoctorPrompt, visualEditPrompt } from "@/lib/prompts";
@@ -48,7 +45,8 @@ import { manifestStillPath, type ManifestEntry } from "@/lib/map-manifest";
 import { getViewState, setViewState } from "@/lib/view-state";
 import type { PreviewServer, PreviewStatus } from "./use-preview-server";
 import type { ImplementSession } from "./implement-session-types";
-import { AnnotationLayer, type AnnotationSurface } from "./design-annotations";
+import { type AnnotationSurface } from "./design-annotations";
+import { LiveAnnotationPanel } from "./live-annotation-panel";
 import { useAnnotationMode } from "./annotation-mode";
 import { ModeToggleGroup } from "./mode-toggle-group";
 import { EmbeddedBrowser } from "./embedded-browser";
@@ -332,9 +330,10 @@ export function PreviewPane({
   const { on: annotating, setLocked: setAnnotateLocked } = useAnnotationMode();
 
   // Edit Mode (DEC-131): a visual-edit mode living in the Preview header. While ON,
-  // annotate is locked OFF (the two are mutually exclusive — annotate freezes the
-  // webview to a screenshot, Edit needs it live). The editing ENGINE (select / Style
-  // panel / apply-to-code) lands next; this is the mode + layout scaffold.
+  // annotate is locked OFF (the two are mutually exclusive — both modes inject
+  // different overlay sub-modes into the live page and must not run simultaneously).
+  // The editing ENGINE (select / Style panel / apply-to-code) lands next; this is
+  // the mode + layout scaffold.
   const [editing, setEditing] = React.useState(false);
   React.useEffect(() => {
     setAnnotateLocked(editing);
@@ -348,13 +347,7 @@ export function PreviewPane({
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [panelTab, setPanelTab] = React.useState<PanelTab>("output");
   const [reloadNonce, setReloadNonce] = React.useState(0);
-  // Single mode (DEC-120): the preview IS the native embedded browser — OAuth
-  // works inline. A native webview paints above HTML, so to annotate we FREEZE
-  // it to a screenshot, hide the webview, and let the maker mark up the still
-  // (the agent gets the same annotated shot as before). `frozenShot` holds that
-  // still while annotating; `containerRef` is the rect we capture + the webview
-  // tracks.
-  const [frozenShot, setFrozenShot] = React.useState<string | null>(null);
+  // `containerRef` is the rect the webview tracks (used for annotation panel bounds).
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   // Responsive viewport (DEC-064) + navigated path. Custom width/height (DEC-074).
   const [deviceId, setDeviceId] = React.useState<DeviceId>("fluid");
@@ -462,8 +455,9 @@ export function PreviewPane({
     }
     await sleep(450); // paint
   }, []);
-  // Screenshot the CURRENT (visible, logged-in) webview into the Map's still for
-  // `route` — same capture_region path as the annotate freeze. No-op if not visible.
+  // Snapshot the embedded-browser webview into the Map's still for `route`.
+  // Uses WKWebView native snapshot — no Screen Recording permission needed.
+  // No-op if the container isn't visible.
   const captureRouteStill = React.useCallback(
     async (route: string) => {
       if (!issue) return;
@@ -471,16 +465,10 @@ export function PreviewPane({
       if (!el || el.offsetParent === null) return;
       const r = el.getBoundingClientRect();
       if (r.width < 1 || r.height < 1) return;
-      const win = getCurrentWindow();
-      const pos = await win.innerPosition();
-      const scale = await win.scaleFactor();
-      await captureRegion(
-        pos.x / scale + r.left,
-        pos.y / scale + r.top,
-        r.width,
-        r.height,
-        mapStillPath(issue, route),
-      ).catch(() => {});
+      // Full-view snapshot: embedded-browser is sized to fill the slot exactly.
+      await webviewSnapshot("embedded-browser", 0, 0, 0, 0, mapStillPath(issue, route)).catch(
+        () => {},
+      );
     },
     [issue],
   );
@@ -636,16 +624,8 @@ export function PreviewPane({
             if (el && el.offsetParent !== null) {
               const r = el.getBoundingClientRect();
               if (r.width >= 1 && r.height >= 1) {
-                const win = getCurrentWindow();
-                const pos = await win.innerPosition();
-                const scale = await win.scaleFactor();
-                await captureRegion(
-                  pos.x / scale + r.left,
-                  pos.y / scale + r.top,
-                  r.width,
-                  r.height,
-                  outPath,
-                ).catch(() => {});
+                // Full-view snapshot of embedded-browser (no Screen Recording).
+                await webviewSnapshot("embedded-browser", 0, 0, 0, 0, outPath).catch(() => {});
               }
             }
           }
@@ -797,46 +777,7 @@ export function PreviewPane({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [editing, veSelectParent, veUndo, veMove]);
 
-  // Freeze-to-annotate (DEC-120): a native webview can't be drawn over, so when
-  // annotation mode turns on we screenshot the live (logged-in) browser, then
-  // show that still + the annotation layer (the webview hides itself once the
-  // shot is ready). Capture runs while the webview is still visible. Cleared
-  // when annotation ends → the live browser returns.
   const issueDir = session?.issue.dir;
-  React.useEffect(() => {
-    if (!annotating || !issueDir) return; // nothing to do until annotation on
-    const el = containerRef.current;
-    if (!el || el.offsetParent === null) return; // pane not visible → skip
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = el.getBoundingClientRect();
-        if (r.width < 1 || r.height < 1) return;
-        const win = getCurrentWindow();
-        const pos = await win.innerPosition();
-        const scale = await win.scaleFactor();
-        // capture_region only writes inside a granted `.bezier` store, so reuse
-        // the issue's feedback dir (same place AnnotationLayer writes its shots).
-        const out = `${issueDir}/feedback/preview-freeze.png`;
-        const path = await captureRegion(
-          pos.x / scale + r.left,
-          pos.y / scale + r.top,
-          r.width,
-          r.height,
-          out,
-        );
-        const dataUrl = await loadImageDataUrl(path);
-        if (!cancelled && dataUrl) setFrozenShot(dataUrl);
-      } catch {
-        /* capture failed → stay on the live browser (annotation unavailable) */
-      }
-    })();
-    // Clear when annotation ends (effect re-runs) / unmount → live browser back.
-    return () => {
-      cancelled = true;
-      setFrozenShot(null);
-    };
-  }, [annotating, issueDir]);
 
   if (!hasRef) {
     return (
@@ -1007,8 +948,8 @@ export function PreviewPane({
       )}
 
       {/* Self-diagnosis banner (DEC-125) — above the pane so the device-cap
-          ResizeObserver recomputes; hidden while annotating a frozen frame. */}
-      {status === "ready" && diag.verdict && !(annotating && frozenShot) && (
+          ResizeObserver recomputes. */}
+      {status === "ready" && diag.verdict && (
         <PreviewDiagnosticBanner
           verdict={diag.verdict}
           status={diag.status}
@@ -1104,61 +1045,51 @@ export function PreviewPane({
         ) : status === "ready" && url ? (
           // Single mode (DEC-120): the preview IS a native embedded browser, so
           // OAuth works inline. Device presets resize the slot it tracks; "fluid"
-          // fills the pane. To annotate we freeze it to a screenshot (the webview
-          // hides) and overlay the still + AnnotationLayer — same agent handoff
-          // as before, just over a frozen frame instead of a live iframe.
-          <div
-            className={cn(
-              "h-full w-full",
-              !isFluid && "overflow-auto bg-muted/40",
-            )}
-          >
+          // fills the pane. In annotation mode a side panel appears and marks
+          // render INSIDE the page via bezier-overlay (no freeze needed).
+          <div className="flex min-h-0 flex-1">
             <div
               className={cn(
-                "h-full w-full",
-                !isFluid && "flex min-h-full justify-center p-4",
+                "min-w-0 flex-1",
+                !isFluid && "overflow-auto bg-muted/40",
               )}
             >
               <div
-                ref={containerRef}
-                style={isFluid ? undefined : { width: vw!, height: vh! }}
                 className={cn(
-                  "relative bg-white",
-                  isFluid
-                    ? "h-full w-full"
-                    : "shrink-0 overflow-hidden border shadow-sm rounded-lg",
+                  "h-full w-full",
+                  !isFluid && "flex min-h-full justify-center p-4",
                 )}
               >
-                {/* The embedded browser stays MOUNTED (session preserved); it
-                    hides itself while a frozen shot is shown for annotation. */}
-                <EmbeddedBrowser
-                  src={src!}
-                  active={!(annotating && !!frozenShot)}
-                  reloadKey={reloadNonce}
-                  captureDir={issueDir ? `${issueDir}/feedback` : undefined}
-                  onNavigate={handleNavigate}
-                />
-                {/* Frozen-frame annotation: the still + the shared AnnotationLayer
-                    (DEC-045/046/056 → edits the worktree CODE). The native webview
-                    is hidden underneath, so the HTML overlay is visible. */}
-                {annotating && frozenShot && (
-                  <div className="absolute inset-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- local data: URL screenshot in a Tauri webview; next/image doesn't apply */}
-                    <img
-                      src={frozenShot}
-                      alt={t("preview.frozenForAnnotation")}
-                      className="h-full w-full object-cover"
-                    />
-                    {session && (
-                      <AnnotationLayer
-                        session={session}
-                        surface={buildAnnotationSurface(session, path)}
-                      />
-                    )}
-                  </div>
-                )}
+                <div
+                  ref={containerRef}
+                  style={isFluid ? undefined : { width: vw!, height: vh! }}
+                  className={cn(
+                    "relative bg-white",
+                    isFluid
+                      ? "h-full w-full"
+                      : "shrink-0 overflow-hidden border shadow-sm rounded-lg",
+                  )}
+                >
+                  <EmbeddedBrowser
+                    src={src!}
+                    active={true}
+                    reloadKey={reloadNonce}
+                    captureDir={issueDir ? `${issueDir}/feedback` : undefined}
+                    onNavigate={handleNavigate}
+                  />
+                </div>
               </div>
             </div>
+            {annotating && session && (
+              <aside className="w-72 shrink-0 overflow-y-auto border-l bg-card/40">
+                <LiveAnnotationPanel
+                  session={session}
+                  surface={buildAnnotationSurface(session, path)}
+                  transport={veTransport}
+                  layerRef={containerRef}
+                />
+              </aside>
+            )}
           </div>
         ) : status === "starting" ? (
           <StartingOrError

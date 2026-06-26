@@ -47,6 +47,7 @@ interface PromptPhrases {
   veBefore: string;
   veAfter: string;
   veText: (before: string, after: string) => string;
+  veDelete: (el: string) => string;
 
   // --- md doc / Map / QA surfaces ---
   docHeader: (label: string) => string;
@@ -82,7 +83,7 @@ const JA: PromptPhrases = {
   summarizeViaUi:
     "対応したら変更点を簡潔に要約してください（commit は人間が Bezier の UI から行います）。",
   shotRef: (shot) =>
-    `注釈つきスクリーンショット: \`${shot}\`（同じ番号の付いた箇所を確認してください）`,
+    `注釈つきスクリーンショット（同じ番号の付いた箇所を確認してください）:\n![注釈つきスクリーンショット](${shot})`,
   shotNone: "(スクリーンショットは取得できませんでした。位置％を参考にしてください)",
   markFallback: "(描画/指定を参照)",
 
@@ -112,6 +113,7 @@ const JA: PromptPhrases = {
   veBefore: "前",
   veAfter: "後ろ",
   veText: (before, after) => `テキストを ${before} → ${after} に変更`,
+  veDelete: (el) => `${el} を削除（この要素をソースから取り除く）`,
 
   docHeader: (label) => `## ドキュメント「${label}」への注釈`,
   docIntro: (docPath) =>
@@ -170,7 +172,7 @@ const EN: PromptPhrases = {
   summarizeViaUi:
     "When you're done, summarize the changes briefly (commits are made by a human from Bezier's UI).",
   shotRef: (shot) =>
-    `Annotated screenshot: \`${shot}\` (open it and check the spots with matching numbers).`,
+    `Annotated screenshot (check the spots with matching numbers):\n![annotated screenshot](${shot})`,
   shotNone:
     "(No screenshot could be captured — use the % positions as a reference.)",
   markFallback: "(refer to the drawing / target)",
@@ -201,6 +203,7 @@ const EN: PromptPhrases = {
   veBefore: "before",
   veAfter: "after",
   veText: (before, after) => `change text ${before} → ${after}`,
+  veDelete: (el) => `delete ${el} (remove this element from the source)`,
 
   docHeader: (label) => `## Annotations on the “${label}” document`,
   docIntro: (docPath) =>
@@ -292,6 +295,7 @@ export function visualEditPrompt(
   diffs: (VEBrief & { prop: string; before: string; after: string })[],
   reorders: { src: VEBrief & { text?: string }; dest: VEBrief & { text?: string }; before: boolean }[] = [],
   textEdits: (VEBrief & { before: string; after: string })[] = [],
+  deletes: VEBrief[] = [],
 ): string {
   const p = promptPhrases();
   const label = (b: VEBrief) => `\`${b.tag}${b.classes.length ? "." + b.classes.join(".") : ""}\``;
@@ -316,6 +320,10 @@ export function visualEditPrompt(
   }
   for (const te of textEdits) {
     lines.push(`${n}. ${label(te)} ${p.veText(JSON.stringify(te.before), JSON.stringify(te.after))}`);
+    n++;
+  }
+  for (const del of deletes) {
+    lines.push(`${n}. ${p.veDelete(`${label(del)} (selector \`${del.selector}\`)`)}`);
     n++;
   }
   return [p.veHeader, p.veIntro(route), "", ...lines, "", ...p.veConstraints].join("\n");

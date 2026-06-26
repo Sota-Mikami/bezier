@@ -26,9 +26,7 @@ import {
   Undo2,
   Redo2,
 } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-
-import { captureRegion, messageDialog, grantPath, writeFileBytes } from "@/lib/ipc";
+import { webviewSnapshot, messageDialog, grantPath, writeFileBytes } from "@/lib/ipc";
 import {
   readAnnotations,
   writeAnnotations,
@@ -249,6 +247,8 @@ export function AnnotationLayer({
   // --- screenshot capture -------------------------------------------------
   // marks=true keeps pins in the shot (the agent's annotated screenshot);
   // clean=true hides marks too (the "after" comparison shot).
+  // Design mode: annotation marks are a DOM overlay in the main webview.
+  // Crop the main webview to the annotation layer's rect (CSS px == WKWebView points).
   const captureShot = React.useCallback(
     async (clean: boolean): Promise<string | null> => {
       const layer = layerRef.current;
@@ -257,13 +257,8 @@ export function AnnotationLayer({
       await raf2();
       try {
         const r = layer.getBoundingClientRect();
-        const win = getCurrentWindow();
-        const pos = await win.innerPosition();
-        const scale = await win.scaleFactor();
-        const x = pos.x / scale + r.left;
-        const y = pos.y / scale + r.top;
         const out = `${issue.dir}/feedback/${Date.now()}-${clean ? "after" : "before"}.png`;
-        return await captureRegion(x, y, r.width, r.height, out);
+        return await webviewSnapshot("main", r.left, r.top, r.width, r.height, out);
       } catch {
         return null;
       } finally {

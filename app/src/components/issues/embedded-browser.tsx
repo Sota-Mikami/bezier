@@ -19,7 +19,6 @@
 // (shows the live webview again) when the overlay closes.
 
 import * as React from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   embedBrowserOpen,
   embedBrowserSetBounds,
@@ -27,7 +26,7 @@ import {
   embedBrowserUrl,
   embedBrowserHide,
   embedBrowserClose,
-  captureRegion,
+  webviewSnapshot,
 } from "@/lib/ipc";
 import { loadImageDataUrl } from "@/lib/annotations";
 
@@ -74,19 +73,17 @@ function sameRect(a: Rect | null, b: Rect | null): boolean {
   );
 }
 
-// Screenshot the slot (the live webview sits there) to a data URL for the freeze.
-// capture_region only writes inside a granted `.bezier` store, so the caller
-// passes such a dir. Returns null on any failure (→ caller falls back to hide).
-async function captureSlot(rect: Rect, dir: string): Promise<string | null> {
+// Snapshot the embedded browser webview to a data URL for the freeze overlay.
+// Uses WKWebView native snapshot (no Screen Recording permission needed).
+// Returns null on any failure (→ caller falls back to hide).
+async function captureSlot(_rect: Rect, dir: string): Promise<string | null> {
   try {
-    const win = getCurrentWindow();
-    const pos = await win.innerPosition();
-    const scale = await win.scaleFactor();
-    const path = await captureRegion(
-      pos.x / scale + rect.x,
-      pos.y / scale + rect.y,
-      rect.width,
-      rect.height,
+    // Full-view snapshot of the embedded-browser webview (zero rect = default
+    // bounds). The embedded browser is sized to exactly fill the slot, so the
+    // full view IS the slot content — no crop needed.
+    const path = await webviewSnapshot(
+      "embedded-browser",
+      0, 0, 0, 0,
       `${dir.replace(/\/+$/, "")}/embed-freeze.png`,
     );
     return await loadImageDataUrl(path);

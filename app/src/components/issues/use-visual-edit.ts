@@ -83,7 +83,9 @@ export interface VisualEdit {
   diffs: StyleDiff[];
   reorders: ReorderOp[];
   textEdits: TextEdit[];
-  /** diffs + reorders + text edits count — drives the pending bar. */
+  /** Elements deleted (Delete/Backspace) — the agent removes them from source. */
+  deletes: ElBrief[];
+  /** diffs + reorders + text edits + deletes count — drives the pending bar. */
   editCount: number;
   applyStyle: (prop: string, value: string) => void;
   /** Edit the selected element's text content (leaf text elements). */
@@ -97,6 +99,8 @@ export interface VisualEdit {
   moveChild: (src: ElBrief, dest: ElBrief, before: boolean) => void;
   /** Keyboard reorder: move the selected element among its siblings (-1 up / +1 down). */
   moveSelectedBy: (delta: number) => void;
+  /** Delete the selected element (Delete/Backspace). */
+  deleteSelected: () => void;
   clearEdits: () => void;
 }
 
@@ -117,6 +121,7 @@ export function useVisualEdit({
   const diffsRef = React.useRef<Map<string, StyleDiff>>(new Map());
   const [diffs, setDiffs] = React.useState<StyleDiff[]>([]);
   const [reorders, setReorders] = React.useState<ReorderOp[]>([]);
+  const [deletes, setDeletes] = React.useState<ElBrief[]>([]);
   const textEditsRef = React.useRef<Map<string, TextEdit>>(new Map());
   const [textEdits, setTextEdits] = React.useState<TextEdit[]>([]);
   const historyRef = React.useRef<HistoryEntry[]>([]);
@@ -261,12 +266,20 @@ export function useVisualEdit({
     transportRef.current.call("moveSelectedBy", [delta]);
   }, []);
 
+  // Delete the selected element — the overlay removes it live + emits a `delete`
+  // event we record (works from a panel-focused Delete; the overlay handles the
+  // webview-focused case in-page).
+  const deleteSelected = React.useCallback(() => {
+    transportRef.current.call("removeSelected");
+  }, []);
+
   const clearEdits = React.useCallback(() => {
     diffsRef.current.clear();
     historyRef.current = [];
     textEditsRef.current.clear();
     setCanUndo(false);
     setReorders([]);
+    setDeletes([]);
     setTextEdits([]);
     syncDiffs();
     setOverrides({});
@@ -296,6 +309,15 @@ export function useVisualEdit({
           if (ev.sel !== undefined) setSelectedSelector(ev.sel);
         } else if (ev.type === "reorder" && ev.src && ev.dest) {
           setReorders((r) => [...r, { src: ev.src!, dest: ev.dest!, before: !!ev.before }]);
+        } else if (ev.type === "delete" && ev.el) {
+          const d = ev.el;
+          setDeletes((arr) => [
+            ...arr,
+            { selector: d.selector, tag: d.tag, classes: d.classes, text: d.text },
+          ]);
+          setSelected(null);
+          setSelectedSelector(null);
+          setOverrides({});
         }
       }
     });
@@ -320,7 +342,8 @@ export function useVisualEdit({
     diffs,
     reorders,
     textEdits,
-    editCount: diffs.length + reorders.length + textEdits.length,
+    deletes,
+    editCount: diffs.length + reorders.length + textEdits.length + deletes.length,
     applyStyle,
     setText,
     resetProp,
@@ -330,6 +353,7 @@ export function useVisualEdit({
     selectPath,
     moveChild,
     moveSelectedBy,
+    deleteSelected,
     clearEdits,
   };
 }

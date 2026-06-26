@@ -18,8 +18,8 @@ interface AnnotationMode {
   set: (b: boolean) => void;
   /** True while another mode (Preview's Edit mode) owns the surface. When locked,
    *  annotate can't be turned ON (toggle/⌘⇧A no-op) — Edit & Annotate are mutually
-   *  exclusive (DEC-131): annotate freezes the webview to a screenshot, Edit needs
-   *  it live, so they can't coexist. */
+   *  exclusive (DEC-131): both inject different overlay modes into the live page;
+   *  they share the bezier-overlay channel and must not run simultaneously. */
   locked: boolean;
   setLocked: (b: boolean) => void;
 }
