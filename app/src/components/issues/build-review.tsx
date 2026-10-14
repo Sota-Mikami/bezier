@@ -13,7 +13,7 @@
 // better; the "what changed" reassurance lives in the agent chat summary.
 
 import * as React from "react";
-import { MonitorPlay, Map as MapIcon, ListChecks } from "lucide-react";
+import { MonitorPlay, Map as MapIcon, ListChecks, GitPullRequestArrow } from "lucide-react";
 
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { useTabShortcuts } from "@/lib/use-tab-shortcuts";
@@ -23,11 +23,12 @@ import { cn } from "@/lib/utils";
 import { PreviewPane } from "./preview-pane";
 import { IssueMap } from "./issue-map";
 import { QaProposal } from "./qa-proposal";
+import { PrReviewTab } from "./pr-review-tab";
 import type { ImplementSession } from "./implement-session-types";
 import type { ManifestEntry } from "@/lib/map-manifest";
 
-type ProtoTab = "preview" | "map" | "qa";
-const PROTO_TABS: ProtoTab[] = ["preview", "map", "qa"];
+type ProtoTab = "preview" | "map" | "qa" | "review";
+const PROTO_TABS: ProtoTab[] = ["preview", "map", "qa", "review"];
 
 // Map + QA are still unverified (DEC-148). A small "Beta" tag on the tab sets
 // expectations for people we hand the build to, so it doesn't read as finished.
@@ -49,6 +50,7 @@ export function BuildReview({
   active?: boolean;
 }) {
   const t = useT();
+  const [unresolvedCount, setUnresolvedCount] = React.useState(0);
   // Restore the last-viewed Prototype sub-tab across area switches (DEC-141).
   const [tab, setTab] = React.useState<ProtoTab>(
     () => (getViewState(session.issue.id).protoTab as ProtoTab) ?? "preview",
@@ -148,6 +150,14 @@ export function BuildReview({
           {t("prototype.tabQa")}
           <BetaBadge />
         </UnderlineTab>
+        {session.prUrl && (
+          <UnderlineTab active={tab === "review"} onClick={() => setTab("review")}>
+            <GitPullRequestArrow className="size-4" />
+            {unresolvedCount > 0
+              ? t("review.tabLabelWithCount", { n: String(unresolvedCount) })
+              : t("review.tabLabel")}
+          </UnderlineTab>
+        )}
         {/* Comment + Edit now live together as one mode control on the surface that
             has them (the Preview / the mock) — see ModeToggleGroup. Map / QA have no
             live surface to annotate, so no mode bar here (they're Beta). */}
@@ -178,6 +188,9 @@ export function BuildReview({
           />
         )}
         {tab === "qa" && <QaProposal session={session} />}
+        {tab === "review" && (
+          <PrReviewTab session={session} onUnresolvedCount={setUnresolvedCount} />
+        )}
       </div>
     </div>
   );

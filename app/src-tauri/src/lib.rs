@@ -2695,6 +2695,292 @@ fn gh_pr_state(repo_path: String, branch: String) -> Result<String, String> {
 }
 
 // ============================================================================
+// PR Review data — `gh_pr_reviews` assembles PR review threads, status, and
+// CI check summary into a single JSON for the Review sub-tab (Phase 1).
+// ============================================================================
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewerInfo {
+    login: String,
+    state: String,
+    submitted_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CiCheck {
+    name: String,
+    state: String,
+    description: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InitiatingComment {
+    id: String,
+    author: String,
+    body: String,
+    created_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewThread {
+    id: String,
+    is_resolved: bool,
+    path: String,
+    line: Option<i64>,
+    original_line: Option<i64>,
+    diff_hunk: String,
+    initiating_comment: InitiatingComment,
+    reply_count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PrReviewData {
+    pr_number: i64,
+    pr_state: String,
+    review_decision: Option<String>,
+    reviewers: Vec<ReviewerInfo>,
+    ci_checks: Vec<CiCheck>,
+    threads: Vec<ReviewThread>,
+}
+
+fn truncate_diff_hunk(hunk: &str) -> String {
+    let lines: Vec<&str> = hunk.lines().collect();
+    if lines.len() <= 20 {
+        return hunk.to_string();
+    }
+    format!("{}\n[... truncated]", lines[..20].join("\n"))
+}
+
+fn truncate_body(body: &str) -> String {
+    if body.len() <= 500 {
+        return body.to_string();
+    }
+    format!("{}[... truncated]", &body[..500])
+}
+
+/// Fetch PR review threads, status, reviewer list, and CI check summary for
+/// `branch` in `repo_path`. Uses gh CLI (must be authenticated). Returns
+/// `Err(String)` on gh failure; the JS side displays the error in the Review
+/// sub-tab instead of crashing. Fork PRs cause a GraphQL error — the error
+/// message starts with "FORK_PR_NOT_SUPPORTED" so the UI can show a targeted
+/// message.
+#[tauri::command]
+fn gh_pr_reviews(repo_path: String, branch: String) -> Result<PrReviewData, String> {
+    reject_traversal(Path::new(&repo_path))?;
+
+    // Step 1: PR number, state, reviewDecision, reviewer list.
+    let pr_view_out = std::process::Command::new("gh")
+        .args([
+            "pr",
+            "view",
+            &branch,
+            "--json",
+            "number,state,reviewDecision,reviews,headRefName,baseRefName",
+        ])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("failed to run gh pr view: {e}"))?;
+
+    if !pr_view_out.status.success() {
+        let stderr = String::from_utf8_lossy(&pr_view_out.stderr);
+        let stdout = String::from_utf8_lossy(&pr_view_out.stdout);
+        return Err(format!(
+            "gh pr view failed: {}",
+            format!("{stderr}{stdout}").trim()
+        ));
+    }
+
+    let pr_json: serde_json::Value = serde_json::from_slice(&pr_view_out.stdout)
+        .map_err(|e| format!("failed to parse gh pr view output: {e}"))?;
+
+    let pr_number = pr_json["number"].as_i64().unwrap_or(0);
+    let pr_state = pr_json["state"].as_str().unwrap_or("OPEN").to_string();
+    let review_decision = match pr_json["reviewDecision"].as_str() {
+        Some(s) if !s.is_empty() => Some(s.to_string()),
+        _ => None,
+    };
+
+    let reviewers: Vec<ReviewerInfo> = pr_json["reviews"]
+        .as_array()
+        .map(|reviews| {
+            reviews
+                .iter()
+                .map(|r| ReviewerInfo {
+                    login: r["author"]["login"].as_str().unwrap_or("").to_string(),
+                    state: r["state"].as_str().unwrap_or("").to_string(),
+                    submitted_at: r["submittedAt"].as_str().unwrap_or("").to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Step 2: Resolve owner + repo name.
+    let repo_view_out = std::process::Command::new("gh")
+        .args(["repo", "view", "--json", "owner,name"])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("failed to run gh repo view: {e}"))?;
+
+    if !repo_view_out.status.success() {
+        let stderr = String::from_utf8_lossy(&repo_view_out.stderr);
+        return Err(format!("gh repo view failed: {}", stderr.trim()));
+    }
+
+    let repo_json: serde_json::Value = serde_json::from_slice(&repo_view_out.stdout)
+        .map_err(|e| format!("failed to parse gh repo view output: {e}"))?;
+
+    let owner = repo_json["owner"]["login"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let repo_name = repo_json["name"].as_str().unwrap_or("").to_string();
+
+    // Step 3: GraphQL — review threads.
+    let graphql_query = r#"query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          path
+          line
+          originalLine
+          diffHunk
+          comments(first: 20) {
+            nodes {
+              id
+              author { login }
+              body
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  }
+}"#;
+
+    let graphql_out = std::process::Command::new("gh")
+        .args([
+            "api",
+            "graphql",
+            "-F",
+            &format!("owner={owner}"),
+            "-F",
+            &format!("repo={repo_name}"),
+            "-F",
+            &format!("number={pr_number}"),
+            "-f",
+            &format!("query={graphql_query}"),
+        ])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("failed to run gh api graphql: {e}"))?;
+
+    if !graphql_out.status.success() {
+        let stderr = String::from_utf8_lossy(&graphql_out.stderr);
+        let stdout = String::from_utf8_lossy(&graphql_out.stdout);
+        let combined = format!("{stderr}{stdout}");
+        if combined.contains("Could not resolve")
+            || combined.contains("NOT_FOUND")
+            || combined.contains("FORBIDDEN")
+        {
+            return Err(format!("FORK_PR_NOT_SUPPORTED: {}", combined.trim()));
+        }
+        return Err(format!("gh api graphql failed: {}", combined.trim()));
+    }
+
+    let graphql_json: serde_json::Value = serde_json::from_slice(&graphql_out.stdout)
+        .map_err(|e| format!("failed to parse graphql output: {e}"))?;
+
+    // Surface GraphQL-level errors (e.g. fork PRs where the head repo is
+    // different from the base repo).
+    if let Some(errors) = graphql_json["errors"].as_array() {
+        if !errors.is_empty() {
+            let msg = errors[0]["message"]
+                .as_str()
+                .unwrap_or("unknown graphql error");
+            return Err(format!("FORK_PR_NOT_SUPPORTED: graphql error: {msg}"));
+        }
+    }
+
+    let threads: Vec<ReviewThread> = graphql_json["data"]["repository"]["pullRequest"]
+        ["reviewThreads"]["nodes"]
+        .as_array()
+        .map(|nodes| {
+            nodes
+                .iter()
+                .map(|node| {
+                    let comments = node["comments"]["nodes"]
+                        .as_array()
+                        .cloned()
+                        .unwrap_or_default();
+                    let first = comments.first().cloned().unwrap_or(serde_json::Value::Null);
+                    let reply_count = if comments.len() > 1 {
+                        comments.len() - 1
+                    } else {
+                        0
+                    };
+
+                    ReviewThread {
+                        id: node["id"].as_str().unwrap_or("").to_string(),
+                        is_resolved: node["isResolved"].as_bool().unwrap_or(false),
+                        path: node["path"].as_str().unwrap_or("").to_string(),
+                        line: node["line"].as_i64(),
+                        original_line: node["originalLine"].as_i64(),
+                        diff_hunk: truncate_diff_hunk(node["diffHunk"].as_str().unwrap_or("")),
+                        initiating_comment: InitiatingComment {
+                            id: first["id"].as_str().unwrap_or("").to_string(),
+                            author: first["author"]["login"].as_str().unwrap_or("").to_string(),
+                            body: truncate_body(first["body"].as_str().unwrap_or("")),
+                            created_at: first["createdAt"].as_str().unwrap_or("").to_string(),
+                        },
+                        reply_count,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Step 4: CI checks (best-effort; old gh or no CI → empty).
+    let ci_checks: Vec<CiCheck> = {
+        let out = std::process::Command::new("gh")
+            .args(["pr", "checks", &branch, "--json", "name,state,description"])
+            .current_dir(&repo_path)
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                serde_json::from_slice::<Vec<serde_json::Value>>(&o.stdout)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|c| CiCheck {
+                        name: c["name"].as_str().unwrap_or("").to_string(),
+                        state: c["state"].as_str().unwrap_or("").to_string(),
+                        description: c["description"].as_str().unwrap_or("").to_string(),
+                    })
+                    .collect()
+            }
+            _ => vec![],
+        }
+    };
+
+    Ok(PrReviewData {
+        pr_number,
+        pr_state,
+        review_decision,
+        reviewers,
+        ci_checks,
+        threads,
+    })
+}
+
+// ============================================================================
 // v0.5 slice 2.5 — preview readiness probe.
 //
 // `http_ping(url)` is a tiny TCP+HTTP reachability check used to poll a worktree
@@ -3964,6 +4250,7 @@ pub fn run() {
             git_push,
             gh_pr_create,
             gh_pr_state,
+            gh_pr_reviews,
             http_ping,
             http_frame_blocked,
             http_probe,

@@ -1,4 +1,6 @@
-# Bezier — Codex Context
+# Bezier — Context（正本 SSOT）
+
+> **この文書が正本。** `CLAUDE.md` は `@AGENTS.md` の薄い参照＋Claude Code 固有の追記のみ。ルールの編集は必ずこのファイルに対して行う（D8）。
 
 AI-native な PdM+Design ツール。PdM/Designer/Engineer/QA の境界を溶かし、一人の「maker」が **Spec → Design → Mock → QA** を連続的に回せる世界の業界標準を目指す。Personal-first → dogfood → SaaS。
 
@@ -10,10 +12,11 @@ AI-native な PdM+Design ツール。PdM/Designer/Engineer/QA の境界を溶か
 3. product/issues/    ← 作業の単位。今どの ISSUE か
 ```
 
-- **CEO の依頼はまず COO（`.Codex/agents/coo.md`）が受ける**。COO が専門家へ並行/逐次 dispatch し、`[COO報告]`（結論/推奨/詳細/承認待ち）で CEO に返す。
+- **CEO の依頼はまず COO が受ける**。COO が専門家へ並行/逐次 dispatch し、`[COO報告]`（結論/推奨/詳細/承認待ち）で CEO に返す。
+- エージェント定義はツールごとのチームディレクトリ: Claude Code = `.claude/agents/*.md`、Codex = `.codex/agents/*.toml`。
 - 決定は `playbook/decisions-log.md`（DEC-###）。二度聞かない。承認待ちは `playbook/approval-queue.md`（PROP-###）。
 
-## チーム（`.Codex/agents/`）
+## チーム
 
 - 専門家: `coo` / `head-of-product` / `principal-designer` / `principal-engineer` / `qa-lead` / `ux-researcher`
 - ペルソナ（テスト対象）: `persona-solo-maker` / `persona-pm-cant-design` / `persona-ds-lead` / `persona-agency-designer`
@@ -27,9 +30,15 @@ AI-native な PdM+Design ツール。PdM/Designer/Engineer/QA の境界を溶か
 
 ## プロダクト（`app/`）
 
-- スタック: Next.js 15 / React 19 / Tailwind v4 / Supabase（Postgres/Auth/RLS）/ Codex API（`@anthropic-ai/sdk`）/ Liveblocks / React Flow / BlockNote。
-- 楔: 既存 repo → コンセプトモック。詳細アーキは起ち上げプラン `~/.Codex/plans/cuddly-cuddling-crane.md` と `playbook/product-roadmap.md`。
-- 再利用元（lift する既存コード）: `prototypes-monorepo/_template/src/app/map/`（React Flow ボード+Screenモデル）/ `_template/scripts/capture-screens.ts`（Playwright render）/ `projects/alloy`（BlockNote）/ `chom-chom/supabase/functions/ai-chat`（Codex streaming + RLS）/ `_template/supabase/functions/liveblocks-auth`（Liveblocks auth）。
+- スタック: Next.js 15 / React 19 / Tailwind v4 / Supabase（Postgres/Auth/RLS）/ Claude API（`@anthropic-ai/sdk`）/ Liveblocks / React Flow / BlockNote。
+- 楔: 既存 repo → コンセプトモック。詳細アーキは `playbook/product-roadmap.md`（起ち上げプランのローカルメモは CLAUDE.md の Claude 固有追記を参照）。
+- 再利用元（lift する既存コード）: `prototypes-monorepo/_template/src/app/map/`（React Flow ボード+Screenモデル）/ `_template/scripts/capture-screens.ts`（Playwright render）/ `projects/alloy`（BlockNote）/ `chom-chom/supabase/functions/ai-chat`（Claude streaming + RLS）/ `_template/supabase/functions/liveblocks-auth`（Liveblocks auth）。
+
+## 起動 / deploy
+
+- アプリ（Tauri）: `cd app && npm install && npm run tauri dev`／Web のみは `cd app && npm run dev`
+- サイト: `cd site && npm install && npm run dev`
+- リリース: バージョンタグの push で `release.yml`（GitHub Actions）がデスクトップアプリを build・release。本番反映は必ず事前に宣言して承認を待つ
 
 ## 戦略フレーム（親 AGENTS.md の shared/knowledge を参照）
 
