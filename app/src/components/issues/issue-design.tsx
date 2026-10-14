@@ -36,6 +36,7 @@ import { withDesignFind } from "@/lib/design-find";
 import { UnderlineTab } from "@/components/ui/underline-tab";
 import { SlotEditor } from "./slot-editor";
 import { AnnotationLayer } from "./design-annotations";
+import { LiveAnnotationPanel } from "./live-annotation-panel";
 import { designSurface } from "./design-variants";
 import { useAnnotationMode } from "./annotation-mode";
 import { ModeToggleGroup } from "./mode-toggle-group";
@@ -200,12 +201,18 @@ export function IssueDesign({
   // View-mode design iframe (the read-only html tab). Held so ⌘F can be forwarded
   // into it (its content runs an injected find overlay — see withDesignFind).
   const viewFrameRef = React.useRef<HTMLIFrameElement>(null);
+  // Annotation layer ref for the VIEW-mode design panel (side panel bounds).
+  const viewAnnoLayerRef = React.useRef<HTMLDivElement | null>(null);
   // Stable transport (created once via useState lazy-init). Its getWin reads the
   // iframe's contentWindow LAZILY — only when the transport issues a command/poll,
   // never during render — so it always sees the live window after (re)load.
   // eslint-disable-next-line react-hooks/refs -- getWin is stored + invoked lazily by the transport (command/poll), never during render
   const [veTransport] = React.useState<VisualEditTransport>(() =>
     iframeTransport(() => mockFrameRef.current?.contentWindow ?? null),
+  );
+  // eslint-disable-next-line react-hooks/refs -- getWin is stored + invoked lazily by the transport (command/poll), never during render
+  const [viewTransport] = React.useState<VisualEditTransport>(() =>
+    iframeTransport(() => viewFrameRef.current?.contentWindow ?? null),
   );
 
   // ⌘F in a design html tab → forward to the iframe's injected find overlay. The
@@ -737,31 +744,41 @@ export function IssueDesign({
                 />
               </>
             ) : (
-              <div className="relative min-h-0 flex-1 bg-background">
-                {/* Design html runs its own inline JS so prototypes are actually
-                    touchable (toggles, selection, modals…). `allow-scripts` WITHOUT
-                    `allow-same-origin` keeps it isolated: scripts run on an opaque
-                    origin (no parent access, no storage/cookies). The html stays a
-                    single self-contained file (no external deps) → still dev-server-free. */}
-                <iframe
-                  ref={viewFrameRef}
-                  key={`frame-${selectedItem.key}`}
-                  sandbox="allow-scripts"
-                  srcDoc={withDesignFind(html, t("design.findPlaceholder"))}
-                  title={selectedItem.label}
-                  className="size-full bg-white"
-                />
-                {annotating && (
-                  <AnnotationLayer
-                    key={`anno-${selectedItem.key}`}
-                    session={session}
-                    surface={designSurface(
-                      session,
-                      selectedItem.variant,
-                      session.canGenerateVariant,
-                      session.reviseDesignPattern,
-                    )}
+              <div className="flex min-h-0 flex-1">
+                <div className="relative min-h-0 flex-1 bg-background">
+                  {/* Design html runs its own inline JS so prototypes are actually
+                      touchable (toggles, selection, modals…). `allow-scripts` WITHOUT
+                      `allow-same-origin` keeps it isolated: scripts run on an opaque
+                      origin (no parent access, no storage/cookies). The html stays a
+                      single self-contained file (no external deps) → still dev-server-free.
+                      When annotating, we inject the overlay bridge via buildEditableSrcdoc
+                      so marks render INSIDE the page. Iframe key changes → forces reload. */}
+                  <iframe
+                    ref={viewFrameRef}
+                    key={`frame-${selectedItem.key}-${annotating ? "ann" : "view"}`}
+                    sandbox="allow-scripts"
+                    srcDoc={annotating ? buildEditableSrcdoc(withDesignFind(html, t("design.findPlaceholder"))) : withDesignFind(html, t("design.findPlaceholder"))}
+                    title={selectedItem.label}
+                    className="size-full bg-white"
                   />
+                  {annotating && (
+                    <div ref={viewAnnoLayerRef} className="absolute inset-0 pointer-events-none" />
+                  )}
+                </div>
+                {annotating && (
+                  <aside className="w-72 shrink-0 overflow-y-auto border-l bg-card/40">
+                    <LiveAnnotationPanel
+                      session={session}
+                      surface={designSurface(
+                        session,
+                        selectedItem.variant,
+                        session.canGenerateVariant,
+                        session.reviseDesignPattern,
+                      )}
+                      transport={viewTransport}
+                      layerRef={viewAnnoLayerRef}
+                    />
+                  </aside>
                 )}
               </div>
             )}

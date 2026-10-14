@@ -23,6 +23,8 @@ export interface VisualEditTransport {
   subscribe(onEvents: (events: unknown[]) => void): () => void;
   /** Deactivate the overlay (removes its selection boxes/listeners). */
   deactivate(): void;
+  /** Inject the overlay script WITHOUT activating edit mode (idempotent; for annotation mode). */
+  ensureOverlay?(): void;
   /** Serialize the edited DOM back to an html string (mock/iframe only — the webview
    *  edits live code via the agent, so it doesn't implement this). Empty on failure. */
   serialize?(): Promise<string>;
@@ -71,6 +73,7 @@ export function webviewTransport(): VisualEditTransport {
     },
     deactivate: () =>
       void embedBrowserEval("window.__bzEdit && window.__bzEdit.deactivate()").catch(() => {}),
+    ensureOverlay: () => void embedBrowserEval(OVERLAY_JS).catch(() => {}),
   };
 }
 
@@ -100,6 +103,7 @@ export function iframeTransport(getWin: () => Window | null): VisualEditTranspor
       return () => window.removeEventListener("message", onMsg);
     },
     deactivate: () => post({ __bz: "call", method: "deactivate", args: [] }),
+    ensureOverlay: () => { /* bridge is pre-injected via srcdoc */ },
     serialize: () =>
       new Promise<string>((resolve) => {
         let done = false;

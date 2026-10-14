@@ -9,9 +9,11 @@
 //
 // Kept as a plain-JS string (no backticks inside) so it injects verbatim. Idempotent
 // (re-injection after a navigation reuses the existing __bzEdit).
+//
+// v2: annotation sub-mode added (in-page marks, no freeze needed).
 
 export const OVERLAY_JS = String.raw`(function () {
-  if (window.__bzEdit && window.__bzEdit.__v === 1) return;
+  if (window.__bzEdit && window.__bzEdit.__v === 2) return;
   var HOST_ID = "__bz_overlay_host";
   // Curated computed properties surfaced to the Style panel.
   var PROPS = [
@@ -29,6 +31,7 @@ export const OVERLAY_JS = String.raw`(function () {
   function isOurs(el) {
     if (!el) return true;
     if (el.id === HOST_ID) return true;
+    if (el.id === ANNOTATE_HOST_ID) return true;
     // Shadow-DOM nodes have a different root than the document.
     try { if (el.getRootNode && el.getRootNode() !== document) return true; } catch (e) {}
     return false;
@@ -189,8 +192,151 @@ export const OVERLAY_JS = String.raw`(function () {
     else if (e.key === "ArrowUp") { e.preventDefault(); moveSel(-1); }
   }
 
+  // --- Annotation sub-mode ---
+  var ANNOTATE_HOST_ID = "__bz_annotate_host";
+  var annotateState = { active: false, pen: false, draw: null, penPath: null };
+
+  function getOrCreateAnnotateHost() {
+    var h = document.getElementById(ANNOTATE_HOST_ID);
+    if (!h) {
+      h = document.createElement("div");
+      h.id = ANNOTATE_HOST_ID;
+      h.setAttribute("style", "position:absolute;top:0;left:0;width:100%;pointer-events:none;z-index:2147483645;box-sizing:border-box;");
+      document.documentElement.appendChild(h);
+    }
+    return h;
+  }
+
+  function renderAnnotations(host, anns) {
+    while (host.firstChild) host.removeChild(host.firstChild);
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("style", "position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;");
+    host.appendChild(svg);
+    for (var i = 0; i < anns.length; i++) {
+      var ann = anns[i];
+      var isDone = ann.status === "done";
+      var color = isDone ? "#10b981" : "#2563eb";
+      if (ann.kind === "pen" && ann.pagePath && ann.pagePath.length > 1) {
+        var d = ann.pagePath.map(function(pt, idx) { return (idx === 0 ? "M" : "L") + " " + pt.x + " " + pt.y; }).join(" ");
+        var pEl = document.createElementNS(ns, "path");
+        pEl.setAttribute("d", d); pEl.setAttribute("fill", "none");
+        pEl.setAttribute("stroke", color); pEl.setAttribute("stroke-width", "2");
+        pEl.setAttribute("stroke-linecap", "round"); pEl.setAttribute("stroke-linejoin", "round");
+        pEl.setAttribute("opacity", isDone ? "0.4" : "0.9");
+        svg.appendChild(pEl);
+      }
+      if (ann.kind === "rect" && ann.pageRect) {
+        var rEl = document.createElement("div");
+        rEl.setAttribute("style", "position:absolute;left:" + ann.pageX + "px;top:" + ann.pageY + "px;width:" + ann.pageRect.w + "px;height:" + ann.pageRect.h + "px;border:2px solid " + color + ";background:" + color + "0d;box-sizing:border-box;pointer-events:none;");
+        host.appendChild(rEl);
+      }
+      if (ann.kind !== "pen") {
+        var b = document.createElement("div");
+        b.setAttribute("style", "position:absolute;left:" + ann.pageX + "px;top:" + ann.pageY + "px;width:22px;height:22px;border-radius:50%;background:" + color + ";color:white;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-50%);border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.3);pointer-events:none;box-sizing:border-box;");
+        b.textContent = isDone ? "✓" : String(ann.n);
+        host.appendChild(b);
+      }
+    }
+  }
+
+  function annotateNear(cx, cy) {
+    var el = document.elementFromPoint(cx, cy);
+    if (!el || isOurs(el) || el.id === ANNOTATE_HOST_ID || el === document.body || el === document.documentElement) return {};
+    var b = brief(el); return { selector: b.selector, tag: b.tag, text: b.text };
+  }
+
+  function onAnnotateDown(e) {
+    if (!annotateState.active) return;
+    if (e.target && (e.target.id === ANNOTATE_HOST_ID || (e.target.closest && e.target.closest("#" + ANNOTATE_HOST_ID)))) return;
+    var px = (e.pageX !== undefined ? e.pageX : e.clientX + window.scrollX);
+    var py = (e.pageY !== undefined ? e.pageY : e.clientY + window.scrollY);
+    if (annotateState.pen) {
+      annotateState.penPath = [{ x: px, y: py }];
+      return;
+    }
+    annotateState.draw = { startX: px, startY: py, moved: false, rectEl: null };
+  }
+
+  function onAnnotateMove(e) {
+    if (!annotateState.active) return;
+    var px = (e.pageX !== undefined ? e.pageX : e.clientX + window.scrollX);
+    var py = (e.pageY !== undefined ? e.pageY : e.clientY + window.scrollY);
+    if (annotateState.pen && annotateState.penPath) {
+      annotateState.penPath.push({ x: px, y: py });
+      var host2 = document.getElementById(ANNOTATE_HOST_ID);
+      if (host2) {
+        var ns2 = "http://www.w3.org/2000/svg";
+        var dsvg = host2.querySelector("svg.__bz_pen_draft");
+        if (!dsvg) {
+          dsvg = document.createElementNS(ns2, "svg");
+          dsvg.setAttribute("class", "__bz_pen_draft");
+          dsvg.setAttribute("style", "position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;");
+          host2.appendChild(dsvg);
+        }
+        var oldPath2 = dsvg.querySelector("path");
+        if (oldPath2) dsvg.removeChild(oldPath2);
+        var d2 = annotateState.penPath.map(function(pt, i) { return (i === 0 ? "M" : "L") + " " + pt.x + " " + pt.y; }).join(" ");
+        var pEl2 = document.createElementNS(ns2, "path");
+        pEl2.setAttribute("d", d2); pEl2.setAttribute("fill", "none");
+        pEl2.setAttribute("stroke", "#2563eb"); pEl2.setAttribute("stroke-width", "2");
+        pEl2.setAttribute("stroke-linecap", "round"); pEl2.setAttribute("stroke-linejoin", "round");
+        dsvg.appendChild(pEl2);
+      }
+      return;
+    }
+    if (!annotateState.draw) return;
+    var dx = px - annotateState.draw.startX, dy = py - annotateState.draw.startY;
+    if (!annotateState.draw.moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+    annotateState.draw.moved = true;
+    var host3 = document.getElementById(ANNOTATE_HOST_ID);
+    if (host3) {
+      var rEl2 = annotateState.draw.rectEl;
+      if (!rEl2) {
+        rEl2 = document.createElement("div");
+        rEl2.setAttribute("style", "position:absolute;border:2px solid #2563eb;background:#2563eb0d;box-sizing:border-box;pointer-events:none;");
+        host3.appendChild(rEl2);
+        annotateState.draw.rectEl = rEl2;
+      }
+      var rx2 = Math.min(annotateState.draw.startX, px), ry2 = Math.min(annotateState.draw.startY, py);
+      rEl2.style.left = rx2 + "px"; rEl2.style.top = ry2 + "px";
+      rEl2.style.width = Math.abs(dx) + "px"; rEl2.style.height = Math.abs(dy) + "px";
+    }
+  }
+
+  function onAnnotateUp(e) {
+    if (!annotateState.active) return;
+    var px = (e.pageX !== undefined ? e.pageX : e.clientX + window.scrollX);
+    var py = (e.pageY !== undefined ? e.pageY : e.clientY + window.scrollY);
+    var dw = document.documentElement.scrollWidth, dh = document.documentElement.scrollHeight;
+    var near = annotateNear(e.clientX, e.clientY);
+    if (annotateState.pen && annotateState.penPath) {
+      var path = annotateState.penPath;
+      annotateState.penPath = null;
+      var h4 = document.getElementById(ANNOTATE_HOST_ID);
+      if (h4) { var dsvg2 = h4.querySelector("svg.__bz_pen_draft"); if (dsvg2) h4.removeChild(dsvg2); }
+      if (path.length >= 2) q.push({ type: "annotate-pen-end", path: path, docW: dw, docH: dh });
+      return;
+    }
+    if (!annotateState.draw) return;
+    var dr = annotateState.draw;
+    annotateState.draw = null;
+    if (dr.rectEl && dr.rectEl.parentNode) dr.rectEl.parentNode.removeChild(dr.rectEl);
+    if (!dr.moved) {
+      q.push({ type: "annotate-pin", pageX: dr.startX, pageY: dr.startY, docW: dw, docH: dh, near: near });
+    } else {
+      var rx3 = Math.min(dr.startX, px), ry3 = Math.min(dr.startY, py);
+      var rw3 = Math.abs(px - dr.startX), rh3 = Math.abs(py - dr.startY);
+      if (rw3 > 5 && rh3 > 5) {
+        q.push({ type: "annotate-rect", pageX: rx3, pageY: ry3, pageW: rw3, pageH: rh3, docW: dw, docH: dh, near: near });
+      } else {
+        q.push({ type: "annotate-pin", pageX: dr.startX, pageY: dr.startY, docW: dw, docH: dh, near: near });
+      }
+    }
+  }
+
   window.__bzEdit = {
-    __v: 1,
+    __v: 2,
     q: q,
     activate: function () {
       ensureHost();
@@ -259,7 +405,35 @@ export const OVERLAY_JS = String.raw`(function () {
     selectPath: function (path) {
       try { var el = document.querySelector(path); if (el) select(el); } catch (e) {}
     },
-    rescan: function () { if (state.sel) q.push({ type: "selected", el: info(state.sel) }); }
+    rescan: function () { if (state.sel) q.push({ type: "selected", el: info(state.sel) }); },
+    annotateActivate: function(anns) {
+      annotateState.active = true;
+      document.documentElement.style.cursor = "crosshair";
+      var host = getOrCreateAnnotateHost();
+      renderAnnotations(host, anns || []);
+      document.addEventListener("pointerdown", onAnnotateDown, true);
+      document.addEventListener("pointermove", onAnnotateMove, true);
+      document.addEventListener("pointerup", onAnnotateUp, true);
+    },
+    annotateDeactivate: function() {
+      annotateState.active = false; annotateState.pen = false;
+      annotateState.draw = null; annotateState.penPath = null;
+      document.documentElement.style.cursor = "";
+      document.removeEventListener("pointerdown", onAnnotateDown, true);
+      document.removeEventListener("pointermove", onAnnotateMove, true);
+      document.removeEventListener("pointerup", onAnnotateUp, true);
+      var h = document.getElementById(ANNOTATE_HOST_ID);
+      if (h && h.parentNode) h.parentNode.removeChild(h);
+    },
+    annotateSyncPins: function(anns) {
+      var host = document.getElementById(ANNOTATE_HOST_ID);
+      if (!host) return;
+      renderAnnotations(host, anns || []);
+    },
+    annotatePenMode: function(active) {
+      annotateState.pen = !!active;
+      annotateState.draw = null; annotateState.penPath = null;
+    }
   };
 })();`;
 
